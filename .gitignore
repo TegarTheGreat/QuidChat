@@ -1,0 +1,24 @@
+# === Secrets — jangan pernah di-commit ===
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+credentials.json
+service-account*.json
+secrets/
+
+# === Editor & OS ===
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# === Umum ===
+*.log
+tmp/
+.cache/
