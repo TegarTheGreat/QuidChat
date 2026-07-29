@@ -450,9 +450,29 @@ Navigasi utama: Dashboard, **Skill**, Pengetahuan, Percakapan, Eskalasi, Widget,
 
 **Skill** memakai pola master-detail `sidebar-09`: daftar skill di panel dalam (bisa di-reorder, dengan titik sehat), detail di kanan berisi persona prompt, pemilihan sumber pengetahuan, tujuan eskalasi, dan target handoff yang diizinkan.
 
-**Routing** ada di dialog pengaturan sebagai **daftar aturan terurut** — komponen `table` shadcn dengan drag handle, `select` untuk `kind` dan skill target, serta input pola. Aturan `fallback` terakhir ditandai dan tidak bisa dihapus.
+**Routing** ada di dialog pengaturan dengan **dua tampilan atas satu model data yang sama** — `routing_rules`. Keduanya bisa mengedit, dan karena datanya identik keduanya selalu sinkron tanpa mekanisme sinkronisasi apa pun.
 
-Di atas daftar ada **penguji alur**: kotak teks untuk mengetik contoh pesan pelanggan, lalu panel menunjukkan aturan mana yang cocok dan skill mana yang akan menangani — tanpa benar-benar memanggil LLM untuk tipe `keyword` dan `fallback`. Ini membuat "atur alur" bisa diverifikasi sebelum pelanggan sungguhan yang jadi kelinci percobaan.
+| Tampilan | Bentuk | Untuk siapa |
+|---|---|---|
+| **Daftar** | `table` shadcn dengan drag handle, `select` untuk `kind` dan skill target, input pola | Default. Bisa dibaca dari atas ke bawah oleh orang non-teknis |
+| **Kanvas** | Node-graph dengan **React Flow (`@xyflow/react`, MIT)** — node = skill dan aturan, edge = routing dan handoff | Power user yang alurnya rumit |
+
+```
+(pesan masuk) ─▶ ⟨evaluasi aturan⟩
+                   ├─ keyword "refund" ─▶ [Komplain]
+                   ├─ keyword "harga"  ─▶ [Penjualan]
+                   └─ fallback         ─▶ [Umum]
+
+[Penjualan] ──handoff──▶ [Komplain]
+```
+
+Aturan `fallback` terakhir ditandai di kedua tampilan dan tidak bisa dihapus.
+
+**Kenapa daftar adalah model dan kanvas adalah tampilan, bukan sebaliknya:** daftar terurut bisa dirender jadi diagram secara deterministik, sedangkan diagram sembarang belum tentu bisa disederhanakan jadi daftar linear tanpa kehilangan makna. Menjadikan kanvas sebagai sumber kebenaran akan memaksa model data menampung graf sembarang — dan bersama itu datang siklus, cabang paralel, dan node tak terjangkau yang semuanya harus divalidasi.
+
+Ini juga letak keunggulan kemudahan pakai dibanding platform yang memaksa semua orang masuk ke kanvas: pemula tidak pernah wajib melihat kanvas, dan sebagian besar tenant tidak pernah menyentuh halaman ini sama sekali karena satu aturan `fallback` sudah cukup.
+
+Di atas kedua tampilan ada **penguji alur**: kotak teks untuk mengetik contoh pesan pelanggan, lalu panel menunjukkan aturan mana yang cocok dan skill mana yang akan menangani — tanpa memanggil LLM untuk tipe `keyword` dan `fallback`. Di tampilan kanvas, jalur yang cocok disorot. Ini membuat "atur alur" bisa diverifikasi sebelum pelanggan sungguhan yang jadi kelinci percobaan.
 
 ### 7.4 Pengembangan di luar blok bawaan — semuanya masuk v1
 
@@ -577,6 +597,12 @@ Performa di bawah beban, kualitas crawler terhadap situs tidak lazim, dan kompat
 
 ## 10. Tooling
 
+| Kebutuhan | Pilihan | Lisensi | Alasan |
+|---|---|---|---|
+| Komponen UI | shadcn/ui | MIT | Diminta eksplisit |
+| Ikon | `lucide-react` | ISC | Sudah dipakai shadcn |
+| Kanvas node | `@xyflow/react` (React Flow) | MIT | Tampilan kanvas §7.3 |
+
 | Kebutuhan | Pilihan | Alasan |
 |---|---|---|
 | Monorepo | pnpm workspaces | Dipakai OpenClaw dan Paperclip |
@@ -590,7 +616,26 @@ Performa di bawah beban, kualitas crawler terhadap situs tidak lazim, dan kompat
 | Eval | promptfoo | Dipakai Paperclip |
 | Signing rilis | sigstore | Dipakai OpenClaw |
 
-### 10.1 Keamanan supply chain
+### 10.1 Batas lisensi — kode dan aset
+
+QuidChat berlisensi **MIT**. Setiap kontribusi wajib kompatibel dengan MIT. Ini bukan formalitas: proyek yang menerima PR dari orang asing memikul risiko hukum atas apa pun yang masuk, dan risiko itu ditanggung pemilik repo.
+
+**Dua proyek yang sering dijadikan rujukan, dan keduanya tidak boleh disalin:**
+
+| Proyek | Lisensi | Kenapa tidak bisa |
+|---|---|---|
+| **n8n** | Sustainable Use License (*fair-code*, bukan open source) | Penggunaan komersial dibatasi; **konten di luar branch `master` tidak dilisensikan sama sekali**; berkas ber-`.ee.` butuh Enterprise License. Tidak kompatibel dengan MIT. |
+| **Dify** | Apache 2.0 termodifikasi | Melarang **mengoperasikan lingkungan multi-tenant** tanpa izin tertulis — dan satu tenant didefinisikan sebagai satu workspace, yang persis arsitektur QuidChat. Melarang menghapus logo/hak cipta di frontend. Mengklaim ***appearance patent*** atas desain interaktifnya. |
+
+**Yang boleh dipinjam:** ide, pola UX, arsitektur informasi, keputusan desain, dan pelajaran tentang apa yang membuat sebuah fitur terasa enak. Semua itu tidak bisa dihakciptakan, dan mempelajari produk lain adalah praktik rekayasa yang normal.
+
+**Yang tidak boleh:** kode sumber, ikon, logo, ilustrasi, aset gambar, dan — khusus Dify — meniru tampilan interaktifnya.
+
+**Sumber aset yang diizinkan:** shadcn/ui (MIT), Lucide (ISC), React Flow (MIT), plus aset yang dibuat sendiri.
+
+Ini masuk ke `CONTRIBUTING.md` sebagai butir checklist PR: *"Konfirmasi tidak ada kode atau aset yang disalin dari sumber yang tidak kompatibel dengan MIT."* Kanvas node bukan milik siapa pun — polanya jauh lebih tua dari n8n (Max/MSP, node Blender, Blueprint Unreal) — jadi membangunnya di atas React Flow sepenuhnya bersih.
+
+### 10.2 Keamanan supply chain
 
 QuidChat adalah rantai pasok bagi penggunanya, jadi ini bukan opsional:
 
@@ -610,11 +655,13 @@ QuidChat adalah rantai pasok bagi penggunanya, jadi ini bukan opsional:
 4. Pertanyaan yang jawabannya tidak ada di KB menghasilkan penolakan + eskalasi, bukan jawaban karangan.
 5. Dua tenant di satu instalasi tidak bisa melihat data satu sama lain, dibuktikan test RLS.
 6. **Tiga skill dengan sumber pengetahuan berbeda bisa dibuat dari panel; aturan routing mengarahkan pesan ke skill yang benar; dan penguji alur di panel menunjukkan aturan mana yang cocok tanpa memanggil LLM.**
-7. **Skill melempar tanggung jawab ke skill lain lewat tool `handoff`, riwayat percakapan terbawa, dan handoff tercatat di tabel `handoffs`.**
-8. **Dua skill yang saling melempar berhenti pada batas dan tereskalasi, tidak berputar.**
-9. **Skill tidak bisa me-retrieve dari sumber yang tidak tertaut padanya, dibuktikan test terhadap query sungguhan.**
-10. Kelima test wajib di §9.1 hijau di CI.
-11. Panel menampilkan biaya bulan ini dari `usage_events`, plus rasio cache hit untuk provider yang melaporkan `cached_tokens` dan "tidak tersedia" untuk yang tidak.
-12. Mengganti model embedding memicu re-index dengan progress, dan retrieval tetap benar selama proses.
-13. Ketujuh pengembangan panel di §7.4 terpasang.
-14. `README` menyatakan eksplisit: batas PGlite (satu koneksi, bukan untuk produksi multi-user), bahwa transkrip dikirim ke provider LLM yang dipilih, dan bahwa master key tidak boleh disimpan bersama backup.
+7. **Tampilan Daftar dan Kanvas mengedit `routing_rules` yang sama: mengubah urutan di Kanvas terlihat di Daftar dan sebaliknya, tanpa langkah sinkronisasi.**
+8. **Skill melempar tanggung jawab ke skill lain lewat tool `handoff`, riwayat percakapan terbawa, dan handoff tercatat di tabel `handoffs`.**
+9. **Dua skill yang saling melempar berhenti pada batas dan tereskalasi, tidak berputar.**
+10. **Skill tidak bisa me-retrieve dari sumber yang tidak tertaut padanya, dibuktikan test terhadap query sungguhan.**
+11. Kelima test wajib di §9.1 hijau di CI.
+12. Panel menampilkan biaya bulan ini dari `usage_events`, plus rasio cache hit untuk provider yang melaporkan `cached_tokens` dan "tidak tersedia" untuk yang tidak.
+13. Mengganti model embedding memicu re-index dengan progress, dan retrieval tetap benar selama proses.
+14. Ketujuh pengembangan panel di §7.4 terpasang.
+15. Tidak ada kode atau aset yang disalin dari sumber yang tidak kompatibel dengan MIT; `CONTRIBUTING.md` memuat butir checklist PR sesuai §10.1.
+16. `README` menyatakan eksplisit: batas PGlite (satu koneksi, bukan untuk produksi multi-user), bahwa transkrip dikirim ke provider LLM yang dipilih, dan bahwa master key tidak boleh disimpan bersama backup.
