@@ -75,6 +75,7 @@ gcloud-key*.json
 .netrc
 _netrc
 .npmrc
+!/.npmrc
 .yarnrc
 .pypirc
 .dockercfg
