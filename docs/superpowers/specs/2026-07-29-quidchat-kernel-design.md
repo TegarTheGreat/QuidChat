@@ -112,9 +112,9 @@ conversations        id, tenant_id, channel, visitor_id,
                      status(active|idle|escalated|closed), created_at
 messages             id, tenant_id, conversation_id, role, content, created_at
 message_citations    message_id, chunk_id
-escalations          id, tenant_id, conversation_id, reason, resolved_at
-                     reason(no_source|ungrounded|budget_exhausted
-                           |provider_unavailable|schema_invalid|visitor_request)
+escalations          id, tenant_id, conversation_id, resolved_at,
+                     reason(no_source|ungrounded|budget_exhausted|
+                            provider_unavailable|schema_invalid|visitor_request)
 usage_events         id, tenant_id, model, input_tokens, output_tokens,
                      cached_tokens NULL, cost_cents
 ```
