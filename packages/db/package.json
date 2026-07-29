@@ -1,0 +1,21 @@
+{
+  "name": "@quidchat/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.22.3" },
+  "exports": { ".": "./src/index.ts", "./testing": "./src/testing.ts" },
+  "scripts": {
+    "build": "tsdown src/index.ts src/testing.ts --dts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.2.17",
+    "@electric-sql/pglite-pgvector": "0.0.5",
+    "drizzle-orm": "0.45.2",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.10"
+  }
+}
