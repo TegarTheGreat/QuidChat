@@ -198,8 +198,8 @@ git commit -m "chore: scaffold pnpm workspace with vitest, oxlint and strict typ
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@electric-sql/pglite": "0.2.17",
-    "@electric-sql/pglite-pgvector": "0.2.17",
+    "@electric-sql/pglite": "0.5.4",
+    "@electric-sql/pglite-pgvector": "0.0.5",
     "drizzle-orm": "0.45.2",
     "postgres": "3.4.9"
   },
@@ -472,6 +472,17 @@ CREATE TABLE usage_events (
 ```
 
 `tsv` dibuat sebagai kolom `GENERATED ALWAYS AS ... STORED` supaya tidak mungkin desinkron dari `content` — tidak ada trigger yang bisa lupa dijalankan.
+
+**Versi `@electric-sql/pglite` wajib `0.5.4`, bukan lebih rendah.** `@electric-sql/pglite-pgvector@0.0.5` menyatakan `peerDependencies: {"@electric-sql/pglite": "0.5.4"}` — persyaratan persis, bukan rentang. Ekstensi pgvector adalah WASM yang dibangun terhadap internal pglite versi itu; memasangkannya dengan versi lain lolos `pnpm install` tapi gagal saat runtime di `CREATE EXTENSION vector`, yaitu saat Task 4 pertama kali menyalakan database.
+
+**Ekstensi contrib butuh import eksplisit.** `pg_trgm`, `fuzzystrmatch`, dan `unaccent` memang ikut dalam paket utama, tapi tidak otomatis tersedia — `CREATE EXTENSION pg_trgm` gagal dengan `parse_extension_control_file` kecuali ekstensinya diimpor dan diregistrasi seperti `vector`:
+
+```ts
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm"
+await PGlite.create({ extensions: { vector, pg_trgm } })
+```
+
+Task 2 belum membutuhkannya (hanya `vector`), tapi dicatat di sini karena mode statis di rencana berikutnya bergantung padanya.
 
 - [ ] **Step 5: Verifikasi migrasi bisa di-parse**
 
