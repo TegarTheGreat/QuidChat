@@ -1,24 +1,257 @@
-# === Secrets — jangan pernah di-commit ===
+# =============================================================
+#  QuidChat — .gitignore
+# =============================================================
+
+# -------------------------------------------------------------
+#  Claude Code / Claude — JANGAN di-commit
+# -------------------------------------------------------------
+.claude/
+.claude*
+CLAUDE.md
+CLAUDE.local.md
+**/CLAUDE.md
+**/.claude/
+.mcp.json
+.anthropic/
+anthropic.json
+.remember/
+.superpowers/
+.agent/
+.agents/
+AGENTS.md
+**/AGENTS.md
+GEMINI.md
+.cursor/
+.cursorrules
+.windsurfrules
+.aider*
+.continue/
+.codeium/
+.github/copilot-instructions.md
+
+# -------------------------------------------------------------
+#  Secrets & kredensial — JANGAN PERNAH di-commit
+# -------------------------------------------------------------
+# Env
 .env
 .env.*
 !.env.example
+!.env.sample
+*.env
+env.sh
+
+# Kunci & sertifikat
 *.pem
 *.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+*.cer
+*.der
+*.asc
+*.gpg
+*.kdbx
 id_rsa*
+id_dsa*
+id_ecdsa*
 id_ed25519*
+*.ppk
+known_hosts
+authorized_keys
+
+# Kredensial cloud & layanan
+credentials
 credentials.json
+client_secret*.json
 service-account*.json
+*-serviceaccount.json
+gha-creds-*.json
+.aws/
+.azure/
+.gcloud/
+gcloud-key*.json
+.netrc
+_netrc
+.npmrc
+.yarnrc
+.pypirc
+.dockercfg
+.docker/config.json
+.kube/config
+kubeconfig*
+*.tfvars
+!*.tfvars.example
+.terraform/
+terraform.tfstate*
+.vault-token
+.pgpass
+
+# Direktori & pola rahasia umum
 secrets/
+secret/
+private/
+.secrets/
+*secret*.json
+*secret*.yaml
+*secret*.yml
+*token*.json
+*apikey*
+*api_key*
+*.secrets.*
 
-# === Editor & OS ===
+# -------------------------------------------------------------
+#  Data lokal QuidChat (DB tertanam, index, cache)
+# -------------------------------------------------------------
+# CATATAN: direktori di blok ini di-anchor dengan "/" di depan supaya hanya
+# cocok di root repo. Tanpa "/", pola seperti `models/` juga akan mengabaikan
+# `src/models/` dan `memory/` akan mengabaikan `src/memory/` — kode sumber
+# hilang dari git tanpa peringatan apa pun.
+
+# PGlite / embedded-postgres
+/.quidchat/
+/data/
+/pgdata/
+/pglite-data/
+*.pgdata
+
+# SQLite (kalau dipakai untuk cache/dev)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Index vector & artefak model
+*.bin
+*.gguf
+*.safetensors
+*.onnx
+*.pt
+*.pth
+/models/
+/embeddings/
+/.vectors/
+/.index/
+
+# Transkrip percakapan & memory (bisa berisi data pribadi)
+/sessions/
+/transcripts/
+/conversations/
+/memory/
+/.memory/
+
+# -------------------------------------------------------------
+#  Node / TypeScript
+# -------------------------------------------------------------
+node_modules/
+.pnpm-store/
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/releases
+dist/
+build/
+out/
+# `lib/` sengaja TIDAK dicantumkan — pola itu juga mengabaikan `src/lib/`,
+# konvensi sumber yang sangat umum di proyek TypeScript. `dist/` dan `build/`
+# sudah menutup output build.
+*.tsbuildinfo
+.tshy/
+.rollup.cache/
+.turbo/
+.next/
+.nuxt/
+.svelte-kit/
+.astro/
+.vite/
+coverage/
+.nyc_output/
+*.lcov
+.eslintcache
+.oxlintcache
+.stylelintcache
+storybook-static/
+playwright-report/
+test-results/
+blob-report/
+.vitest/
+
+# -------------------------------------------------------------
+#  Python (kalau ada sidecar ML)
+# -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# -------------------------------------------------------------
+#  Editor & OS
+# -------------------------------------------------------------
 .vscode/
+!.vscode/extensions.json
 .idea/
+*.iml
 *.swp
+*.swo
 *~
+\#*\#
+.\#*
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
-# === Umum ===
+# -------------------------------------------------------------
+#  Log, temp, arsip
+# -------------------------------------------------------------
 *.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 tmp/
+temp/
+.tmp/
 .cache/
+*.tmp
+*.bak
+*.orig
+*.rej
+*.pid
+*.seed
+*.tgz
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.rar
+# Core dump Unix — di-anchor & dipersempit dengan sengaja. Pola `core` polos
+# mencocoki DIREKTORI bernama `core` di level mana pun, jadi `packages/core/`
+# beserta seluruh isinya akan terabaikan tanpa peringatan.
+/core
+core.[0-9]*
+
+# -------------------------------------------------------------
+#  Jangan pernah abaikan lockfile — penting untuk supply chain
+# -------------------------------------------------------------
+!pnpm-lock.yaml
+!package-lock.json
+!yarn.lock
+!uv.lock
