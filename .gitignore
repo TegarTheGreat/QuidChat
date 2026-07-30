@@ -3,7 +3,7 @@
 # =============================================================
 
 # -------------------------------------------------------------
-#  Claude Code / Claude — JANGAN di-commit
+#  Claude Code / Claude — never commit
 # -------------------------------------------------------------
 .claude/
 .claude*
@@ -30,7 +30,7 @@ GEMINI.md
 .github/copilot-instructions.md
 
 # -------------------------------------------------------------
-#  Secrets & kredensial — JANGAN PERNAH di-commit
+#  Secrets and credentials — never, ever commit
 # -------------------------------------------------------------
 # Env
 .env
@@ -40,7 +40,7 @@ GEMINI.md
 *.env
 env.sh
 
-# Kunci & sertifikat
+# Keys and certificates
 *.pem
 *.key
 *.p12
@@ -61,7 +61,7 @@ id_ed25519*
 known_hosts
 authorized_keys
 
-# Kredensial cloud & layanan
+# Cloud and service credentials
 credentials
 credentials.json
 client_secret*.json
@@ -89,7 +89,7 @@ terraform.tfstate*
 .vault-token
 .pgpass
 
-# Direktori & pola rahasia umum
+# Common secret directories and patterns
 secrets/
 secret/
 private/
@@ -103,12 +103,12 @@ private/
 *.secrets.*
 
 # -------------------------------------------------------------
-#  Data lokal QuidChat (DB tertanam, index, cache)
+#  Local QuidChat data (embedded DB, indexes, cache)
 # -------------------------------------------------------------
-# CATATAN: direktori di blok ini di-anchor dengan "/" di depan supaya hanya
-# cocok di root repo. Tanpa "/", pola seperti `models/` juga akan mengabaikan
-# `src/models/` dan `memory/` akan mengabaikan `src/memory/` — kode sumber
-# hilang dari git tanpa peringatan apa pun.
+# NOTE: directories in this block are anchored with a leading "/" so they only
+# match at the repo root. Without it, a pattern like `models/` would also ignore
+# `src/models/`, and `memory/` would ignore `src/memory/` — source code would
+# disappear from git with no warning at all.
 
 # PGlite / embedded-postgres
 /.quidchat/
@@ -117,7 +117,7 @@ private/
 /pglite-data/
 *.pgdata
 
-# SQLite (kalau dipakai untuk cache/dev)
+# SQLite (if used for cache or dev)
 *.db
 *.db-journal
 *.db-wal
@@ -125,7 +125,7 @@ private/
 *.sqlite
 *.sqlite3
 
-# Index vector & artefak model
+# Vector indexes and model artefacts
 *.bin
 *.gguf
 *.safetensors
@@ -137,7 +137,7 @@ private/
 /.vectors/
 /.index/
 
-# Transkrip percakapan & memory (bisa berisi data pribadi)
+# Conversation transcripts and memory (may contain personal data)
 /sessions/
 /transcripts/
 /conversations/
@@ -156,9 +156,9 @@ node_modules/
 dist/
 build/
 out/
-# `lib/` sengaja TIDAK dicantumkan — pola itu juga mengabaikan `src/lib/`,
-# konvensi sumber yang sangat umum di proyek TypeScript. `dist/` dan `build/`
-# sudah menutup output build.
+# `lib/` is deliberately NOT listed — that pattern would also ignore `src/lib/`,
+# a very common source convention in TypeScript projects. `dist/` and `build/`
+# already cover build output.
 *.tsbuildinfo
 .tshy/
 .rollup.cache/
@@ -181,7 +181,7 @@ blob-report/
 .vitest/
 
 # -------------------------------------------------------------
-#  Python (kalau ada sidecar ML)
+#  Python (in case of an ML sidecar)
 # -------------------------------------------------------------
 __pycache__/
 *.py[cod]
@@ -196,7 +196,7 @@ env/
 .ipynb_checkpoints/
 
 # -------------------------------------------------------------
-#  Editor & OS
+#  Editor and OS
 # -------------------------------------------------------------
 .vscode/
 !.vscode/extensions.json
@@ -218,12 +218,12 @@ Desktop.ini
 $RECYCLE.BIN/
 
 # -------------------------------------------------------------
-#  Artefak sesi brainstorming (mockup visual)
+#  Brainstorming session artefacts (visual mockups)
 # -------------------------------------------------------------
 .superpowers/
 
 # -------------------------------------------------------------
-#  Log, temp, arsip
+#  Logs, temp files, archives
 # -------------------------------------------------------------
 *.log
 logs/
@@ -248,14 +248,14 @@ temp/
 *.tar.gz
 *.7z
 *.rar
-# Core dump Unix — di-anchor & dipersempit dengan sengaja. Pola `core` polos
-# mencocoki DIREKTORI bernama `core` di level mana pun, jadi `packages/core/`
-# beserta seluruh isinya akan terabaikan tanpa peringatan.
+# Unix core dumps — deliberately anchored and narrowed. A bare `core` pattern
+# matches a DIRECTORY named `core` at any level, so `packages/core/` and
+# everything in it would be ignored with no warning.
 /core
 core.[0-9]*
 
 # -------------------------------------------------------------
-#  Jangan pernah abaikan lockfile — penting untuk supply chain
+#  Never ignore lockfiles — they matter for supply chain integrity
 # -------------------------------------------------------------
 !pnpm-lock.yaml
 !package-lock.json

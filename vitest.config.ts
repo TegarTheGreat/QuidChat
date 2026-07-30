@@ -3,20 +3,21 @@ import { defineConfig } from "vitest/config"
 export default defineConfig({
   test: {
     include: ["packages/*/src/**/*.test.ts"],
-    // Membangun Postgres WASM lalu menerapkan migrasi butuh sekitar 7 detik.
+    // Building Postgres WASM and applying the migrations takes about seven seconds.
     testTimeout: 20_000,
-    // `hookTimeout` TIDAK mewarisi `testTimeout` — defaultnya tetap 10 detik.
-    // Test yang menyiapkan satu database bersama di `beforeAll` melampauinya
-    // (bangun + seed), dan gagalnya muncul sebagai "Hook timed out in 10000ms"
-    // yang tidak menyebut database sama sekali.
+    // `hookTimeout` does NOT inherit from `testTimeout` — it stays at its 10 second
+    // default. A `beforeAll` that builds a shared database exceeds that, and the
+    // failure surfaces as "Hook timed out in 10000ms" without mentioning the
+    // database at all, which makes it expensive to diagnose.
     hookTimeout: 60_000,
-    // Berkas test dijalankan BERURUTAN, tidak paralel. Setiap berkas test database
-    // menyalakan Postgres WASM sendiri, dan beberapa berkas yang jalan bersamaan
-    // membuat worker mati dengan "Worker exited unexpectedly" — pesan yang tidak
-    // menyebut memori maupun database, jadi sangat mahal untuk didiagnosis.
-    // Terukur: dengan tiga berkas database, paralel = worker mati (34 dari 38 test
-    // jalan); berurutan = 38 dari 38 DAN durasinya justru lebih singkat (26,9s vs
-    // 29,0s), karena tidak ada lagi memori yang saling berebut.
+    // Test files run SEQUENTIALLY, not in parallel. Every database test file starts
+    // its own Postgres WASM instance, and several running at once kill the worker
+    // with "Worker exited unexpectedly" — a message that mentions neither memory nor
+    // the database.
+    //
+    // Measured with three database files: parallel killed the worker and ran 34 of 38
+    // tests; sequential ran all 38 AND finished faster (26.9s versus 29.0s), because
+    // nothing was competing for memory.
     fileParallelism: false,
   },
 })
