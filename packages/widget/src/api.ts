@@ -82,7 +82,7 @@ const UNAVAILABLE_MESSAGE = "The assistant is temporarily unavailable. Please tr
  * 403 or a 429 means. Re-issuing would ask the same question twice, and on a route that bills
  * per answer that is not a harmless retry.
  */
-function errorForStatus(res: Response): string | null {
+async function errorForStatus(res: Response): Promise<string | null> {
   if (res.status === 403) {
     // The single most likely setup mistake: the business has not added this domain to the
     // tenant's allowed origins. Naming that saves a support conversation.
@@ -99,6 +99,19 @@ function errorForStatus(res: Response): string | null {
     const retryAfter = Number(res.headers.get("retry-after") ?? "")
     const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : 5
     return `You are sending messages too quickly. Please wait ${seconds} second${seconds === 1 ? "" : "s"} and try again.`
+  }
+  if (res.status === 400) {
+    // The one 400 a visitor can cause by typing. The body is read only for this status, and only
+    // for a `reason` the server sets deliberately — never for its error text, which is written
+    // for whoever pasted the embed rather than for a customer.
+    const body = (await res.json().catch(() => null)) as { reason?: string; maxLength?: number } | null
+    if (body?.reason === "message_too_long") {
+      const limit = typeof body.maxLength === "number" ? body.maxLength : undefined
+      return limit
+        ? `That message is too long. Please shorten it to under ${limit} characters.`
+        : "That message is too long. Please shorten it and try again."
+    }
+    return null
   }
   return null
 }
@@ -126,7 +139,7 @@ export async function sendMessage(cfg: WidgetConfig, input: SendMessageInput): P
     return (await res.json()) as ChatResponse
   }
 
-  const known = errorForStatus(res)
+  const known = await errorForStatus(res)
   if (known) throw new Error(known)
 
   if (res.status === 404) {
@@ -177,7 +190,7 @@ export async function sendMessageWithProgress(
 
   // A 403 or a 429 means the same thing here as on the plain route, so it is reported rather
   // than retried: retrying would ask the same question a second time.
-  const known = errorForStatus(res)
+  const known = await errorForStatus(res)
   if (known) throw new Error(known)
 
   // A 404 is ambiguous — an unknown tenant, or a server old enough not to have this route at

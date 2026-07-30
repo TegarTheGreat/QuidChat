@@ -258,3 +258,26 @@ describe("streaming progress", () => {
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 })
+
+describe("an over-long message", () => {
+  it("tells the visitor to shorten it, with the limit", async () => {
+    // The one 400 a real visitor can cause by typing. It used to arrive as "temporarily
+    // unavailable", which is both wrong and impossible to act on.
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(
+        JSON.stringify({ error: "message is longer than 4000 characters", reason: "message_too_long", maxLength: 4000 }),
+        { status: 400 },
+      ),
+    ))
+
+    await expect(sendMessage(cfg, { message: "x".repeat(5000) })).rejects.toThrow(/too long.*4000/i)
+  })
+
+  it("stays neutral for any other 400, which is a bug in the embed rather than the message", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(JSON.stringify({ error: "invalid request body" }), { status: 400 }),
+    ))
+
+    await expect(sendMessage(cfg, { message: "hi" })).rejects.toThrow(/temporarily unavailable/i)
+  })
+})

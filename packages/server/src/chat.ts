@@ -76,25 +76,26 @@ async function readBoundedBody(req: IncomingMessage): Promise<string | null> {
   })
 }
 
-function parseChatRequest(raw: string): ChatRequest | null {
+/** Why a body was rejected, so the visitor can be told something they can act on. */
+export type ChatRequestProblem = "malformed" | "message_too_long"
+
+function parseChatRequest(raw: string): ChatRequest | ChatRequestProblem {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return null
+    return "malformed"
   }
-  if (typeof parsed !== "object" || parsed === null) return null
+  if (typeof parsed !== "object" || parsed === null) return "malformed"
   const body = parsed as Record<string, unknown>
 
-  if (typeof body.tenantSlug !== "string" || body.tenantSlug.length === 0) return null
-  if (
-    typeof body.message !== "string" ||
-    body.message.length === 0 ||
-    body.message.length > MAX_MESSAGE_LENGTH
-  ) {
-    return null
-  }
-  if (body.conversationId !== undefined && typeof body.conversationId !== "string") return null
+  if (typeof body.tenantSlug !== "string" || body.tenantSlug.length === 0) return "malformed"
+  if (typeof body.message !== "string" || body.message.length === 0) return "malformed"
+  // Separated from every other malformed body, because this is the one a real visitor causes by
+  // typing, and "invalid request" told them nothing while the widget turned it into
+  // "temporarily unavailable" — which is both wrong and unactionable.
+  if (body.message.length > MAX_MESSAGE_LENGTH) return "message_too_long"
+  if (body.conversationId !== undefined && typeof body.conversationId !== "string") return "malformed"
 
   return {
     tenantSlug: body.tenantSlug,
@@ -205,11 +206,20 @@ export async function handleChat(
     return
   }
 
-  const chatRequest = parseChatRequest(raw)
-  if (!chatRequest) {
+  const parsed = parseChatRequest(raw)
+  if (parsed === "message_too_long") {
+    sendJson(res, 400, {
+      error: `message is longer than ${MAX_MESSAGE_LENGTH} characters`,
+      reason: "message_too_long",
+      maxLength: MAX_MESSAGE_LENGTH,
+    })
+    return
+  }
+  if (parsed === "malformed") {
     sendJson(res, 400, { error: "invalid request body" })
     return
   }
+  const chatRequest = parsed
 
   const identity = await lookupTenantBySlug(deps.db, chatRequest.tenantSlug)
   if (!identity) {

@@ -293,6 +293,9 @@ export function mountWidget(
   composer.className = "composer"
   const input = doc.createElement("textarea")
   input.setAttribute("aria-label", STRINGS.inputLabel)
+  // The server refuses anything longer, and the browser stopping it at the keyboard is better
+  // than a round trip that comes back as an error. Kept in step with MAX_MESSAGE_LENGTH there.
+  input.setAttribute("maxlength", "4000")
   input.setAttribute("placeholder", STRINGS.inputPlaceholder)
   input.rows = 1
   const sendButton = doc.createElement("button")
