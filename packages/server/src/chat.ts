@@ -162,21 +162,37 @@ async function ensureConversation(
   })
 }
 
-/** The stored transcript for a conversation, oldest first, so a follow-up question
- *  carries context from what came before it. */
+/**
+ * The recent transcript, oldest first, so a follow-up question carries what came before it.
+ *
+ * Bounded, and it has to be. Every message went into every prompt, so a conversation that ran
+ * long grew its own cost with each turn — the tenth question paid for the previous nine — and a
+ * conversation long enough would exceed the model's context window and start failing for no
+ * reason a customer could understand. Now that a conversation survives page navigation, that is
+ * a thread someone can keep alive all afternoon.
+ *
+ * Twenty messages is ten exchanges. A follow-up's antecedent is almost always the turn before it
+ * — "how much is that one?" refers to the last thing named — and ten exchanges of room is far
+ * more than that needs while keeping the prompt a fixed size.
+ */
+const MAX_HISTORY_MESSAGES = 20
+
 async function loadHistory(
   db: QuidDb,
   tenantId: string,
   conversationId: string,
 ): Promise<{ role: "user" | "assistant"; content: string }[]> {
   return withTenant(db, tenantId, async (tx) => {
+    // Newest first to take the most recent N, then reversed: the model needs them in the order
+    // they were said, and it is the OLDEST that has to fall off.
     const res = await tx.execute(sql`
       SELECT role, content
       FROM messages
       WHERE conversation_id = ${conversationId}
-      ORDER BY created_at ASC
+      ORDER BY created_at DESC, id DESC
+      LIMIT ${MAX_HISTORY_MESSAGES}
     `)
-    return rowsOf(res).map((r) => ({
+    return rowsOf(res).toReversed().map((r) => ({
       role: r.role as "user" | "assistant",
       content: r.content as string,
     }))

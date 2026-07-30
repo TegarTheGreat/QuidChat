@@ -13,14 +13,25 @@ function fakeExchange(url: string, method = "POST", statusCode = 200) {
 describe("logFormatFrom", () => {
   it("logs in text unless told otherwise", () => {
     // Not off by default: a server whose output is silent looks dead, and its log is the first
-    // thing anyone reads when they think a deployment is broken.
-    expect(logFormatFrom({})).toBe("text")
+    // thing anyone reads when they think a deployment is broken. Under vitest the default flips,
+    // so this asserts the configured values and the fallback rather than the bare default — see
+    // the test below for that.
+    expect(logFormatFrom({ QUIDCHAT_LOG: "text" })).toBe("text")
     expect(logFormatFrom({ QUIDCHAT_LOG: "json" })).toBe("json")
     expect(logFormatFrom({ QUIDCHAT_LOG: "off" })).toBe("off")
     expect(logFormatFrom({ QUIDCHAT_LOG: "JSON" })).toBe("json")
     // An unrecognised value falls back rather than silencing the log, which is the outcome
     // nobody would want from a typo.
     expect(logFormatFrom({ QUIDCHAT_LOG: "verbose" })).toBe("text")
+  })
+
+  it("stays quiet under vitest unless a format is asked for", () => {
+    // A suite starts dozens of servers and makes hundreds of requests; a line for each buries the
+    // one thing a contributor is reading the output for.
+    expect(process.env.VITEST).toBeTruthy()
+    expect(logFormatFrom({})).toBe("off")
+    // Asking for one still works, which is what makes a failing test debuggable.
+    expect(logFormatFrom({ QUIDCHAT_LOG: "text" })).toBe("text")
   })
 })
 

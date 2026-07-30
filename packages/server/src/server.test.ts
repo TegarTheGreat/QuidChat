@@ -368,6 +368,67 @@ describe("chat endpoint", () => {
     }
   })
 
+
+  it("sends only the recent history, oldest of the recent first", async () => {
+    // Every message used to go into every prompt, so a long conversation grew its own cost with
+    // each turn and would eventually exceed the model's context window — failing for a reason no
+    // customer could understand. Twenty messages is the bound; the OLDEST have to fall off.
+    const seen: { role: string; content: string }[][] = []
+    const provider = {
+      complete: async (args: { prompt: { history: { role: string; content: string }[] } }) => {
+        seen.push(args.prompt.history)
+        return {
+          answer: { segments: [{ kind: "general" as const, text: "Noted." }] },
+          usage: { inputTokens: 1, outputTokens: 1, cachedTokens: null },
+        }
+      },
+      embed: async () => Array.from({ length: 1536 }, () => 0.01),
+      generateText: async () => "",
+    }
+
+    const server = createServer({
+      db,
+      provider: provider as never,
+      logError: () => {},
+      // Fourteen turns is more than a visitor is allowed in a burst, and being throttled is the
+      // rate limiter working. Raised here so this test measures the thing it is about.
+      rateLimits: { visitor: { capacity: 100, refillPerSecond: 100 } },
+    })
+    await new Promise<void>((resolve) => server.listen(0, resolve))
+    const port = (server.address() as AddressInfo).port
+    try {
+      const ask = (body: Record<string, unknown>) =>
+        fetch(`http://127.0.0.1:${port}/v1/chat`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: ALLOWED_ORIGIN },
+          body: JSON.stringify({ tenantSlug: "shop", ...body }),
+        }).then((r) => r.json() as Promise<{ conversationId: string }>)
+
+      // Every question has to retrieve something or the pipeline refuses before it reaches the
+      // model, and full-text search ANDs its terms — so each of these is built only from words
+      // the seeded document actually contains.
+      const questions = [
+        "warranty", "covers", "manufacturing", "defects", "months", "purchase", "date",
+        "warranty covers", "manufacturing defects", "months purchase", "warranty months",
+        "covers defects", "date purchase", "warranty date",
+      ]
+      const first = await ask({ message: questions[0]! })
+      for (const message of questions.slice(1)) {
+        await ask({ message, conversationId: first.conversationId })
+      }
+
+      expect(seen).toHaveLength(questions.length)
+      const lastPrompt = seen[seen.length - 1]!
+      expect(lastPrompt.length).toBeLessThanOrEqual(20)
+      // Still in the order they were said, and it is the earliest that is gone.
+      expect(lastPrompt[0]!.content).not.toBe(questions[0])
+      expect(lastPrompt[lastPrompt.length - 1]!.content).toBe("Noted.")
+      expect(lastPrompt.some((m) => m.content === questions[questions.length - 2])).toBe(true)
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
 })
 
 describe("budget enforcement", () => {

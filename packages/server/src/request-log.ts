@@ -22,8 +22,14 @@ export type LogFormat = "text" | "json" | "off"
  * ships these to something that parses them.
  */
 export function logFormatFrom(env: Record<string, string | undefined>): LogFormat {
-  const raw = (env.QUIDCHAT_LOG ?? "text").toLowerCase()
-  return raw === "json" || raw === "off" ? raw : "text"
+  const configured = env.QUIDCHAT_LOG?.toLowerCase()
+  if (configured === "json" || configured === "off" || configured === "text") return configured
+  // Silent under vitest unless asked for. A suite starts dozens of servers and makes hundreds of
+  // requests, and a line for each buries the one thing a contributor is reading the output for.
+  // Checked on the real process rather than the injected env, because a test constructs that env
+  // itself and would have to remember.
+  if (configured === undefined && process.env.VITEST) return "off"
+  return "text"
 }
 
 /** Health checks arrive every few seconds forever and say nothing about the product. */

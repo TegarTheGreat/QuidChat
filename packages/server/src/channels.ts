@@ -237,7 +237,11 @@ async function conversationFor(
   })
 }
 
-/** The stored transcript, oldest first, so a follow-up question has context. */
+/** How many past messages travel with a question. See the identical bound in `chat.ts`: every
+ *  message used to go into every prompt, so a long conversation grew its own cost each turn. */
+const MAX_HISTORY_MESSAGES = 20
+
+/** The recent transcript, oldest first, so a follow-up question has context. */
 async function historyFor(
   db: QuidDb,
   tenantId: string,
@@ -248,10 +252,11 @@ async function historyFor(
       await tx.execute(sql`
         SELECT role, content FROM messages
         WHERE conversation_id = ${conversationId}
-        ORDER BY created_at ASC
+        ORDER BY created_at DESC, id DESC
+        LIMIT ${MAX_HISTORY_MESSAGES}
       `),
     )
-    return rows.map((r) => ({
+    return rows.toReversed().map((r) => ({
       role: r.role as "user" | "assistant",
       content: r.content as string,
     }))
