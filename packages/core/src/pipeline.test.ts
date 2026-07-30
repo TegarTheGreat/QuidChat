@@ -26,6 +26,10 @@ describe("answer", () => {
     // Embedding memang terjadi — retrieval membutuhkannya untuk mengetahui
     // bahwa hasilnya kosong. Dinyatakan eksplisit supaya batas klaim ini jelas.
     expect(provider.embedCalls).toHaveLength(1)
+    expect(store.recordedUserTurns).toEqual(["garansi berapa lama?"])
+    // Penolakan pun meninggalkan balasan di transkrip.
+    expect(store.recordedAnswers).toHaveLength(1)
+    expect(store.recordedAnswers[0]!.citedChunkIds).toEqual([])
   })
 
   it("menjawab dengan sitasi saat sumbernya ada", async () => {

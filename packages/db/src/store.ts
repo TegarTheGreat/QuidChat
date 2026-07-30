@@ -152,5 +152,14 @@ export function createStore(db: QuidDb): Store {
         `)
       })
     },
+
+    async recordUserTurn({ tenantId, conversationId, text }) {
+      await withTenant(db, tenantId, async (tx) => {
+        await tx.execute(sql`
+          INSERT INTO messages (tenant_id, conversation_id, role, content)
+          VALUES (${tenantId}, ${conversationId}, 'user', ${text})
+        `)
+      })
+    },
   }
 }

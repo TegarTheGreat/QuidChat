@@ -30,4 +30,12 @@ export interface Store {
     conversationId: string
     reason: EscalationReason
   }): Promise<void>
+
+  /** Mencatat pesan pengunjung. Dipanggil sebelum retrieval supaya transkrip utuh
+   *  bahkan ketika turn-nya berakhir dengan penolakan. */
+  recordUserTurn(args: {
+    tenantId: string
+    conversationId: string
+    text: string
+  }): Promise<void>
 }

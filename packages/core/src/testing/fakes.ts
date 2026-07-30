@@ -18,6 +18,7 @@ export const DEFAULT_CONFIG: TenantConfig = {
 export class MemoryStore implements Store {
   recordedAnswers: { segments: Segment[]; citedChunkIds: string[] }[] = []
   recordedEscalations: EscalationReason[] = []
+  recordedUserTurns: string[] = []
 
   constructor(
     private candidates: Candidate[] = [],
@@ -38,6 +39,10 @@ export class MemoryStore implements Store {
 
   async recordEscalation(args: { reason: EscalationReason }): Promise<void> {
     this.recordedEscalations.push(args.reason)
+  }
+
+  async recordUserTurn(args: { text: string }): Promise<void> {
+    this.recordedUserTurns.push(args.text)
   }
 }
 

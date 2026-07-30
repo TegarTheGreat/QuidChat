@@ -153,6 +153,11 @@ describe("createStore", () => {
 
   it("menyimpan jawaban beserta sitasinya, dan menyimpan eskalasi", async () => {
     const store = createStore(db)
+    await store.recordUserTurn({
+      tenantId: toko.tenantId,
+      conversationId: toko.conversationId,
+      text: "garansi berapa lama?",
+    })
     await store.recordAnswer({
       tenantId: toko.tenantId,
       conversationId: toko.conversationId,
@@ -178,7 +183,7 @@ describe("createStore", () => {
       return (Array.isArray(res) ? res : (res as { rows: Record<string, unknown>[] }).rows)[0]!
     })
 
-    expect(counts.messages).toBe(1)
+    expect(counts.messages).toBe(2)
     expect(counts.citations).toBe(1)
     expect(counts.escalations).toBe(1)
   })

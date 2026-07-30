@@ -41,8 +41,18 @@ export async function answer(args: {
   const { store, provider, tenantId, conversationId, history, question } = args
   const config = await store.getTenantConfig(tenantId)
 
+  await store.recordUserTurn({ tenantId, conversationId, text: question })
+
   const refuse = async (reason: EscalationReason): Promise<PipelineResult> => {
     await store.recordEscalation({ tenantId, conversationId, reason })
+    // Teks penolakan ikut masuk transkrip. Tanpa ini, tenant yang membuka percakapan
+    // untuk mencari tahu mengapa bot eskalasi hanya melihat pertanyaan tanpa balasan,
+    // dan widget yang memutar ulang riwayat kehilangan separuh percakapan.
+    await store.recordAnswer({
+      tenantId, conversationId,
+      segments: [{ kind: "general", text: config.refusalText }],
+      citedChunkIds: [],
+    })
     return { kind: "refused", text: config.refusalText, reason }
   }
 
