@@ -9,6 +9,7 @@ import {
   MessagesSquare,
   Settings,
   Wand2,
+  GitBranch,
 } from "lucide-react"
 import type { Tenant } from "../lib/api"
 
@@ -26,7 +27,7 @@ import {
   SidebarMenuItem,
 } from "./ui/sidebar"
 
-export type Section = "setup" | "overview" | "knowledge" | "conversations" | "escalations" | "tenants"
+export type Section = "setup" | "overview" | "knowledge" | "skills" | "conversations" | "escalations" | "tenants"
 
 const NAV_ITEMS: { id: Section; title: string; icon: typeof LayoutDashboard }[] = [
   // Setup comes first: it is the screen that explains why a new installation is not
@@ -35,6 +36,7 @@ const NAV_ITEMS: { id: Section; title: string; icon: typeof LayoutDashboard }[] 
   { id: "overview", title: "Overview", icon: LayoutDashboard },
   { id: "knowledge", title: "Knowledge", icon: BookOpen },
   { id: "conversations", title: "Conversations", icon: MessagesSquare },
+  { id: "skills", title: "Skills & routing", icon: GitBranch },
   { id: "escalations", title: "Escalations", icon: AlertTriangle },
   { id: "tenants", title: "Tenants", icon: Building2 },
 ]

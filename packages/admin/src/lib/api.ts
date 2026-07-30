@@ -148,6 +148,26 @@ export interface SetupStatus {
   snapshot: Record<string, unknown>
 }
 
+export interface Skill {
+  id: string
+  name: string
+  description: string | null
+  systemPrompt: string | null
+  enabled: boolean
+  isFallback: boolean
+  answerMode: string | null
+  sources: { sourceId: string; uri: string }[]
+}
+
+export interface RoutingRule {
+  id: string
+  skillId: string
+  position: number
+  kind: "keyword" | "semantic" | "llm" | "fallback"
+  pattern: string | null
+  enabled: boolean
+}
+
 // ---- Endpoints ------------------------------------------------------------
 
 export const api = {
@@ -190,4 +210,42 @@ export const api = {
    *  when nothing is configured — which is exactly when an owner needs it. */
   getSetup: (tenantSlug: string) =>
     request<SetupStatus>(`/v1/admin/setup${query({ tenantSlug })}`),
+
+  /** Skills, their linked sources and the routing rules together — they are only
+   *  meaningful together, and an owner debugging a misrouted question needs all three. */
+  getSkills: (tenantSlug: string) =>
+    request<{ skills: Skill[]; rules: RoutingRule[] }>(`/v1/admin/skills${query({ tenantSlug })}`),
+
+  createSkill: (body: {
+    tenantSlug: string
+    name: string
+    description?: string
+    systemPrompt?: string
+    isFallback?: boolean
+    answerMode?: string
+  }) => request<{ skill: { id: string; name: string } }>("/v1/admin/skills", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }),
+
+  linkSkillSource: (body: {
+    tenantSlug: string
+    skillId: string
+    sourceId: string
+    linked: boolean
+  }) => request<{ ok: boolean }>("/v1/admin/skills/sources", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }),
+
+  createRoutingRule: (body: {
+    tenantSlug: string
+    skillId: string
+    kind: string
+    pattern?: string
+    position?: number
+  }) => request<{ rule: { id: string; position: number } }>("/v1/admin/routing-rules", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }),
 }

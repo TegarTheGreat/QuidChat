@@ -15,6 +15,7 @@ import { EscalationsPage } from "./pages/escalations"
 import { KnowledgePage } from "./pages/knowledge"
 import { OverviewPage } from "./pages/overview"
 import { SetupPage } from "./pages/setup"
+import { SkillsPage } from "./pages/skills"
 import { TenantsPage } from "./pages/tenants"
 
 const SECTION_TITLES: Record<Section, string> = {
@@ -22,6 +23,7 @@ const SECTION_TITLES: Record<Section, string> = {
   overview: "Overview",
   knowledge: "Knowledge",
   conversations: "Conversations",
+  skills: "Skills & routing",
   escalations: "Escalations",
   tenants: "Tenants",
 }
@@ -75,6 +77,7 @@ function AdminApp() {
           {selectedTenant && section === "conversations" && (
             <ConversationsPage tenantSlug={selectedTenant} />
           )}
+          {selectedTenant && section === "skills" && <SkillsPage tenantSlug={selectedTenant} />}
           {selectedTenant && section === "escalations" && (
             <EscalationsPage tenantSlug={selectedTenant} />
           )}

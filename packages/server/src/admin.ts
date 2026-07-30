@@ -450,24 +450,31 @@ async function listEscalations(
   if (tenantId === null) return
 
   const rows = await withTenant(deps.db, tenantId, async (tx) => {
-    // `escalations` carries no timestamp of its own (see `packages/db/src/schema.ts` —
-    // only `id`, `tenant_id`, `conversation_id`, `reason`, `resolved_at`). Its parent
-    // conversation's `created_at` is the closest available proxy for "newest first":
-    // exact when a conversation has a single escalation, approximate when it has
-    // several. A real `occurred_at` column belongs on `escalations` itself in a future
-    // migration — out of scope here, since `packages/db` is another agent's.
+    // `escalations.occurred_at` exists now, so this orders by the moment the escalation
+    // actually happened rather than by its parent conversation — which was exact for a
+    // conversation with one escalation and wrong for one with several. This list is what
+    // an owner reads to decide what content to write next, and the wrong order sends them
+    // to the oldest gap first.
+    //
+    // The question text is joined in as well: a reason alone says the bot could not
+    // answer, while the question says what to write.
     const result = await tx.execute(sql`
-      SELECT e.id, e.reason, e.resolved_at, e.conversation_id, c.created_at AS conversation_created_at
+      SELECT e.id, e.reason, e.resolved_at, e.occurred_at, e.conversation_id,
+             (
+               SELECT m.content FROM messages m
+               WHERE m.conversation_id = e.conversation_id AND m.role = 'user'
+               ORDER BY m.created_at DESC
+               LIMIT 1
+             ) AS question
       FROM escalations e
-      JOIN conversations c ON c.id = e.conversation_id
-      ORDER BY c.created_at DESC, e.id DESC
+      ORDER BY e.occurred_at DESC, e.id DESC
     `)
     return rowsOf(result)
   })
   sendJson(res, 200, {
     escalations: rows.map((r) => ({
       id: r.id, reason: r.reason, conversationId: r.conversation_id,
-      resolvedAt: r.resolved_at, conversationCreatedAt: r.conversation_created_at,
+      resolvedAt: r.resolved_at, occurredAt: r.occurred_at, question: r.question,
     })),
   })
 }
@@ -546,6 +553,195 @@ async function getSetup(
   sendJson(res, 200, status)
 }
 
+/**
+ * `GET /admin/skills?tenantSlug=…` — skills with their linked sources and routing rules.
+ *
+ * Returned together rather than as three calls, because they are only meaningful together:
+ * a skill with no rule is unreachable, and a rule pointing at a disabled skill is skipped.
+ * An owner debugging why a question went to the wrong place needs to see all three at once.
+ */
+async function getSkills(
+  res: ServerResponse,
+  deps: AdminDeps,
+  params: URLSearchParams,
+): Promise<void> {
+  const tenantId = await resolveTenantOr404(res, deps.db, params.get("tenantSlug"))
+  if (tenantId === null) return
+
+  const payload = await withTenant(deps.db, tenantId, async (tx) => {
+    const skills = rowsOf(
+      await tx.execute(sql`
+        SELECT id, name, description, system_prompt, enabled, is_fallback, answer_mode
+        FROM skills ORDER BY name
+      `),
+    )
+    const rules = rowsOf(
+      await tx.execute(sql`
+        SELECT id, skill_id, position, kind, pattern, enabled
+        FROM routing_rules ORDER BY position
+      `),
+    )
+    const links = rowsOf(
+      await tx.execute(sql`
+        SELECT ss.skill_id, ss.source_id, ks.uri
+        FROM skill_sources ss JOIN knowledge_sources ks ON ks.id = ss.source_id
+      `),
+    )
+    return { skills, rules, links }
+  })
+
+  sendJson(res, 200, {
+    skills: payload.skills.map((r) => ({
+      id: r.id, name: r.name, description: r.description,
+      systemPrompt: r.system_prompt, enabled: r.enabled,
+      isFallback: r.is_fallback, answerMode: r.answer_mode,
+      sources: payload.links
+        .filter((l) => l.skill_id === r.id)
+        .map((l) => ({ sourceId: l.source_id, uri: l.uri })),
+    })),
+    rules: payload.rules.map((r) => ({
+      id: r.id, skillId: r.skill_id, position: Number(r.position),
+      kind: r.kind, pattern: r.pattern, enabled: r.enabled,
+    })),
+  })
+}
+
+/** `POST /admin/skills` — create a skill. */
+async function createSkill(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const body = {
+    tenantSlug: typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
+    name: typeof raw.name === "string" ? raw.name : "",
+    description: typeof raw.description === "string" ? raw.description : null,
+    systemPrompt: typeof raw.systemPrompt === "string" ? raw.systemPrompt : null,
+    isFallback: raw.isFallback === true,
+    answerMode: typeof raw.answerMode === "string" ? raw.answerMode : null,
+  }
+
+  const tenantId = await resolveTenantOr404(res, deps.db, body.tenantSlug)
+  if (tenantId === null) return
+  if (body.name.trim() === "") {
+    sendJson(res, 400, { error: "name is required" })
+    return
+  }
+  // `answer_mode` is constrained in SQL, so an invalid value would surface as a database
+  // error with a message meant for an operator. Rejecting it here gives the panel
+  // something it can show a user.
+  if (body.answerMode && !["static", "thrifty", "full"].includes(body.answerMode)) {
+    sendJson(res, 400, { error: "answerMode must be static, thrifty or full" })
+    return
+  }
+
+  const created = await withTenant(deps.db, tenantId, async (tx) => {
+    const result = await tx.execute(sql`
+      INSERT INTO skills (tenant_id, name, description, system_prompt, is_fallback, answer_mode)
+      VALUES (
+        ${tenantId}, ${body.name}, ${body.description},
+        ${body.systemPrompt}, ${body.isFallback}, ${body.answerMode}
+      )
+      RETURNING id, name
+    `)
+    return rowsOf(result)[0]
+  })
+  sendJson(res, 201, { skill: created })
+}
+
+/** `POST /admin/skills/sources` — link or unlink a source. */
+async function linkSkillSource(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const body = {
+    tenantSlug: typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
+    skillId: typeof raw.skillId === "string" ? raw.skillId : "",
+    sourceId: typeof raw.sourceId === "string" ? raw.sourceId : "",
+    linked: raw.linked !== false,
+  }
+
+  const tenantId = await resolveTenantOr404(res, deps.db, body.tenantSlug)
+  if (tenantId === null) return
+  if (!body.skillId || !body.sourceId) {
+    sendJson(res, 400, { error: "skillId and sourceId are required" })
+    return
+  }
+
+  await withTenant(deps.db, tenantId, async (tx) => {
+    if (!body.linked) {
+      await tx.execute(sql`
+        DELETE FROM skill_sources
+        WHERE skill_id = ${body.skillId} AND source_id = ${body.sourceId}
+      `)
+      return
+    }
+    // Idempotent: an owner clicking twice should not get a primary-key error.
+    await tx.execute(sql`
+      INSERT INTO skill_sources (tenant_id, skill_id, source_id)
+      VALUES (${tenantId}, ${body.skillId}, ${body.sourceId})
+      ON CONFLICT (skill_id, source_id) DO NOTHING
+    `)
+  })
+  sendJson(res, 200, { ok: true })
+}
+
+/** `POST /admin/routing-rules` — create a routing rule. */
+async function createRoutingRule(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const body = {
+    tenantSlug: typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
+    skillId: typeof raw.skillId === "string" ? raw.skillId : "",
+    position: typeof raw.position === "number" ? raw.position : null,
+    kind: typeof raw.kind === "string" ? raw.kind : "",
+    pattern: typeof raw.pattern === "string" ? raw.pattern : null,
+  }
+
+  const tenantId = await resolveTenantOr404(res, deps.db, body.tenantSlug)
+  if (tenantId === null) return
+  if (!body.skillId) {
+    sendJson(res, 400, { error: "skillId is required" })
+    return
+  }
+  if (!body.kind || !["keyword", "semantic", "llm", "fallback"].includes(body.kind)) {
+    sendJson(res, 400, { error: "kind must be keyword, semantic, llm or fallback" })
+    return
+  }
+  // A keyword rule with no pattern matches nothing, so it would sit in the list looking
+  // configured while doing nothing at all.
+  if (body.kind === "keyword" && (!body.pattern || body.pattern.trim() === "")) {
+    sendJson(res, 400, { error: "a keyword rule needs a pattern" })
+    return
+  }
+
+  const created = await withTenant(deps.db, tenantId, async (tx) => {
+    // Appended at the end by default. Position decides evaluation order and first match
+    // wins, so silently inserting at the front would change how existing rules behave.
+    const next = body.position ?? Number(
+      rowsOf(await tx.execute(sql`
+        SELECT coalesce(max(position), 0) + 1 AS next FROM routing_rules
+      `))[0]!.next,
+    )
+    const result = await tx.execute(sql`
+      INSERT INTO routing_rules (tenant_id, skill_id, position, kind, pattern)
+      VALUES (${tenantId}, ${body.skillId}, ${next}, ${body.kind}, ${body.pattern})
+      RETURNING id, position
+    `)
+    return rowsOf(result)[0]
+  })
+  sendJson(res, 201, { rule: created })
+}
+
 export async function handleAdminRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -572,6 +768,10 @@ export async function handleAdminRequest(
   if (method === "GET" && sub === "/escalations") return listEscalations(res, deps, searchParams)
   if (method === "GET" && sub === "/usage") return getUsage(res, deps, searchParams)
   if (method === "GET" && sub === "/setup") return getSetup(res, deps, searchParams)
+  if (method === "GET" && sub === "/skills") return getSkills(res, deps, searchParams)
+  if (method === "POST" && sub === "/skills") return createSkill(req, res, deps)
+  if (method === "POST" && sub === "/skills/sources") return linkSkillSource(req, res, deps)
+  if (method === "POST" && sub === "/routing-rules") return createRoutingRule(req, res, deps)
 
   sendJson(res, 404, { error: "not found" })
 }
