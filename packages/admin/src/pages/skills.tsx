@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
 import { MutationError } from "../components/mutation-error"
+import { RoutingGraph } from "../components/routing-graph"
 import {
   Select,
   SelectContent,
@@ -129,6 +130,18 @@ export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
 
       {data.status === "success" && (
         <div className="space-y-4">
+          {/* First, because the question an owner arrives with is "what happens to a message?",
+              and the answer was previously only derivable by reading a position column across two
+              separate lists. */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Alur pesan masuk</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <RoutingGraph skills={data.data.skills} rules={data.data.rules} />
+            </CardContent>
+          </Card>
+
           {data.data.skills.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No skills yet. Without any, every question is answered from all of this
