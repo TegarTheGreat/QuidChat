@@ -125,11 +125,14 @@ describe("sendMessage", () => {
     await expect(sendMessage(cfg, { message: "Hi" })).rejects.toThrow(/tenant/i)
   })
 
-  it("turns a 503 into a neutral 'temporarily unavailable' error, never the server's own text", async () => {
+  it("turns a 503 into a neutral message that does not name the vendor or the server's own text", async () => {
     stubFetch(() => jsonResponse(503, { error: "connection pool exhausted at 10.0.4.2" }))
 
     const rejection = expect(sendMessage(cfg, { message: "Hi" })).rejects
     await rejection.toThrow(/temporarily unavailable/i)
+    // Read by a customer of a shop who has never heard of QuidChat: a vendor's name appearing
+    // mid-conversation reads as the shop's own site being broken by something foreign to it.
+    await rejection.not.toThrow(/QuidChat/)
     await rejection.not.toThrow(/connection pool/i)
   })
 

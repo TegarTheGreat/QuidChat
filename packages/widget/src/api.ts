@@ -54,7 +54,16 @@ export type SendMessageInput = {
   message: string
 }
 
-const UNAVAILABLE_MESSAGE = "QuidChat is temporarily unavailable. Please try again in a moment."
+/**
+ * Shown to a visitor on the business's own site, so it does not name QuidChat.
+ *
+ * The other messages in this file are aimed at whoever pasted the script tag — an unlisted
+ * origin, an unknown tenant key — and naming the product there is exactly what makes them
+ * actionable. This one is different: it is read by a customer of a shop who has never heard of
+ * QuidChat and does not need to, and a vendor's name appearing mid-conversation reads as the
+ * shop's site being broken by something foreign to it.
+ */
+const UNAVAILABLE_MESSAGE = "The assistant is temporarily unavailable. Please try again in a moment."
 
 /**
  * Sends one visitor message and returns the result.
