@@ -1,0 +1,222 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+import { answer, type Provider, type Store } from "@quidchat/core"
+import { withTenant, type QuidDb } from "@quidchat/db"
+import { sql } from "drizzle-orm"
+import { lookupTenantBySlug } from "./tenant-lookup.js"
+
+/** Normalizes the `execute()` result, whose shape differs between drivers — see the
+ *  identical helper in `tenant-lookup.ts` and `@quidchat/db`'s `store.ts`. */
+function rowsOf(res: unknown): Record<string, unknown>[] {
+  return Array.isArray(res)
+    ? (res as Record<string, unknown>[])
+    : ((res as { rows?: Record<string, unknown>[] }).rows ?? [])
+}
+
+/**
+ * Applied while READING the body, not after it has already been buffered in full —
+ * an unbounded read is a denial-of-service that requires no attacker skill at all.
+ */
+const MAX_BODY_BYTES = 16 * 1024
+const MAX_MESSAGE_LENGTH = 4_000
+
+/** Shape of the JSON body a visitor's widget sends. */
+export type ChatRequest = {
+  /** Public site slug, shipped in the page. Not a secret. */
+  tenantSlug: string
+  /** Absent on the first message of a conversation. */
+  conversationId?: string
+  message: string
+}
+
+export type ChatDeps = {
+  db: QuidDb
+  store: Store
+  provider: Provider
+  logError: (message: string, cause: unknown) => void
+}
+
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { "content-type": "application/json; charset=utf-8" })
+  res.end(JSON.stringify(body))
+}
+
+/**
+ * Reads the body up to `MAX_BODY_BYTES`. Resolves `null` the instant the bound is
+ * crossed and stops consuming the socket right there — the bound has to act while
+ * the bytes are still arriving, since waiting for `end` to check the total means the
+ * unbounded buffer already happened.
+ */
+async function readBoundedBody(req: IncomingMessage): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    let size = 0
+    let tooLarge = false
+    const chunks: Buffer[] = []
+    req.on("data", (chunk: Buffer) => {
+      if (tooLarge) return
+      size += chunk.length
+      if (size > MAX_BODY_BYTES) {
+        tooLarge = true
+        req.destroy()
+        resolve(null)
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on("end", () => {
+      if (!tooLarge) resolve(Buffer.concat(chunks).toString("utf8"))
+    })
+    req.on("error", reject)
+  })
+}
+
+function parseChatRequest(raw: string): ChatRequest | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== "object" || parsed === null) return null
+  const body = parsed as Record<string, unknown>
+
+  if (typeof body.tenantSlug !== "string" || body.tenantSlug.length === 0) return null
+  if (
+    typeof body.message !== "string" ||
+    body.message.length === 0 ||
+    body.message.length > MAX_MESSAGE_LENGTH
+  ) {
+    return null
+  }
+  if (body.conversationId !== undefined && typeof body.conversationId !== "string") return null
+
+  return {
+    tenantSlug: body.tenantSlug,
+    message: body.message,
+    ...(typeof body.conversationId === "string" ? { conversationId: body.conversationId } : {}),
+  }
+}
+
+/** `true` only when `origin` is present in a non-empty allowlist. Both an absent
+ *  header and an empty allowlist must fail closed — see `lookupTenantBySlug`. */
+function originAllowed(origin: string | undefined, allowedOrigins: string[]): boolean {
+  return origin !== undefined && allowedOrigins.length > 0 && allowedOrigins.includes(origin)
+}
+
+async function ensureConversation(
+  db: QuidDb,
+  tenantId: string,
+  visitorId: string,
+  conversationId: string | undefined,
+): Promise<string> {
+  if (conversationId) return conversationId
+  return withTenant(db, tenantId, async (tx) => {
+    const res = await tx.execute(sql`
+      INSERT INTO conversations (tenant_id, channel, visitor_id)
+      VALUES (${tenantId}, 'web', ${visitorId})
+      RETURNING id
+    `)
+    return rowsOf(res)[0]!.id as string
+  })
+}
+
+/** The stored transcript for a conversation, oldest first, so a follow-up question
+ *  carries context from what came before it. */
+async function loadHistory(
+  db: QuidDb,
+  tenantId: string,
+  conversationId: string,
+): Promise<{ role: "user" | "assistant"; content: string }[]> {
+  return withTenant(db, tenantId, async (tx) => {
+    const res = await tx.execute(sql`
+      SELECT role, content
+      FROM messages
+      WHERE conversation_id = ${conversationId}
+      ORDER BY created_at ASC
+    `)
+    return rowsOf(res).map((r) => ({
+      role: r.role as "user" | "assistant",
+      content: r.content as string,
+    }))
+  })
+}
+
+/**
+ * Handles one visitor question over HTTP. Order of operations, and each step exists
+ * for a reason:
+ *
+ * 1. Method and content type — anything but `POST application/json` is rejected before
+ *    a single byte of the body is read.
+ * 2. Parse and bound the body — a missing/non-string/oversized `message` is `400`.
+ * 3. `lookupTenantBySlug` — an unknown slug is `404`.
+ * 4. The origin check, AFTER the lookup, because the allowlist comes from it. This is
+ *    the only thing standing between a business's assistant and anyone who copies its
+ *    public slug — see `originAllowed`.
+ * 5. Create the conversation if `conversationId` is absent, inside `withTenant`.
+ * 6. `answer()` with the stored transcript as history.
+ * 7. Respond with the `PipelineResult` as JSON, plus the `conversationId` so the widget
+ *    can send it back on the next turn.
+ */
+export async function handleChat(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: ChatDeps,
+): Promise<void> {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "method not allowed" })
+    return
+  }
+
+  const contentType = req.headers["content-type"] ?? ""
+  if (!contentType.toLowerCase().includes("application/json")) {
+    sendJson(res, 400, { error: "expected application/json" })
+    return
+  }
+
+  const raw = await readBoundedBody(req)
+  if (raw === null) {
+    sendJson(res, 400, { error: "request body too large" })
+    return
+  }
+
+  const chatRequest = parseChatRequest(raw)
+  if (!chatRequest) {
+    sendJson(res, 400, { error: "invalid request body" })
+    return
+  }
+
+  const identity = await lookupTenantBySlug(deps.db, chatRequest.tenantSlug)
+  if (!identity) {
+    sendJson(res, 404, { error: "unknown tenant" })
+    return
+  }
+
+  const origin = req.headers.origin
+  if (!originAllowed(origin, identity.allowedOrigins)) {
+    sendJson(res, 403, { error: "origin not allowed" })
+    return
+  }
+
+  try {
+    const visitorId = req.socket.remoteAddress ?? "unknown"
+    const conversationId = await ensureConversation(
+      deps.db, identity.tenantId, visitorId, chatRequest.conversationId,
+    )
+    const history = await loadHistory(deps.db, identity.tenantId, conversationId)
+    const result = await answer({
+      store: deps.store,
+      provider: deps.provider,
+      tenantId: identity.tenantId,
+      conversationId,
+      history,
+      question: chatRequest.message,
+    })
+    sendJson(res, 200, { conversationId, ...result })
+  } catch (e) {
+    // A STORE failure, not a provider failure — `answer()` already caught and
+    // recorded provider failures as a refusal. This is a bug or an outage, so it's
+    // logged operationally rather than recorded as an `EscalationReason`, and the
+    // visitor gets a generic 503 rather than a leaked stack trace.
+    deps.logError("chat handler failed", e)
+    sendJson(res, 503, { error: "temporarily unavailable" })
+  }
+}

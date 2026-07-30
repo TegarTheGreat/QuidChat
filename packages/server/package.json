@@ -1,0 +1,17 @@
+{
+  "name": "@quidchat/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.22.3" },
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "build": "tsdown src/index.ts --dts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@quidchat/core": "workspace:*",
+    "@quidchat/db": "workspace:*",
+    "drizzle-orm": "0.45.2"
+  }
+}
