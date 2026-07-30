@@ -66,10 +66,17 @@ function query(params: Record<string, string | undefined>): string {
 
 // ---- Domain types --------------------------------------------------------
 
+/**
+ * A row from `GET /admin/tenants`.
+ *
+ * No `origins`: the list route does not send them, and declaring a field the server never
+ * sends is how a screen ends up rendering `undefined`. Allowed origins live in settings, which
+ * is where the panel edits them.
+ */
 export interface Tenant {
+  id: string
   slug: string
   name: string
-  origins: string[]
 }
 
 export interface Settings {
@@ -241,8 +248,10 @@ export const api = {
   listTenants: () =>
     request<{ tenants: Tenant[] }>("/v1/admin/tenants").then((r) => r.tenants),
 
+  /** `created` distinguishes a new tenant from an updated one — the route is an upsert, so a
+   *  caller that wants to say "created" rather than "saved" needs to be told which happened. */
   createTenant: (body: { slug: string; name: string; origins: string[] }) =>
-    request<Tenant>("/v1/admin/tenants", {
+    request<Tenant & { created: boolean }>("/v1/admin/tenants", {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -270,8 +279,16 @@ export const api = {
       { method: "POST", body: JSON.stringify(body) },
     ),
 
+  /** Reports what indexing produced, not a `Source` row: the count is the useful part, and a
+   *  source that failed to embed comes back with `status: "error"` and the reason. */
   createTextSource: (body: { tenantSlug: string; title: string; text: string }) =>
-    request<Source>("/v1/admin/sources/text", {
+    request<{
+      sourceId: string
+      documentId?: string
+      chunkCount?: number
+      status: string
+      error?: string
+    }>("/v1/admin/sources/text", {
       method: "POST",
       body: JSON.stringify(body),
     }),

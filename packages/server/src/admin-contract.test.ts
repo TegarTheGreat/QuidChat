@@ -73,6 +73,11 @@ async function client() {
 describe("the admin panel's client against the admin API", () => {
   it("gets arrays from every list endpoint", async () => {
     const api = await client()
+    // A tenant row carries id, slug and name. It used to declare `origins`, which this route has
+    // never sent — allowed origins live in settings.
+    const tenants = await api.listTenants()
+    expect(tenants[0]).toMatchObject({ slug: "contract", name: "Contract" })
+    expect(typeof tenants[0]!.id).toBe("string")
 
     // Each of these was typed as an array and answered with a wrapper object. `Array.isArray`
     // is the assertion that failed to exist: the pages call .map and .find on these.
@@ -84,11 +89,15 @@ describe("the admin panel's client against the admin API", () => {
 
   it("round-trips a text source through the fields the page reads", async () => {
     const api = await client()
-    await api.createTextSource({
+    const created = await api.createTextSource({
       tenantSlug: "contract",
       title: "Store Policy",
       text: "Returns are accepted within seven days of purchase.",
     })
+    // The create route reports what indexing produced rather than a source row. It was typed as
+    // a `Source` — a shape it has never returned.
+    expect(created.sourceId).toBeTruthy()
+    expect(created.status).toBe("ready")
 
     const sources = await api.listSources("contract")
     const source = sources.find((s) => s.title === "Store Policy")
