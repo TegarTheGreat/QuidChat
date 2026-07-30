@@ -30,7 +30,10 @@ Sama dengan ronde sebelumnya, dan tetap mengikat:
 - ESM only; import sumber TypeScript memakai ekstensi `.js`.
 - **RLS satu-satunya mekanisme isolasi tenant.** Tidak ada `WHERE tenant_id = ...` pada pembacaan ber-scope.
 - Setiap `execute()` lewat `rowsOf()`.
-- Komentar dan copy pengguna berbahasa Indonesia; identifier bahasa Inggris.
+- **Komentar kode dan commit message berbahasa INGGRIS.** Identifier juga Inggris.
+  Yang tetap Indonesia HANYA copy produk: system prompt, teks penolakan,
+  `high_risk_topics`, dan data fixture — itu isi yang dibaca pelanggan bisnis
+  Indonesia, bukan kode.
 - Commit tanpa trailer atribusi apa pun. `git add` dengan path eksplisit, **jangan** `git add -A`.
 - `pnpm build` masuk verifikasi setiap task.
 - Setiap perbaikan yang mengklaim memaku sebuah properti **wajib** dibuktikan dengan merusak kodenya dan menyaksikan test yang bersangkutan gagal. Dua ronde sebelumnya menemukan lima cacat dengan cara ini dan tidak dengan cara lain.

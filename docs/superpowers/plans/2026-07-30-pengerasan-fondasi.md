@@ -29,7 +29,10 @@ Sama dengan Rencana 1, dan tetap mengikat:
 - Postgres satu-satunya penyimpanan, satu set skema & migrasi untuk semua tier.
 - **RLS adalah SATU-SATUNYA mekanisme isolasi tenant.** Kode aplikasi tidak boleh menambah `WHERE tenant_id = ...` pada pembacaan ber-scope.
 - `packages/core` library murni: `dependencies` kosong, tanpa akses env, tanpa jaringan.
-- Semua komentar dan copy untuk pengguna berbahasa Indonesia. Identifier bahasa Inggris.
+- **Komentar kode dan commit message berbahasa INGGRIS.** Identifier juga Inggris.
+  Yang tetap Indonesia HANYA copy produk: system prompt, teks penolakan,
+  `high_risk_topics`, dan data fixture — itu isi yang dibaca pelanggan bisnis
+  Indonesia, bukan kode.
 - Commit tanpa trailer atribusi apa pun.
 - Setiap task hanya mendeklarasikan apa yang ia buat.
 - **`pnpm build` masuk verifikasi setiap task.**

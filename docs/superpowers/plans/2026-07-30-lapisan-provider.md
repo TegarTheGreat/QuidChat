@@ -24,7 +24,10 @@ Tiga hal, dua di antaranya sudah tercatat sebagai utang:
 - **Tidak ada dependency runtime baru di seluruh repo.** `fetch` sudah ada di Node 22.
 - **Test tidak boleh menyentuh jaringan.** Semua adapter diuji dengan `fetch` yang di-stub.
 - Setiap `execute()` lewat `rowsOf()` (berlaku bila menyentuh `packages/db`).
-- **Komentar dan copy pengguna berbahasa Indonesia; identifier bahasa INGGRIS.**
+- **Komentar kode dan commit message berbahasa INGGRIS.** Identifier juga Inggris.
+  Yang tetap Indonesia HANYA copy produk: system prompt, teks penolakan,
+  `high_risk_topics`, dan data fixture — itu isi yang dibaca pelanggan bisnis
+  Indonesia, bukan kode.
   Kode produksi di `packages/core` dan `packages/db` sudah begitu: `rowsOf`,
   `createStore`, `getTenantConfig`, `withTenant`, `applyMigrations`. Cuplikan kode
   di rencana ini sempat memakai identifier Indonesia — itu keliru dan sudah

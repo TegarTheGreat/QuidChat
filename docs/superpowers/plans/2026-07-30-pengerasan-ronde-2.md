@@ -26,7 +26,10 @@ Sama dengan rencana sebelumnya, dan tetap mengikat:
 - **RLS satu-satunya mekanisme isolasi tenant.** Tidak ada `WHERE tenant_id = ...` pada pembacaan ber-scope.
 - `packages/core` library murni: `dependencies` kosong, tanpa env, tanpa jaringan.
 - Setiap `execute()` lewat `rowsOf()`.
-- Komentar dan copy pengguna berbahasa Indonesia; identifier bahasa Inggris.
+- **Komentar kode dan commit message berbahasa INGGRIS.** Identifier juga Inggris.
+  Yang tetap Indonesia HANYA copy produk: system prompt, teks penolakan,
+  `high_risk_topics`, dan data fixture — itu isi yang dibaca pelanggan bisnis
+  Indonesia, bukan kode.
 - Commit tanpa trailer atribusi apa pun. `git add` dengan path eksplisit, **jangan** `git add -A`.
 - `pnpm build` masuk verifikasi setiap task.
 
