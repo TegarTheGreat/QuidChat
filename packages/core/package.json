@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "engines": { "node": ">=22.22.3" },
-  "exports": { ".": "./src/index.ts", "./testing": "./src/testing/fakes.ts" },
+  "exports": { ".": "./src/index.ts" },
   "scripts": {
-    "build": "tsdown src/index.ts src/testing/fakes.ts --dts",
+    "build": "tsdown src/index.ts --dts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {}
