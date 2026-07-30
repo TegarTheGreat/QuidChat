@@ -36,6 +36,8 @@ describe("sanitizeTheme", () => {
       position: DEFAULT_THEME.position,
       title: "Acme Support",
       locale: "en",
+      greeting: "",
+      starters: [],
     })
   })
 
@@ -68,6 +70,8 @@ describe("fetchWidgetTheme", () => {
       position: "left",
       title: "Acme",
       locale: "en",
+      greeting: "",
+      starters: [],
     })
   })
 })
@@ -81,5 +85,27 @@ describe("locale", () => {
     for (const bad of ["fr", "", 7, null, undefined, {}]) {
       expect(sanitizeTheme({ locale: bad }).locale, String(bad)).toBe("en")
     }
+  })
+})
+
+describe("opening questions", () => {
+  it("keeps the ones a business supplied, bounded", () => {
+    // Past four, a panel meant to remove hesitation becomes a menu to read.
+    const many = ["a", "b", "c", "d", "e", "f"]
+    expect(sanitizeTheme({ starters: many }).starters).toEqual(["a", "b", "c", "d"])
+  })
+
+  it("drops anything that is not a question a visitor could tap", () => {
+    // This value is rendered as text into a stranger's page. "The server already checked" is not
+    // a property this module can rely on — it is reachable by anything that can answer the
+    // config request.
+    expect(sanitizeTheme({ starters: ["ok", "", "   ", 7, null, {}] }).starters).toEqual(["ok"])
+    expect(sanitizeTheme({ starters: "not an array" }).starters).toEqual([])
+    expect(sanitizeTheme({}).starters).toEqual([])
+  })
+
+  it("takes a greeting only when it is text", () => {
+    expect(sanitizeTheme({ greeting: "Halo!" }).greeting).toBe("Halo!")
+    expect(sanitizeTheme({ greeting: 12 }).greeting).toBe("")
   })
 })

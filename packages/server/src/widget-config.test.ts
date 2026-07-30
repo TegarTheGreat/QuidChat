@@ -1,6 +1,6 @@
 import { createServer as createHttpServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { tenants, tenantSettings, type QuidDb } from "@quidchat/db"
+import { cannedAnswers, tenants, tenantSettings, type QuidDb } from "@quidchat/db"
 import { freshPglite } from "@quidchat/db/testing"
 import { beforeAll, describe, expect, it } from "vitest"
 import { handleWidgetConfig } from "./widget-config.js"
@@ -34,9 +34,13 @@ async function seedTenant(
   db: QuidDb,
   slug: string,
   settings: Partial<typeof tenantSettings.$inferInsert> = {},
+  canned: { question: string; answer: string; status: "draft" | "approved" }[] = [],
 ): Promise<void> {
   const [tenant] = await db.insert(tenants).values({ slug, name: slug }).returning()
   await db.insert(tenantSettings).values({ tenantId: tenant!.id, ...settings })
+  for (const row of canned) {
+    await db.insert(cannedAnswers).values({ tenantId: tenant!.id, ...row })
+  }
 }
 
 // One shared PGlite instance for every test below, each using its own uniquely-slugged
@@ -112,6 +116,72 @@ describe("GET /widget-config", () => {
       expect(body).not.toMatch(/renewal negotiation|owner@example\.com/)
     } finally {
       await close()
+    }
+  })
+})
+
+describe("opening questions", () => {
+  it("offers the business's approved canned questions when nothing is configured", async () => {
+    // Those already are the questions this business knows it gets, so a shop that has done that
+    // setup gets openers with no further configuration — and tapping one cannot lead to a
+    // refusal, because an approved answer exists for it.
+    await seedTenant(db, "starters-default", {}, [
+      { question: "Berapa lama garansinya?", answer: "12 bulan.", status: "approved" },
+      { question: "Bisa retur?", answer: "7 hari.", status: "approved" },
+    ])
+    const server = await startServer()
+    try {
+      const res = await fetch(`${server.url}/widget-config?tenantSlug=starters-default`)
+      const body = (await res.json()) as { starters?: string[] }
+      expect(body.starters).toEqual(["Berapa lama garansinya?", "Bisa retur?"])
+    } finally {
+      await server.close()
+    }
+  })
+
+  it("never offers a draft question", async () => {
+    // A draft is text nobody has agreed to show a customer. On the opening screen it would be
+    // shown to every one of them.
+    await seedTenant(db, "starters-draft", {}, [
+      { question: "Approved one", answer: "a", status: "approved" },
+      { question: "Unreviewed draft", answer: "b", status: "draft" },
+    ])
+    const server = await startServer()
+    try {
+      const res = await fetch(`${server.url}/widget-config?tenantSlug=starters-draft`)
+      const body = (await res.json()) as { starters?: string[] }
+      expect(body.starters).toEqual(["Approved one"])
+    } finally {
+      await server.close()
+    }
+  })
+
+  it("lets an explicit list win over the canned defaults", async () => {
+    await seedTenant(
+      db,
+      "starters-explicit",
+      { widgetTheme: { starters: ["Jam buka?", "Alamat toko?"] } },
+      [{ question: "Ignored", answer: "x", status: "approved" }],
+    )
+    const server = await startServer()
+    try {
+      const res = await fetch(`${server.url}/widget-config?tenantSlug=starters-explicit`)
+      const body = (await res.json()) as { starters?: string[] }
+      expect(body.starters).toEqual(["Jam buka?", "Alamat toko?"])
+    } finally {
+      await server.close()
+    }
+  })
+
+  it("says nothing at all when a tenant has neither", async () => {
+    await seedTenant(db, "starters-none")
+    const server = await startServer()
+    try {
+      const res = await fetch(`${server.url}/widget-config?tenantSlug=starters-none`)
+      const body = (await res.json()) as Record<string, unknown>
+      expect(body.starters).toBeUndefined()
+    } finally {
+      await server.close()
     }
   })
 })

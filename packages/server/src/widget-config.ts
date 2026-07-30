@@ -22,7 +22,11 @@ function rowsOf(res: unknown): Record<string, unknown>[] {
  * at write time, so this allowlist, not the column's own contents, is what keeps a
  * public route from ever forwarding whatever else ends up in that blob.
  */
-const THEME_KEYS = ["primaryColor", "position", "title", "locale"] as const
+const THEME_KEYS = ["primaryColor", "position", "title", "locale", "greeting"] as const
+
+/** How many opening questions a visitor is offered. Past four, a panel that was meant to
+ *  remove hesitation becomes a menu to read. */
+const MAX_STARTERS = 4
 
 /**
  * Serves the tenant's widget theme as JSON, e.g. `GET /widget-config?tenantSlug=acme`
@@ -56,7 +60,7 @@ export async function handleWidgetConfig(
     return
   }
 
-  const theme = await withTenant(db, identity.tenantId, async (tx) => {
+  const { theme, cannedQuestions } = await withTenant(db, identity.tenantId, async (tx) => {
     const result = await tx.execute(sql`SELECT widget_theme FROM tenant_settings`)
     const rows = rowsOf(result)
     if (rows.length === 0) throw new Error(`tenant_settings not found for ${identity.tenantId}`)
@@ -66,14 +70,43 @@ export async function handleWidgetConfig(
     if (rows.length > 1) {
       throw new Error(`tenant isolation failure: tenant_settings returned ${rows.length} rows`)
     }
-    return (rows[0]!.widget_theme ?? {}) as Record<string, unknown>
+    // Only APPROVED ones. A draft is text a person has not yet agreed to show a customer, and
+    // putting it on the opening screen would show it to every one of them.
+    const canned = await tx.execute(
+      sql`SELECT question FROM canned_answers WHERE status = 'approved'
+          ORDER BY created_at ASC LIMIT ${MAX_STARTERS}`,
+    )
+    return {
+      theme: (rows[0]!.widget_theme ?? {}) as Record<string, unknown>,
+      cannedQuestions: rowsOf(canned)
+        .map((r) => r.question)
+        .filter((q): q is string => typeof q === "string" && q.trim() !== ""),
+    }
   })
 
-  const body: Record<string, string> = {}
+  const body: Record<string, unknown> = {}
   for (const key of THEME_KEYS) {
     const value = theme[key]
     if (typeof value === "string") body[key] = value
   }
+
+  /*
+   * Opening questions.
+   *
+   * An empty chat box is the reason widgets go unused: a visitor who has nothing to react to has
+   * to invent a question and guess whether this thing can answer it, and most people close it
+   * instead. Showing what it can answer removes both problems at once.
+   *
+   * The default comes from the business's APPROVED canned answers, because those already are the
+   * questions this business knows it gets — a shop that has done that setup gets openers with no
+   * further configuration, and they are guaranteed answerable. An owner who wants different ones
+   * sets `starters` explicitly and that wins.
+   */
+  const explicit = theme.starters
+  const starters = Array.isArray(explicit)
+    ? explicit.filter((s): s is string => typeof s === "string" && s.trim() !== "").slice(0, MAX_STARTERS)
+    : cannedQuestions
+  if (starters.length > 0) body.starters = starters
 
   res.writeHead(200, {
     "content-type": "application/json; charset=utf-8",

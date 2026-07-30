@@ -284,6 +284,34 @@ function buildStyle(theme: WidgetTheme): string {
   .citation-mark { width: 12px; height: 12px; flex: none; }
   .citation-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+  /* The opening screen. Quiet on purpose — it is scaffolding a visitor should stop noticing the
+     moment they have typed something, not a second header competing with the real one. */
+  .opener { margin: auto 0; padding: 4px 2px; }
+  .opener-greeting {
+    margin: 0 0 14px;
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--qc-muted);
+  }
+  .starters { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+  /* Left-aligned and full-width-capable rather than centred pills: these are sentences, and a
+     sentence that wraps in the middle of a centred pill is harder to scan than to read. */
+  .starter {
+    max-width: 100%;
+    text-align: left;
+    padding: 9px 13px;
+    background: var(--qc-surface);
+    border: 1px solid var(--qc-line);
+    border-radius: 12px;
+    color: var(--qc-ink);
+    font-size: 13.5px;
+    line-height: 1.45;
+    cursor: pointer;
+    transition: border-color 120ms ease, transform 120ms ease;
+  }
+  .starter:hover { border-color: var(--qc-accent); transform: translateY(-1px); }
+  .starter:active { transform: translateY(0); }
+
   .typing { display: inline-flex; align-items: center; gap: 9px; }
   .typing-dots { display: inline-flex; gap: 3px; }
   .typing-dots i {
@@ -345,7 +373,7 @@ function buildStyle(theme: WidgetTheme): string {
   @media (prefers-reduced-motion: reduce) {
     .panel, .message { animation: none; }
     .typing-dots i { animation: none; opacity: 0.6; }
-    .launcher, .send, .close, textarea { transition: none; }
+    .launcher, .send, .close, textarea, .starter { transition: none; }
   }
 `
 }
@@ -487,6 +515,42 @@ export function mountWidget(
   messages.setAttribute("role", "log")
   messages.setAttribute("aria-live", "polite")
 
+  /*
+   * The opening screen.
+   *
+   * A blank message log is the reason widgets go unused: a visitor has to invent a question and
+   * guess whether this thing can answer it, and most people close it instead. The greeting says
+   * who is answering; the chips say what it can answer, and are questions the business itself
+   * supplied, so tapping one cannot lead to a refusal.
+   *
+   * It is removed the moment a conversation starts rather than hidden, because a returning
+   * visitor scrolling up should see their conversation, not an invitation to begin one.
+   */
+  const opener = doc.createElement("div")
+  opener.className = "opener"
+  if (theme.greeting.trim() !== "") {
+    const greeting = doc.createElement("p")
+    greeting.className = "opener-greeting"
+    greeting.textContent = theme.greeting
+    opener.appendChild(greeting)
+  }
+  if (theme.starters.length > 0) {
+    const list = doc.createElement("div")
+    list.className = "starters"
+    for (const question of theme.starters) {
+      const chip = doc.createElement("button")
+      chip.type = "button"
+      chip.className = "starter"
+      chip.textContent = question
+      chip.addEventListener("click", () => {
+        input.value = question
+        void submit()
+      })
+      list.appendChild(chip)
+    }
+    opener.appendChild(list)
+  }
+
   const composer = doc.createElement("form")
   composer.className = "composer"
   const input = doc.createElement("textarea")
@@ -503,6 +567,7 @@ export function mountWidget(
   sendButton.innerHTML = SEND_MARK
   composer.append(input, sendButton)
 
+  if (opener.childElementCount > 0) messages.appendChild(opener)
   panel.append(header, messages, composer)
   shadow.append(launcher, panel)
 
@@ -613,6 +678,9 @@ export function mountWidget(
     // The visitor's own message appears before the round trip starts, not after —
     // waiting for the server to echo it back makes the widget feel broken on a
     // slow connection.
+    // Gone once a conversation exists: a returning visitor scrolling up should find what they
+    // asked, not an invitation to start.
+    opener.remove()
     appendVisitorMessage(text)
     input.value = ""
     setPending(true)

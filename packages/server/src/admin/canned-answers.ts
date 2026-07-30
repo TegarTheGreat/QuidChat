@@ -110,15 +110,26 @@ export async function setCannedAnswerStatus(
   const body = {
     tenantSlug: typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
     id: typeof raw.id === "string" ? raw.id : "",
-    approved: raw.approved === true,
+    approved: raw.approved,
   }
 
-  const tenantId = await resolveTenantOr404(res, deps.db, body.tenantSlug)
-  if (tenantId === null) return
+  // Shape first, database second: a malformed request should not cost a tenant lookup, and this
+  // ordering is also what lets the rule below be tested without one.
   if (!body.id) {
     sendJson(res, 400, { error: "id is required" })
     return
   }
+  // Required rather than defaulted. `raw.approved === true` read a missing field as false, so a
+  // caller that sent only an id — or sent the field under another name — silently REVOKED a live
+  // answer and got a 200 saying it worked. Publishing and un-publishing are opposite actions, and
+  // the one that takes an answer away from customers must be asked for, not inferred.
+  if (typeof body.approved !== "boolean") {
+    sendJson(res, 400, { error: "approved must be true or false" })
+    return
+  }
+
+  const tenantId = await resolveTenantOr404(res, deps.db, body.tenantSlug)
+  if (tenantId === null) return
 
   const updated = await withTenant(deps.db, tenantId, async (tx) =>
     rowsOf(

@@ -74,6 +74,12 @@ Three constraints follow from that, and each has already been learned the hard w
 
 The source chip is the signature, and it is deliberately not the tenant's accent colour: a citation is QuidChat's guarantee that the sentence came from the business's own document, not the shop's decoration.
 
+## Opening questions come from data that already exists
+
+A blank message log is why widgets go unused: a visitor has to invent a question and guess whether the thing can answer it. The opening screen defaults its suggestions to the tenant's **approved** canned answers — questions the business already knows it gets, and that are guaranteed answerable, so a shop that has done that setup gets openers for free. `widget_theme.starters` overrides them.
+
+Only approved ones, ever. A draft is text nobody has agreed to show a customer; on the opening screen it would be shown to every one of them.
+
 ## The setup assistant is the mirror image of the customer one
 
 The customer-facing assistant answers strangers about a business, so every claim about that business must carry a citation. The setup assistant answers the owner about their own QuidChat, so it needs to explain, suggest and disagree — the grounding validator is **deliberately not run on it**.

@@ -20,6 +20,17 @@ export type WidgetTheme = {
    * customer in two languages. Defaults to English so nothing that exists today changes.
    */
   locale: "en" | "id"
+  /** First thing a visitor reads. Empty means no greeting is shown. */
+  greeting: string
+  /**
+   * Questions offered on the opening screen.
+   *
+   * An empty chat box is the reason widgets go unused: a visitor has to invent a question and
+   * guess whether this thing can answer it. These default, server-side, to the business's own
+   * approved canned answers — questions it already knows it gets, and that are guaranteed
+   * answerable.
+   */
+  starters: string[]
 }
 
 /** The widget's current hardcoded look, unchanged from before this module existed —
@@ -29,6 +40,8 @@ export const DEFAULT_THEME: WidgetTheme = {
   position: "right",
   title: "Chat assistant",
   locale: "en",
+  greeting: "",
+  starters: [],
 }
 
 // Hex (3/4/6/8 digit, so shorthand and alpha forms both work) and functional rgb()/rgba().
@@ -68,6 +81,12 @@ export function sanitizeTheme(input: unknown): WidgetTheme {
     position: raw.position === "left" || raw.position === "right" ? raw.position : DEFAULT_THEME.position,
     title: typeof raw.title === "string" && raw.title.trim() !== "" ? raw.title : DEFAULT_THEME.title,
     locale: raw.locale === "id" || raw.locale === "en" ? raw.locale : DEFAULT_THEME.locale,
+    greeting: typeof raw.greeting === "string" ? raw.greeting : DEFAULT_THEME.greeting,
+    // Bounded and filtered here as well as on the server: this value is rendered as text into a
+    // stranger's page, and "the server already checked" is not a property this module can rely on.
+    starters: Array.isArray(raw.starters)
+      ? raw.starters.filter((s): s is string => typeof s === "string" && s.trim() !== "").slice(0, 4)
+      : DEFAULT_THEME.starters,
   }
 }
 
