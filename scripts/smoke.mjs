@@ -49,6 +49,14 @@ function check(label, condition, detail = "") {
   }
 }
 
+/** Reads a request body to a string. */
+const readBody = (req) =>
+  new Promise((resolve) => {
+    let body = ""
+    req.on("data", (c) => (body += c))
+    req.on("end", () => resolve(body))
+  })
+
 /**
  * A deterministic stand-in for OpenAI.
  *
@@ -59,7 +67,7 @@ function check(label, condition, detail = "") {
  */
 function startProvider() {
   const embed = (text) => {
-    const v = new Array(1536).fill(0)
+    const v = Array.from({ length: 1536 }, () => 0)
     for (const word of String(text).toLowerCase().match(/[a-z0-9]+/g) ?? []) {
       let h = 0
       for (const ch of word) h = (h * 31 + ch.charCodeAt(0)) % 1536
@@ -69,15 +77,8 @@ function startProvider() {
     return v.map((x) => x / norm)
   }
 
-  const read = (req) =>
-    new Promise((resolve) => {
-      let body = ""
-      req.on("data", (c) => (body += c))
-      req.on("end", () => resolve(body))
-    })
-
   const server = createServer(async (req, res) => {
-    const raw = await read(req)
+    const raw = await readBody(req)
     res.setHeader("content-type", "application/json")
     let body
     try {
