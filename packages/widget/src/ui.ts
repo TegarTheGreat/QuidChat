@@ -1,0 +1,335 @@
+import { sendMessage as defaultSendMessage, type ChatResponse, type Segment } from "./api.js"
+import type { WidgetConfig } from "./config.js"
+
+export type UiDeps = {
+  sendMessage: typeof defaultSendMessage
+}
+
+const DEFAULT_DEPS: UiDeps = { sendMessage: defaultSendMessage }
+
+/*
+ * Every user-facing string below is hardcoded English for now — the launcher label,
+ * the placeholder, the dialog title. None of it is the greeting or the refusal
+ * (those come from the server, per tenant); it is UI chrome. It belongs in tenant
+ * configuration eventually (see `tenant_settings.widget_theme`, extended in a later
+ * task), but that isn't wired up yet.
+ */
+const STRINGS = {
+  launcherLabel: "Open chat assistant",
+  closeLabel: "Close chat",
+  dialogLabel: "Chat assistant",
+  inputLabel: "Message",
+  inputPlaceholder: "Type your message…",
+  sendLabel: "Send message",
+  typing: "Assistant is typing…",
+}
+
+const STYLE = `
+  :host {
+    all: initial;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  .launcher {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: none;
+    background: #1a56db;
+    color: #fff;
+    font-size: 24px;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  }
+  .panel {
+    position: fixed;
+    right: 20px;
+    bottom: 88px;
+    width: 320px;
+    max-width: calc(100vw - 40px);
+    height: 440px;
+    max-height: calc(100vh - 120px);
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+  }
+  .panel[hidden] { display: none; }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: #1a56db;
+    color: #fff;
+  }
+  .header-title { font-weight: 600; font-size: 14px; }
+  .close {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .message {
+    max-width: 85%;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+  }
+  .message p { margin: 0 0 4px 0; }
+  .message p:last-child { margin-bottom: 0; }
+  .message.visitor { align-self: flex-end; background: #1a56db; color: #fff; }
+  .message.assistant { align-self: flex-start; background: #f1f3f5; color: #111; }
+  .message.error { align-self: flex-start; background: #fdecec; color: #92140c; }
+  .citation { font-size: 12px; opacity: 0.7; }
+  .composer {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid #e5e7eb;
+  }
+  textarea {
+    flex: 1;
+    resize: none;
+    font-family: inherit;
+    font-size: 14px;
+    padding: 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    max-height: 80px;
+  }
+  .send {
+    border: none;
+    border-radius: 8px;
+    background: #1a56db;
+    color: #fff;
+    padding: 0 14px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .send:disabled { opacity: 0.5; cursor: default; }
+`
+
+/** Appends one `business_claim` or `general` segment as a paragraph inside `bubble`.
+ *  A `business_claim` also gets a visible citation line right below it — never a
+ *  hover or a tooltip, since the whole point is that a visitor can see, without
+ *  interacting with anything, that the claim traces back to a real document. A
+ *  `general` segment gets none, because it isn't a claim about the business. */
+function appendSegment(bubble: HTMLElement, segment: Segment): void {
+  const doc = bubble.ownerDocument
+  const p = doc.createElement("p")
+  p.textContent = segment.text
+  bubble.appendChild(p)
+
+  if (segment.kind === "business_claim") {
+    const cite = doc.createElement("p")
+    cite.className = "citation"
+    // The wire format only carries cited chunk ids, not document titles (see
+    // `packages/core/src/types.ts`), so that's what's shown. Once the server
+    // exposes a title per citation, this line is the only place that needs to change.
+    cite.textContent = `Source: ${segment.citations.join(", ")}`
+    bubble.appendChild(cite)
+  }
+}
+
+/**
+ * Mounts the widget into `container` (which the caller has already inserted into
+ * the document) using a shadow root for style isolation. `deps` defaults to the
+ * real API client; tests inject a fake one so the UI tests never touch `fetch`.
+ */
+export function mountWidget(
+  container: HTMLElement,
+  config: WidgetConfig,
+  deps: UiDeps = DEFAULT_DEPS,
+): void {
+  const doc = container.ownerDocument
+  const shadow = container.attachShadow({ mode: "open" })
+
+  const style = doc.createElement("style")
+  style.textContent = STYLE
+  shadow.appendChild(style)
+
+  const launcher = doc.createElement("button")
+  launcher.className = "launcher"
+  launcher.setAttribute("aria-label", STRINGS.launcherLabel)
+  launcher.setAttribute("aria-haspopup", "dialog")
+  launcher.setAttribute("aria-expanded", "false")
+  launcher.textContent = "💬"
+
+  const panel = doc.createElement("div")
+  panel.className = "panel"
+  panel.setAttribute("role", "dialog")
+  panel.setAttribute("aria-modal", "true")
+  panel.setAttribute("aria-label", STRINGS.dialogLabel)
+  panel.hidden = true
+
+  const header = doc.createElement("div")
+  header.className = "header"
+  const title = doc.createElement("span")
+  title.className = "header-title"
+  title.textContent = STRINGS.dialogLabel
+  const closeButton = doc.createElement("button")
+  closeButton.className = "close"
+  closeButton.setAttribute("aria-label", STRINGS.closeLabel)
+  closeButton.textContent = "×"
+  header.append(title, closeButton)
+
+  const messages = doc.createElement("div")
+  messages.className = "messages"
+  messages.setAttribute("role", "log")
+  messages.setAttribute("aria-live", "polite")
+
+  const composer = doc.createElement("form")
+  composer.className = "composer"
+  const input = doc.createElement("textarea")
+  input.setAttribute("aria-label", STRINGS.inputLabel)
+  input.setAttribute("placeholder", STRINGS.inputPlaceholder)
+  input.rows = 1
+  const sendButton = doc.createElement("button")
+  sendButton.className = "send"
+  sendButton.type = "submit"
+  sendButton.setAttribute("aria-label", STRINGS.sendLabel)
+  sendButton.textContent = "Send"
+  composer.append(input, sendButton)
+
+  panel.append(header, messages, composer)
+  shadow.append(launcher, panel)
+
+  let conversationId: string | undefined
+  let pending = false
+  let typingIndicator: HTMLElement | undefined
+
+  function openPanel(): void {
+    panel.hidden = false
+    launcher.setAttribute("aria-expanded", "true")
+    input.focus()
+  }
+
+  function closePanel(): void {
+    panel.hidden = true
+    launcher.setAttribute("aria-expanded", "false")
+  }
+
+  function appendBubble(role: "visitor" | "assistant" | "error"): HTMLElement {
+    const bubble = doc.createElement("div")
+    bubble.className = `message ${role}`
+    messages.appendChild(bubble)
+    messages.scrollTop = messages.scrollHeight
+    return bubble
+  }
+
+  function appendVisitorMessage(text: string): void {
+    const bubble = appendBubble("visitor")
+    const p = doc.createElement("p")
+    p.textContent = text
+    bubble.appendChild(p)
+  }
+
+  function appendResult(result: ChatResponse): void {
+    if (result.kind === "refused") {
+      // A refusal is a successful outcome — the assistant's knowledge base had
+      // nothing relevant, and saying so is the product working as designed. It
+      // renders exactly like any other assistant reply, never like the `error`
+      // bubble below.
+      const bubble = appendBubble("assistant")
+      const p = doc.createElement("p")
+      p.textContent = result.text
+      bubble.appendChild(p)
+      return
+    }
+
+    const bubble = appendBubble("assistant")
+    for (const segment of result.segments) {
+      appendSegment(bubble, segment)
+    }
+  }
+
+  function appendErrorMessage(text: string): void {
+    const bubble = appendBubble("error")
+    const p = doc.createElement("p")
+    p.textContent = text
+    bubble.appendChild(p)
+  }
+
+  function setPending(next: boolean): void {
+    pending = next
+    sendButton.disabled = next
+    if (next) {
+      typingIndicator = doc.createElement("p")
+      typingIndicator.className = "citation"
+      typingIndicator.textContent = STRINGS.typing
+      messages.appendChild(typingIndicator)
+      messages.scrollTop = messages.scrollHeight
+    } else if (typingIndicator) {
+      typingIndicator.remove()
+      typingIndicator = undefined
+    }
+  }
+
+  async function submit(): Promise<void> {
+    const text = input.value.trim()
+    if (text === "" || pending) return
+
+    // The visitor's own message appears before the round trip starts, not after —
+    // waiting for the server to echo it back makes the widget feel broken on a
+    // slow connection.
+    appendVisitorMessage(text)
+    input.value = ""
+    setPending(true)
+
+    try {
+      const result = await deps.sendMessage(config, {
+        message: text,
+        ...(conversationId !== undefined ? { conversationId } : {}),
+      })
+      conversationId = result.conversationId
+      appendResult(result)
+    } catch (err) {
+      appendErrorMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  launcher.addEventListener("click", () => {
+    if (panel.hidden) openPanel()
+    else closePanel()
+  })
+
+  closeButton.addEventListener("click", closePanel)
+
+  panel.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closePanel()
+  })
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      void submit()
+    }
+    // Shift+Enter falls through with no special handling, so the browser's default
+    // textarea behavior (insert a newline) applies.
+  })
+
+  composer.addEventListener("submit", (e) => {
+    e.preventDefault()
+    void submit()
+  })
+}

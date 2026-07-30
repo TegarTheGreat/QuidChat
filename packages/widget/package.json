@@ -1,0 +1,14 @@
+{
+  "name": "@quidchat/widget",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.22.3" },
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "build": "tsdown src/index.ts --format iife --minify",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": { "happy-dom": "^20.0.0" }
+}

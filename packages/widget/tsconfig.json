@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The only package that runs in a browser, not Node — it needs the DOM lib
+    // (script tags, shadow roots, the message list) on top of the shared base config.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src"]
+}
