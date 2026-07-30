@@ -1,7 +1,15 @@
+import { sql } from "drizzle-orm"
 import { describe, expect, it } from "vitest"
 import { freshPglite } from "./testing.js"
 import { withTenant } from "./tenant.js"
 import { chunks, documents, knowledgeSources, tenants } from "./schema.js"
+
+/** Menyeragamkan hasil `execute()`: driver PGlite mengembalikan `{rows}`, postgres-js Array. */
+function rowsOf(res: unknown): Record<string, unknown>[] {
+  return Array.isArray(res)
+    ? (res as Record<string, unknown>[])
+    : ((res as { rows?: Record<string, unknown>[] }).rows ?? [])
+}
 
 async function seedTenant(db: Awaited<ReturnType<typeof freshPglite>>, slug: string) {
   const [t] = await db.insert(tenants).values({ slug, name: slug }).returning()
@@ -60,5 +68,22 @@ describe("isolasi tenant", () => {
     // Lewat withTenant, tenant yang sama hanya melihat miliknya.
     const scoped = await withTenant(db, a, (tx) => tx.select().from(chunks))
     expect(scoped).toHaveLength(1)
+  })
+
+  it("konteks tenant tidak bertahan setelah transaksi selesai", async () => {
+    const db = await freshPglite()
+    const r = await db.execute(sql`INSERT INTO tenants (slug, name) VALUES ('a','A') RETURNING id`)
+    const id = rowsOf(r)[0]!.id as string
+
+    await withTenant(db, id, async (tx) => {
+      const di = rowsOf(await tx.execute(sql`SELECT current_tenant_id() AS t`))[0]!.t
+      expect(di).toBe(id)
+    })
+
+    // Di LUAR transaksi konteksnya wajib sudah hilang. Kalau `set_config` dipanggil dengan
+    // `false`, nilainya session-scoped dan bertahan — dan pada koneksi yang di-pool itu
+    // berarti permintaan berikutnya mewarisi tenant permintaan sebelumnya.
+    const luar = rowsOf(await db.execute(sql`SELECT current_tenant_id() AS t`))[0]!.t
+    expect(luar).toBeNull()
   })
 })

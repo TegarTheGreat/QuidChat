@@ -317,12 +317,41 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
       )
       if (milik === 0) hampa.push(nama)
       if (terlihat !== milik) bocor.push(`${nama}: terlihat ${terlihat}, milik ${milik}`)
+      // Selain jumlah, periksa bahwa setiap tenant_id yang terlihat memang milik tenant
+      // ini. Membandingkan jumlah saja akan meloloskan kasus di mana satu tenant melihat
+      // tepat sebanyak baris milik tenant LAIN.
+      if (kunci === "tenant_id") {
+        const asing = await withTenant(db, idA, async (tx) =>
+          rowsOf(
+            await tx.execute(sql.raw(`SELECT DISTINCT tenant_id::text AS t FROM ${nama}`)),
+          ).map((x) => x.t as string),
+        )
+        for (const t of asing) if (t !== idA) bocor.push(`${nama}: melihat tenant_id ${t}`)
+      }
     }
     expect(bocor).toEqual([])
     expect(hampa).toEqual([])
-    // 12, bukan 11: `tenants` sekarang ikut. Angka ini yang membuat kelalaian
-    // enumerasi terlihat kalau suatu saat ada tabel yang tidak ber-RLS.
-    expect(tabel).toHaveLength(12)
+    // Batas BAWAH, bukan angka pasti. Menambah tabel ber-RLS yang benar terlindungi
+    // seharusnya TIDAK memerahkan test ini; yang harus memerahkannya adalah tabel yang
+    // TIDAK terlindungi — dan itu justru tidak masuk enumerasi ini, jadi ditangkap oleh
+    // test "guard MENOLAK tabel baru tanpa RLS" di berkas yang sama.
+    expect(tabel.length).toBeGreaterThanOrEqual(12)
+    // Setiap tabel yang punya kolom tenant_id WAJIB ber-RLS. Ini yang menangkap tabel
+    // baru yang lupa dilindungi, dari arah perilaku alih-alih dari arah guard.
+    const tanpaRls = rowsOf(
+      await db.execute(sql`
+        SELECT c.relname AS nama
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+          AND NOT c.relrowsecurity
+          AND EXISTS (
+            SELECT 1 FROM information_schema.columns col
+            WHERE col.table_schema = 'public' AND col.table_name = c.relname
+              AND col.column_name = 'tenant_id'
+          )
+      `),
+    ).map((x) => x.nama as string)
+    expect(tanpaRls).toEqual([])
   })
 
   it("withTenant menyalakan iterative scan, karena RLS menyaring setelah index scan", async () => {
@@ -364,5 +393,36 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
       if (!ditolak) gagal.push(nama)
     }
     expect(gagal).toEqual([])
+  })
+
+  it("tenant tidak bisa MENGUBAH atau MENGHAPUS baris milik tenant lain, maupun MEMINDAHKAN baris sendiri", async () => {
+    // UPDATE baris milik tenant lain harus TIDAK berpengaruh (RLS menyembunyikannya,
+    // jadi nol baris terpengaruh), dan memindahkan baris SENDIRI ke tenant lain harus
+    // DITOLAK oleh with_check.
+    const hasil = await withTenant(db, idA, async (tx) => {
+      const upd = await tx.execute(sql.raw(
+        `UPDATE conversations SET visitor_id = 'dicuri' WHERE tenant_id = '${idB}'`,
+      ))
+      return rowsOf(upd).length
+    })
+    expect(hasil).toBe(0)
+
+    // DELETE baris milik tenant lain harus sama: RLS menyembunyikannya, jadi nol
+    // baris terpengaruh — bukan error, dan bukan pula baris tenant lain yang lenyap.
+    const hasilHapus = await withTenant(db, idA, async (tx) => {
+      const del = await tx.execute(sql.raw(`DELETE FROM conversations WHERE tenant_id = '${idB}'`))
+      return rowsOf(del).length
+    })
+    expect(hasilHapus).toBe(0)
+
+    let pindahDitolak = false
+    try {
+      await withTenant(db, idA, async (tx) => {
+        await tx.execute(sql.raw(`UPDATE conversations SET tenant_id = '${idB}'`))
+      })
+    } catch {
+      pindahDitolak = true
+    }
+    expect(pindahDitolak).toBe(true)
   })
 })
