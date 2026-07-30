@@ -8,7 +8,7 @@ import { handlePanelAsset } from "./panel-asset.js"
 import { handleWidgetConfig } from "./widget-config.js"
 import { handleWidgetAsset } from "./widget-asset.js"
 import { applyCors, handlePreflight, isPublicPath } from "./cors.js"
-import { ChatRateLimiter, type RateLimitConfig } from "./rate-limit.js"
+import { ChatRateLimiter, RateLimiter, type RateLimitConfig } from "./rate-limit.js"
 
 export type ServerDeps = {
   db: QuidDb
@@ -27,6 +27,9 @@ export type ServerDeps = {
   /** Overrides the shipped rate limits. A test that wants to observe a 429 sets a capacity
    *  of one rather than issuing eleven real requests. */
   rateLimits?: { visitor?: RateLimitConfig; tenant?: RateLimitConfig }
+  /** Overrides how many wrong admin tokens are tolerated. A test asserting the 429 should not
+   *  have to send the shipped allowance of them first. */
+  adminAuthLimit?: RateLimitConfig
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -63,6 +66,12 @@ export function createServer(deps: ServerDeps): Server {
   const rateLimiter = new ChatRateLimiter(
     deps.rateLimits?.visitor ?? undefined,
     deps.rateLimits?.tenant ?? undefined,
+  )
+  // Guesses at the admin token, counted per source address and only when a guess is wrong. Ten
+  // to start with and one every ten seconds after: unnoticeable to anyone typing a token they
+  // have, and useless to anyone trying tokens they do not.
+  const failedAuthLimiter = new RateLimiter(
+    deps.adminAuthLimit ?? { capacity: 10, refillPerSecond: 0.1 },
   )
 
   return createHttpServer((req: IncomingMessage, res: ServerResponse) => {
@@ -149,7 +158,7 @@ export function createServer(deps: ServerDeps): Server {
     if (pathname.startsWith("/admin/")) {
       handleAdminRequest(req, res, pathname, url.searchParams, {
         db: deps.db, store, provider: deps.provider, logError,
-        adminToken: env.QUIDCHAT_ADMIN_TOKEN, env,
+        adminToken: env.QUIDCHAT_ADMIN_TOKEN, env, failedAuthLimiter,
       }).catch((e: unknown) => {
         logError("unhandled error in admin route", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })

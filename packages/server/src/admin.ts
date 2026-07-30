@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import {
   createCannedAnswer,
@@ -58,6 +59,24 @@ type AuthResult = { ok: true } | { ok: false; status: 401 | 503; error: string }
  * blank token match a blank (absent) header, which is exactly the failure this
  * `=== undefined` check exists to rule out.
  */
+/**
+ * Compares two secrets without leaking where they first differ.
+ *
+ * `===` on strings stops at the first differing byte, so how long it takes is a function of how
+ * much of the token an attacker already has. That is a slow attack over a network and a real one
+ * on a shared host, and the channel adapters in this codebase already verify their signatures
+ * this way — leaving the admin token as the one exception would be an odd place to draw the line.
+ *
+ * Lengths are compared first because `timingSafeEqual` throws on a mismatch. Length is not the
+ * secret; the bytes are.
+ */
+function secretsMatch(a: string, b: string): boolean {
+  const left = Buffer.from(a)
+  const right = Buffer.from(b)
+  if (left.length !== right.length) return false
+  return timingSafeEqual(left, right)
+}
+
 function checkAdminAuth(req: IncomingMessage, adminToken: string | undefined): AuthResult {
   if (adminToken === undefined) {
     return {
@@ -66,7 +85,8 @@ function checkAdminAuth(req: IncomingMessage, adminToken: string | undefined): A
       error: "QUIDCHAT_ADMIN_TOKEN must be set in the environment to enable the admin API",
     }
   }
-  if (req.headers.authorization !== `Bearer ${adminToken}`) {
+  const presented = req.headers.authorization ?? ""
+  if (!secretsMatch(presented, `Bearer ${adminToken}`)) {
     return { ok: false, status: 401, error: "missing or invalid admin token" }
   }
   return { ok: true }
@@ -81,6 +101,21 @@ export async function handleAdminRequest(
 ): Promise<void> {
   const auth = checkAdminAuth(req, deps.adminToken)
   if (!auth.ok) {
+    // Only FAILED attempts are counted, so the panel — which makes many authenticated requests
+    // per screen — is never throttled. The token is chosen by whoever deploys this, and some of
+    // them will choose badly; a few hundred guesses an hour is not an attack worth mounting.
+    if (auth.status === 401 && deps.failedAuthLimiter) {
+      const source = req.socket.remoteAddress ?? "unknown"
+      const decision = deps.failedAuthLimiter.check(source)
+      if (!decision.allowed) {
+        res.writeHead(429, {
+          "content-type": "application/json; charset=utf-8",
+          "retry-after": String(decision.retryAfterSeconds),
+        })
+        res.end(JSON.stringify({ error: "too many failed attempts" }))
+        return
+      }
+    }
     sendJson(res, auth.status, { error: auth.error })
     return
   }

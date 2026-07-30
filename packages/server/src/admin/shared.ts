@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Provider, Store } from "@quidchat/core"
 import type { QuidDb } from "@quidchat/db"
+import type { RateLimiter } from "../rate-limit.js"
 import { lookupTenantBySlug } from "../tenant-lookup.js"
 
 /**
@@ -111,6 +112,8 @@ export type AdminDeps = {
    *  `process.env` here so a test can exercise a missing or wrong key without touching real
    *  process state — the same reason `adminToken` is passed in. */
   env?: Record<string, string | undefined>
+  /** Bounds guesses at the admin token. Optional so a test can construct deps without one. */
+  failedAuthLimiter?: RateLimiter
 }
 
 /** Resolves `slug` to a tenant id via the same public lookup `/chat` uses, sending the

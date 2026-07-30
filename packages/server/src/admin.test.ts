@@ -244,3 +244,34 @@ describe("/v1 prefix", () => {
     }
   })
 })
+
+describe("guessing the admin token", () => {
+  it("stops answering after repeated wrong tokens, without affecting a correct one", async () => {
+    const { url, close } = await startServer({
+      db, provider: new FakeProvider([]), logError: () => {},
+      env: { QUIDCHAT_ADMIN_TOKEN: ADMIN_TOKEN },
+      // Two guesses, then nothing for a while. The shipped numbers are looser; this is the same
+      // mechanism with the patience taken out.
+      adminAuthLimit: { capacity: 2, refillPerSecond: 0.001 },
+    })
+    try {
+      const guess = () =>
+        fetch(`${url}/admin/tenants`, { headers: { authorization: "Bearer wrong" } })
+
+      expect((await guess()).status).toBe(401)
+      expect((await guess()).status).toBe(401)
+      const throttled = await guess()
+      expect(throttled.status).toBe(429)
+      expect(Number(throttled.headers.get("retry-after"))).toBeGreaterThan(0)
+
+      // Only failures are counted, so the panel — which makes many authenticated requests per
+      // screen — is never throttled by its own traffic.
+      const authorized = await fetch(`${url}/admin/tenants`, {
+        headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      })
+      expect(authorized.status).toBe(200)
+    } finally {
+      await close()
+    }
+  })
+})

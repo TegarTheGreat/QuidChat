@@ -201,7 +201,7 @@ Anthropic has no embeddings endpoint, and retrieval needs one. Set `ANTHROPIC_AP
 | `PORT` | `3210` | `0` asks the OS for a free port |
 | `DATABASE_URL` | — | Managed Postgres. Absent means embedded PGlite |
 | `QUIDCHAT_DATA_DIR` | `./.quidchat/data` | Where PGlite stores data. `memory` for ephemeral |
-| `QUIDCHAT_ADMIN_TOKEN` | — | Required by the admin API; unset means admin routes refuse |
+| `QUIDCHAT_ADMIN_TOKEN` | — | Required by the admin API; unset means admin routes refuse. Compared in constant time, and wrong guesses are rate limited per source |
 | `QUIDCHAT_SECRET_KEY` | — | 32 bytes, base64 or hex. Encrypts channel credentials saved in the panel |
 
 The panel is served at `/panel` by the same process that serves the API, so an install has an interface without a second deployment. The API keeps `/admin/*`: one namespace for pages and endpoints would make every new route a question about which it is, and the first wrong guess would shadow a working endpoint with an HTML page.
