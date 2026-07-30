@@ -70,17 +70,22 @@ export async function serve(args: {
     log("")
   }
 
-  return {
-    port,
-    close: () => {
-      // Stopped on close so a test that starts several servers does not leave timers behind
-      // firing against a database its own test already tore down.
-      stopRetention()
-      return new Promise<void>((resolve, reject) =>
-        server.close((err) => (err ? reject(err) : resolve())),
-      )
-    },
+  const close = async (): Promise<void> => {
+    // Stopped first so a test that starts several servers does not leave timers behind firing
+    // against a database its own test already tore down.
+    stopRetention()
+    await new Promise<void>((resolve, reject) =>
+      server.close((err) => (err ? reject(err) : resolve())),
+    )
+    // The embedded tier writes to disk through PGlite. An abrupt exit can leave the last writes
+    // unflushed, which for a business is a customer's question that was answered and then
+    // forgotten. `close` is optional on the type because the managed-Postgres handle does not
+    // expose one.
+    const closable = (db as unknown as { $client?: { close?: () => Promise<void> } }).$client
+    if (typeof closable?.close === "function") await closable.close()
   }
+
+  return { port, close }
 }
 
 /**

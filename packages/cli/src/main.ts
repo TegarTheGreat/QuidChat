@@ -72,7 +72,35 @@ async function main(): Promise<void> {
   const { positional, named } = parseFlags(rest)
 
   if (command === undefined || command === "serve") {
-    await serve({ env: process.env })
+    const running = await serve({ env: process.env })
+
+    // A container runtime sends SIGTERM and waits a few seconds before SIGKILL. Without a
+    // handler Node exits at once: a request being answered is dropped mid-write, and on the
+    // embedded tier PGlite's last writes may never reach disk — a customer's question answered
+    // and then forgotten. Draining first costs a second and makes a redeploy invisible to
+    // whoever is mid-conversation.
+    //
+    // Registered AFTER a successful start, so a process that failed to start still exits the
+    // ordinary way rather than sitting in a handler with nothing to drain.
+    let shuttingDown = false
+    for (const signal of ["SIGTERM", "SIGINT"] as const) {
+      process.on(signal, () => {
+        if (shuttingDown) {
+          // A second signal means someone is impatient, and the honest response is to go now
+          // rather than to appear hung while a slow request finishes.
+          process.exit(130)
+        }
+        shuttingDown = true
+        console.log(`\n${signal} received, finishing in-flight requests…`)
+        running
+          .close()
+          .then(() => process.exit(0))
+          .catch((cause: unknown) => {
+            console.error("shutdown failed", cause)
+            process.exit(1)
+          })
+      })
+    }
     return
   }
 

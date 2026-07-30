@@ -156,6 +156,10 @@ The panel is served at `/panel` by the same process that serves the API, so an i
 
 `GET /health` answers `{"status":"ok"}` without touching Postgres — a liveness probe that failed while the database was briefly unreachable would make an orchestrator kill a process that was about to recover, turning a blip into an outage.
 
+## Stopping and restarting
+
+`SIGTERM` drains: the server stops accepting connections, finishes the requests it is already answering, and closes the database before exiting. A container runtime sends `SIGTERM` and waits a few seconds before killing the process, so without this a redeploy drops whoever was mid-question and, on the embedded tier, can leave their answer unflushed — answered and then forgotten. A second `SIGTERM` exits immediately, because someone sending it twice wants out now rather than a process that looks hung.
+
 ## Storage
 
 Postgres, at every scale, from one schema and one set of migrations.
