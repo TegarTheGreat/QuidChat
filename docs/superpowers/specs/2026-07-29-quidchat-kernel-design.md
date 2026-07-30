@@ -779,6 +779,7 @@ Performa di bawah beban, kualitas crawler terhadap situs tidak lazim, dan kompat
 | Query CI: `messages` LEFT JOIN `message_citations` untuk menemukan jawaban tanpa sitasi | Rencana ingestion/eval | Jalur terakhir menuju kegagalan yang produk ini definisikan sebagai lawannya: jawaban ber-segmen `general` saja yang katanya luput dari daftar `high_risk_topics` |
 | Onboarding tenant baru WAJIB memakai raw handle | Rencana admin/signup | Policy `tenant_self` ber-`USING` saja juga berlaku sebagai `WITH CHECK`, jadi `INSERT` tenant baru sebagai `quidchat_app` selalu gagal: `id` yang baru dibuat tidak mungkin sama dengan `current_tenant_id()` |
 | `answer()` membuka 3–4 transaksi terpisah per turn | Rencana akuntansi biaya | Retrieval dan pencatatan tidak atomik satu sama lain; belum ada yang rusak, tapi perlu diketahui sebelum akuntansi budget mendarat |
+| Test wajib #4–#8 (scoping per skill, batas handoff, mode `static` tanpa provider, draft tidak tayang, pewarisan mode) | Rencana multi-skill (#4, #5) dan rencana mode jawaban (#6, #7, #8) | Semuanya butuh tabel `skills`, `skill_sources`, `canned_answers`, dan kolom `answer_mode` yang belum ada. Dicatat di sini supaya "delapan test wajib" tidak dibaca sebagai delapan yang sudah ada |
 
 ---
 

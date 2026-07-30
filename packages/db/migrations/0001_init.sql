@@ -158,11 +158,21 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 -- sedang menjalankan migrasi, yang di tier 1 dan 2 memang role aplikasinya.
 DO $grant$
 BEGIN
-  EXECUTE format('GRANT quidchat_app TO %I', current_user);
-EXCEPTION
-  WHEN duplicate_object THEN NULL;  -- sudah anggota
-  WHEN insufficient_privilege THEN
-    RAISE NOTICE 'tidak bisa GRANT quidchat_app TO %; lakukan manual sebagai superuser', current_user;
+  BEGIN
+    EXECUTE format('GRANT quidchat_app TO %I', current_user);
+  EXCEPTION
+    WHEN insufficient_privilege THEN NULL;  -- mungkin sudah anggota lewat jalur lain
+  END;
+  -- Bukti, bukan harapan: kalau peran ini tidak bisa diturunkan ke quidchat_app,
+  -- SETIAP permintaan akan gagal di withTenant() — jauh lebih baik gagal di sini.
+  BEGIN
+    EXECUTE 'SET LOCAL ROLE quidchat_app';
+    EXECUTE 'RESET ROLE';
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION
+      'peran % tidak bisa SET ROLE quidchat_app. Jalankan sebagai superuser: GRANT quidchat_app TO %',
+      current_user, current_user;
+  END;
 END $grant$;
 
 -- Helper: konteks tenant transaksi saat ini.

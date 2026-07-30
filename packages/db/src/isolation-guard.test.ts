@@ -2,21 +2,26 @@
  * Test yang MENYERANG isolasi tenant, lalu menuntut pertahanannya berbunyi.
  *
  * Review akhir Rencana 1 menemukan cacatnya bukan dengan membaca kode, tapi dengan
- * merusaknya dan melihat suite tetap hijau. Serangan yang dipakai: menambahkan
+ * merusaknya dan melihat suite tetap hijau. Serangan pertama yang dipakai: menambahkan
  * `CREATE POLICY leak ON tenant_settings USING (true)` DI SAMPING policy yang men-scope.
  * Postgres menggabungkan policy permissive dengan OR, jadi isolasinya runtuh sementara
- * policy yang benar tetap ada — dan waktu itu NOL test gagal.
+ * policy yang benar tetap ada — dan waktu itu NOL test gagal. Review Rencana 2 menemukan
+ * dua serangan lagi dengan cara yang sama, keduanya lolos dari versi guard saat itu (lihat
+ * `describe` kedua di bawah).
  *
- * Berkas ini menjadikan serangan itu bagian permanen dari suite. Ada dua pertahanan dan
- * keduanya diuji terhadap serangan yang sama:
+ * Berkas ini menjadikan serangan-serangan itu bagian permanen dari suite. Ada tiga
+ * pertahanan:
  *
- *   1. Guard di migrasi, yang menolak SETIAP policy permissive yang tidak menyebut
- *      `current_tenant_id()`. Guard-nya DIEKSTRAK LANGSUNG dari berkas migrasi, bukan
- *      disalin ke sini — kalau seseorang melemahkan guard-nya, test ini yang gagal.
+ *   1. Guard di migrasi (blok `guard_isolasi`), yang menolak SETIAP tabel ber-RLS yang
+ *      policy permissive-nya — pada `qual` maupun `with_check` — bukan PERSIS
+ *      `(kunci = current_tenant_id())`. Guard-nya DIEKSTRAK LANGSUNG dari berkas migrasi,
+ *      bukan disalin ke sini — kalau seseorang melemahkan guard-nya, test ini yang gagal.
  *   2. `getTenantConfig`, yang menolak hasil lebih dari satu baris. Tanpa itu, kode
  *      diam-diam mengambil baris pertama, yang bisa milik tenant lain — dan karena
  *      setelan default setiap tenant identik di instalasi baru, tidak ada assertion
  *      biasa yang akan menyadarinya.
+ *   3. Test perilaku di `describe` kedua, yang mengukur akibat lewat query sungguhan,
+ *      bukan bentuk teks policy — lihat docstring-nya untuk cakupan persisnya.
  */
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
@@ -145,14 +150,17 @@ describe("isolasi tenant di bawah serangan", () => {
 /**
  * Test PERILAKU, bukan analisis teks.
  *
- * Guard di migrasi memeriksa BENTUK policy. Berkas ini memeriksa AKIBATNYA: untuk
- * SETIAP tabel ber-`tenant_id`, jumlah baris yang dilihat satu tenant di dalam
- * `withTenant` wajib sama dengan jumlah baris yang benar-benar miliknya.
+ * Guard di migrasi memeriksa BENTUK policy. Berkas ini mengukur AKIBATNYA: untuk SETIAP
+ * tabel yang dilindungi RLS — dienumerasi lewat `relrowsecurity`, bukan lewat keberadaan
+ * kolom `tenant_id`, jadi `tenants` ikut terhitung — jumlah baris yang terlihat satu
+ * tenant di dalam `withTenant` wajib sama dengan jumlah baris yang benar-benar
+ * miliknya (jalur BACA), dan upaya menanam baris berkunci tenant lain wajib ditolak
+ * (jalur TULIS).
  *
- * Ini menangkap cacat policy apa pun — ditulis dengan cara apa pun, pada tabel apa pun,
- * sekarang atau nanti — termasuk cacat yang tidak terpikirkan saat guard-nya ditulis.
- * Dua serangan yang berhasil mengalahkan dua versi guard sebelumnya keduanya tertangkap
- * di sini tanpa perlu diantisipasi lebih dulu.
+ * Yang TIDAK dicakup: view, fungsi `SECURITY DEFINER`, dan kode aplikasi yang memakai
+ * raw handle (koneksi tanpa lewat `withTenant`) sama sekali tidak diperiksa di sini.
+ * Cakupannya berhenti pada tabel ber-RLS yang diakses lewat `withTenant` — bukan
+ * jaminan menyeluruh atas cacat policy apa pun di mana pun.
  */
 describe("isolasi setiap tabel, diukur dari perilakunya", () => {
   let db: Awaited<ReturnType<typeof freshPglite>>
@@ -260,6 +268,16 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
     // 12, bukan 11: `tenants` sekarang ikut. Angka ini yang membuat kelalaian
     // enumerasi terlihat kalau suatu saat ada tabel yang tidak ber-RLS.
     expect(tabel).toHaveLength(12)
+  })
+
+  it("withTenant menyalakan iterative scan, karena RLS menyaring setelah index scan", async () => {
+    // Tanpa ini, `ORDER BY embedding <=> v LIMIT k` bisa mengembalikan kurang dari k
+    // baris untuk tenant kecil di tabel besar — kehilangan recall tanpa error apa pun.
+    const nilai = await withTenant(db, idA, async (tx) => {
+      const r = await tx.execute(sql`SHOW hnsw.iterative_scan`)
+      return rowsOf(r)[0]!["hnsw.iterative_scan"] as string
+    })
+    expect(nilai).toBe("strict_order")
   })
 
   it("tenant tidak bisa MENULIS baris milik tenant lain", async () => {
