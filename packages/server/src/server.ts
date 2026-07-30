@@ -7,6 +7,7 @@ import { handleChat } from "./chat.js"
 import { handlePanelAsset } from "./panel-asset.js"
 import { handleWidgetConfig } from "./widget-config.js"
 import { handleWidgetAsset } from "./widget-asset.js"
+import { applyCors, handlePreflight, isPublicPath } from "./cors.js"
 import { ChatRateLimiter, type RateLimitConfig } from "./rate-limit.js"
 
 export type ServerDeps = {
@@ -67,6 +68,16 @@ export function createServer(deps: ServerDeps): Server {
   return createHttpServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://localhost")
     const pathname = stripVersionPrefix(url.pathname)
+
+    // The widget runs on a business's own site, which is a different origin from this server in
+    // every real deployment. Without these headers a browser refuses to hand the response to the
+    // script, and refuses to send the request at all until a preflight succeeds — so the widget
+    // worked from curl and from nowhere a customer would use it. Admin routes are excluded
+    // deliberately: the panel is served by this process and is already same-origin.
+    if (isPublicPath(pathname)) {
+      if (handlePreflight(req, res)) return
+      applyCors(req, res)
+    }
 
     // A liveness probe. Deliberately touches no database: a health check that fails when
     // Postgres is briefly unreachable makes an orchestrator kill a process that would have
