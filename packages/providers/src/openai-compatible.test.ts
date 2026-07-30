@@ -1,6 +1,27 @@
 import { ProviderError } from "@quidchat/core"
 import { describe, expect, it } from "vitest"
-import { openAiCompatible } from "./openai-compatible.js"
+import { asAnswer, openAiCompatible } from "./openai-compatible.js"
+
+/**
+ * Asserts that a call fails with a particular `ProviderError` kind.
+ *
+ * The tests here used to be written as `await call().catch((e) => expect(...))`, which asserts
+ * NOTHING when the call succeeds: the callback never runs, no expectation is registered, and the
+ * test passes. Gutting `asAnswer` to accept any shape left all of them green, which is how this
+ * was found. Awaiting the rejection is what makes the assertion mandatory.
+ */
+async function expectProviderError(call: Promise<unknown>, kind: ProviderError["kind"]): Promise<ProviderError> {
+  const error = await call.then(
+    () => null,
+    (e: unknown) => e as ProviderError,
+  )
+  expect(error, `expected a ProviderError with kind ${kind}, but the call resolved`).toBeInstanceOf(
+    ProviderError,
+  )
+  expect(error!.kind).toBe(kind)
+  return error!
+}
+
 
 type RequestRecord = { url: string; body: Record<string, unknown>; headers: Record<string, string> }
 
@@ -78,10 +99,7 @@ describe("openAiCompatible", () => {
     for (const [status, cause] of cases) {
       const { impl } = fakeFetch({ status, json: { error: { message: "x" } } })
       const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
-      await expect(p.complete({ model: "m", prompt })).rejects.toThrow(ProviderError)
-      await p.complete({ model: "m", prompt }).catch((e: unknown) => {
-        expect((e as ProviderError).kind).toBe(cause)
-      })
+      await expectProviderError(p.complete({ model: "m", prompt }), cause as ProviderError["kind"])
     }
   })
 
@@ -91,9 +109,7 @@ describe("openAiCompatible", () => {
     // `unavailable` records something else.
     const { impl } = fakeFetch({ json: { choices: [{ message: { content: "maaf, bukan JSON" } }] } })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
-    await p.complete({ model: "m", prompt }).catch((e: unknown) => {
-      expect((e as ProviderError).kind).toBe("schema")
-    })
+    await expectProviderError(p.complete({ model: "m", prompt }), "schema")
   })
 
   it("rejects JSON whose shape is not an Answer", async () => {
@@ -101,9 +117,7 @@ describe("openAiCompatible", () => {
       json: { choices: [{ message: { content: JSON.stringify({ not: "segments" }) } }] },
     })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
-    await p.complete({ model: "m", prompt }).catch((e: unknown) => {
-      expect((e as ProviderError).kind).toBe("schema")
-    })
+    await expectProviderError(p.complete({ model: "m", prompt }), "schema")
   })
 
   it("embed returns a vector from the embeddings endpoint", async () => {
@@ -126,5 +140,44 @@ describe("openAiCompatible", () => {
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1/", apiKey: "k", fetchImpl: impl })
     await p.complete({ model: "m", prompt })
     expect(records[0]!.url).toBe("https://example.test/v1/chat/completions")
+  })
+})
+
+describe("asAnswer", () => {
+  const valid = {
+    segments: [
+      { text: "We are open daily.", kind: "general" },
+      { text: "The warranty is one year.", kind: "business_claim", citations: ["c1"] },
+    ],
+  }
+
+  it("passes a well-formed answer through", () => {
+    expect(asAnswer(valid)).toBe(valid)
+  })
+
+  it("rejects every shape a model actually produces when it drifts", () => {
+    // This is the gate between a model's raw output and the grounding validator. Everything here
+    // is JSON a model has a real chance of returning, and none of it is an Answer.
+    const cases: [string, unknown][] = [
+      ["no segments at all", { answer: "one year" }],
+      ["segments is not an array", { segments: "one year" }],
+      ["a segment with no text", { segments: [{ kind: "general" }] }],
+      ["text that is not a string", { segments: [{ kind: "general", text: 42 }] }],
+      ["an invented kind", { segments: [{ kind: "fact", text: "one year" }] }],
+      // The dangerous one: a claim about the business with nothing to check it against. Letting
+      // it through would put an unsourced statement in front of a customer.
+      ["a business_claim with no citations", { segments: [{ kind: "business_claim", text: "one year" }] }],
+      ["citations that are not an array", { segments: [{ kind: "business_claim", text: "x", citations: "c1" }] }],
+    ]
+    for (const [label, value] of cases) {
+      let thrown: unknown
+      try {
+        asAnswer(value)
+      } catch (e) {
+        thrown = e
+      }
+      expect(thrown, label).toBeInstanceOf(ProviderError)
+      expect((thrown as ProviderError).kind, label).toBe("schema")
+    }
   })
 })

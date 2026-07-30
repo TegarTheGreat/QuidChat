@@ -2,6 +2,27 @@ import { ProviderError } from "@quidchat/core"
 import { describe, expect, it } from "vitest"
 import { anthropic } from "./anthropic.js"
 
+/**
+ * Asserts that a call fails with a particular `ProviderError` kind.
+ *
+ * The tests here used to be written as `await call().catch((e) => expect(...))`, which asserts
+ * NOTHING when the call succeeds: the callback never runs, no expectation is registered, and the
+ * test passes. Gutting `asAnswer` to accept any shape left all of them green, which is how this
+ * was found. Awaiting the rejection is what makes the assertion mandatory.
+ */
+async function expectProviderError(call: Promise<unknown>, kind: ProviderError["kind"]): Promise<ProviderError> {
+  const error = await call.then(
+    () => null,
+    (e: unknown) => e as ProviderError,
+  )
+  expect(error, `expected a ProviderError with kind ${kind}, but the call resolved`).toBeInstanceOf(
+    ProviderError,
+  )
+  expect(error!.kind).toBe(kind)
+  return error!
+}
+
+
 type RequestRecord = { url: string; body: Record<string, unknown>; headers: Record<string, string> }
 
 function fakeFetch(reply: { status?: number; json?: unknown; body?: string }) {
@@ -103,10 +124,7 @@ describe("anthropic", () => {
     for (const [status, cause] of cases) {
       const { impl } = fakeFetch({ status, json: { error: { message: "x" } } })
       const p = anthropic({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
-      await expect(p.complete({ model: "m", prompt })).rejects.toThrow(ProviderError)
-      await p.complete({ model: "m", prompt }).catch((e: unknown) => {
-        expect((e as ProviderError).kind).toBe(cause)
-      })
+      await expectProviderError(p.complete({ model: "m", prompt }), cause as ProviderError["kind"])
     }
   })
 
@@ -115,9 +133,7 @@ describe("anthropic", () => {
       throw new Error("network down")
     }) as unknown as typeof fetch
     const p = anthropic({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
-    await p.complete({ model: "m", prompt }).catch((e: unknown) => {
-      expect((e as ProviderError).kind).toBe("unavailable")
-    })
+    await expectProviderError(p.complete({ model: "m", prompt }), "unavailable")
   })
 
   it("a response that cannot be mapped to an Answer becomes cause `schema`", async () => {
@@ -125,19 +141,14 @@ describe("anthropic", () => {
       json: { content: [{ type: "text", text: JSON.stringify({ not: "segments" }) }], usage: {} },
     })
     const p = anthropic({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
-    await p.complete({ model: "m", prompt }).catch((e: unknown) => {
-      expect((e as ProviderError).kind).toBe("schema")
-    })
+    await expectProviderError(p.complete({ model: "m", prompt }), "schema")
   })
 
   it("embed throws ProviderError unknown_model naming composite()", async () => {
     const p = anthropic({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k" })
-    await p.embed({ model: "e", text: "hello" }).catch((e: unknown) => {
-      expect(e).toBeInstanceOf(ProviderError)
-      expect((e as ProviderError).kind).toBe("unknown_model")
-      expect((e as ProviderError).message).toContain("embeddings")
-      expect((e as ProviderError).message).toContain("composite()")
-    })
+    const error = await expectProviderError(p.embed({ model: "e", text: "hello" }), "unknown_model")
+    expect(error.message).toContain("embeddings")
+    expect(error.message).toContain("composite()")
   })
 
   it("capabilities reports promptCaching, unlike the OpenAI-compatible adapter", async () => {

@@ -38,7 +38,7 @@ export function asAnswer(value: unknown): Answer {
       throw new ProviderError("schema", `unknown segment kind: ${String(s.kind)}`)
     }
     if (s.kind === "business_claim" && !Array.isArray(s.citations)) {
-      throw new ProviderError("schema", "business_claim tanpa array `citations`")
+      throw new ProviderError("schema", "a business_claim segment has no `citations` array")
     }
   }
   return value as Answer
