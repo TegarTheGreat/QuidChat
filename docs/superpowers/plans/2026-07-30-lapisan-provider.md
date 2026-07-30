@@ -94,7 +94,7 @@ export class ProviderError extends Error {
   }
 
   /** True bila mencoba lagi dengan permintaan yang sama masuk akal. */
-  get dapatDiulang(): boolean {
+  get isRetryable(): boolean {
     return this.kind === "rate_limit" || this.kind === "unavailable"
   }
 }
@@ -133,7 +133,7 @@ Di `packages/core/src/pipeline.ts`, tambahkan helper dan pakai di kedua `catch`:
  * pelanggaran schema: kita tidak tahu sebabnya, dan menuduh model lebih buruk daripada
  * mengakui ketidaktahuan.
  */
-function alasanDari(e: unknown): EscalationReason {
+function escalationReasonFor(e: unknown): EscalationReason {
   if (e instanceof ProviderError) {
     switch (e.kind) {
       case "schema":
@@ -155,7 +155,7 @@ lalu:
   try {
     embedding = await provider.embed({ model: config.embeddingModel, text: question })
   } catch (e) {
-    return refuse(alasanDari(e))
+    return refuse(escalationReasonFor(e))
   }
 ```
 
@@ -165,7 +165,7 @@ dan di dalam loop:
     try {
       result = await provider.complete({ model: config.chatModel, prompt })
     } catch (e) {
-      return refuse(alasanDari(e))
+      return refuse(escalationReasonFor(e))
     }
 ```
 
@@ -234,7 +234,7 @@ Di `packages/core/src/pipeline.test.ts`, ganti test `schema_invalid` yang ada de
 pnpm test && pnpm typecheck && pnpm lint && pnpm build
 ```
 
-Lalu buktikan test barunya bisa gagal: ubah `alasanDari` agar selalu mengembalikan `"schema_invalid"` dan pastikan test itu **gagal** pada kasus `rate_limit`. Pulihkan.
+Lalu buktikan test barunya bisa gagal: ubah `escalationReasonFor` agar selalu mengembalikan `"schema_invalid"` dan pastikan test itu **gagal** pada kasus `rate_limit`. Pulihkan.
 
 - [ ] **Step 7: Commit**
 

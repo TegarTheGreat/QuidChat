@@ -31,7 +31,7 @@ export class ProviderError extends Error {
   }
 
   /** True bila mencoba lagi dengan permintaan yang sama masuk akal. */
-  get dapatDiulang(): boolean {
+  get isRetryable(): boolean {
     return this.kind === "rate_limit" || this.kind === "unavailable"
   }
 }

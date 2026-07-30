@@ -15,7 +15,7 @@ const CANDIDATE_LIMIT = 8
  * pelanggaran schema: kita tidak tahu sebabnya, dan menuduh model lebih buruk daripada
  * mengakui ketidaktahuan.
  */
-function alasanDari(e: unknown): EscalationReason {
+function escalationReasonFor(e: unknown): EscalationReason {
   if (e instanceof ProviderError) {
     switch (e.kind) {
       case "schema":
@@ -83,7 +83,7 @@ export async function answer(args: {
   try {
     embedding = await provider.embed({ model: config.embeddingModel, text: question })
   } catch (e) {
-    return refuse(alasanDari(e))
+    return refuse(escalationReasonFor(e))
   }
 
   const candidates = await store.searchChunks({
@@ -104,7 +104,7 @@ export async function answer(args: {
     try {
       result = await provider.complete({ model: config.chatModel, prompt })
     } catch (e) {
-      return refuse(alasanDari(e))
+      return refuse(escalationReasonFor(e))
     }
 
     const verdict = validateGrounding({
