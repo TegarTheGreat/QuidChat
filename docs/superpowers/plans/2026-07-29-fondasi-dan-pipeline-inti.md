@@ -818,7 +818,7 @@ git commit -m "feat(db): add connection factory, tenant context and isolation te
   - `type Segment = { text: string; kind: "general" } | { text: string; kind: "business_claim"; citations: string[] }`
   - `type Answer = { segments: Segment[] }`
   - `type Candidate = { id: string; content: string; documentTitle: string }`
-  - `type TenantConfig = { chatModel: string; rewriteModel: string; refusalText: string; highRiskTopics: string[] }`
+  - `type TenantConfig = { chatModel: string; rewriteModel: string; embeddingModel: string; refusalText: string; highRiskTopics: string[] }`
   - `interface Store` dengan `getTenantConfig`, `searchChunks`, `recordAnswer`, `recordEscalation`
   - `interface Provider` dengan `complete`, `capabilities`
 
@@ -871,6 +871,9 @@ export type Candidate = {
 export type TenantConfig = {
   chatModel: string
   rewriteModel: string
+  /** Model embedding. TERPISAH dari `chatModel` — meng-embed dengan id model
+   *  chat akan ditolak oleh provider sungguhan. */
+  embeddingModel: string
   refusalText: string
   highRiskTopics: string[]
 }
@@ -1302,6 +1305,7 @@ import type { Candidate, TenantConfig } from "../types.js"
 const config: TenantConfig = {
   chatModel: "claude-opus-5",
   rewriteModel: "claude-opus-5",
+  embeddingModel: "text-embedding-3-small",
   refusalText: "Maaf, saya belum punya info itu.",
   highRiskTopics: ["harga", "garansi"],
 }
@@ -1650,7 +1654,7 @@ export function createStore(db: QuidDb): Store {
     async getTenantConfig(tenantId: string): Promise<TenantConfig> {
       return withTenant(db, tenantId, async (tx) => {
         const res = await tx.execute(sql`
-          SELECT chat_model, rewrite_model, refusal_text, high_risk_topics
+          SELECT chat_model, rewrite_model, embedding_model, refusal_text, high_risk_topics
           FROM tenant_settings WHERE tenant_id = ${tenantId}
         `)
         const row = rowsOf(res)[0]
@@ -1658,6 +1662,7 @@ export function createStore(db: QuidDb): Store {
         return {
           chatModel: row.chat_model as string,
           rewriteModel: row.rewrite_model as string,
+          embeddingModel: row.embedding_model as string,
           refusalText: row.refusal_text as string,
           highRiskTopics: row.high_risk_topics as string[],
         }
@@ -1788,6 +1793,7 @@ import type { Answer, Candidate, EscalationReason, Segment, TenantConfig } from 
 export const DEFAULT_CONFIG: TenantConfig = {
   chatModel: "fake-model",
   rewriteModel: "fake-model",
+  embeddingModel: "fake-embedding-model",
   refusalText: "Maaf, saya belum punya informasi itu.",
   highRiskTopics: ["harga", "diskon", "garansi", "refund", "stok", "legal"],
 }
@@ -1993,7 +1999,7 @@ export async function answer(args: {
 
   let embedding: number[]
   try {
-    embedding = await provider.embed({ model: config.chatModel, text: question })
+    embedding = await provider.embed({ model: config.embeddingModel, text: question })
   } catch {
     return refuse("provider_unavailable")
   }
@@ -2054,7 +2060,7 @@ export * from "./prompt/builder.js"
 - [ ] **Step 6: Jalankan seluruh test**
 
 Run: `pnpm test`
-Expected: PASS semua — **6 berkas test, 29 test** hijau (`tenant` 2, `high-risk` 6, `validator` 7, `builder` 6, `store` 3, `pipeline` 5).
+Expected: PASS semua — **6 berkas test, 32 test** hijau (`tenant` 3, `high-risk` 7, `validator` 7, `builder` 6, `store` 4, `pipeline` 5). Jumlah ini dihitung dari berkas yang sudah ada, bukan diperkirakan; kalau totalmu berbeda, cari tahu berkas mana yang menyimpang sebelum melanjutkan.
 
 - [ ] **Step 7: Verifikasi batas arsitektur ditegakkan**
 
