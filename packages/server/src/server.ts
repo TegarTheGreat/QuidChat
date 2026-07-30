@@ -56,6 +56,14 @@ export function createServer(deps: ServerDeps): Server {
     const url = new URL(req.url ?? "/", "http://localhost")
     const pathname = stripVersionPrefix(url.pathname)
 
+    if (pathname === "/chat/stream") {
+      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError }, true).catch((e: unknown) => {
+        logError("unhandled error in chat stream route", e)
+        if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
+      })
+      return
+    }
+
     if (pathname === "/chat") {
       handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError }).catch((e: unknown) => {
         logError("unhandled error in chat route", e)

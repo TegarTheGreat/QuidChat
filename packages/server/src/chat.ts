@@ -4,6 +4,7 @@ import { withTenant, type QuidDb } from "@quidchat/db"
 import { sql } from "drizzle-orm"
 import { monthlyBudgetCents, recordUsage, spentThisMonthCents } from "./budget.js"
 import { lookupTenantBySlug } from "./tenant-lookup.js"
+import { openEventStream, sendProgress, sendResult, sendStreamError } from "./stream.js"
 
 /** Normalizes the `execute()` result, whose shape differs between drivers — see the
  *  identical helper in `tenant-lookup.ts` and `@quidchat/db`'s `store.ts`. */
@@ -178,6 +179,9 @@ export async function handleChat(
   req: IncomingMessage,
   res: ServerResponse,
   deps: ChatDeps,
+  /** When true, reply as an event stream. The final payload is byte-identical either way —
+   *  two shapes would drift and only one of them would stay tested. */
+  stream = false,
 ): Promise<void> {
   if (req.method !== "POST") {
     sendJson(res, 405, { error: "method not allowed" })
@@ -246,6 +250,8 @@ export async function handleChat(
       return
     }
 
+    if (stream) openEventStream(res)
+
     const result = await answer({
       store: deps.store,
       provider: deps.provider,
@@ -253,6 +259,7 @@ export async function handleChat(
       conversationId,
       history,
       question: chatRequest.message,
+      ...(stream ? { onProgress: (stage) => sendProgress(res, stage) } : {}),
     })
 
     // Recorded for refusals as well as answers, and using the provider's own token
@@ -272,13 +279,19 @@ export async function handleChat(
       })
     }
 
-    sendJson(res, 200, { conversationId, ...result })
+    const payload = { conversationId, ...result }
+    if (stream) sendResult(res, payload)
+    else sendJson(res, 200, payload)
   } catch (e) {
     // A STORE failure, not a provider failure — `answer()` already caught and
     // recorded provider failures as a refusal. This is a bug or an outage, so it's
     // logged operationally rather than recorded as an `EscalationReason`, and the
     // visitor gets a generic 503 rather than a leaked stack trace.
     deps.logError("chat handler failed", e)
-    sendJson(res, 503, { error: "temporarily unavailable" })
+    // Headers are already sent on an open stream, so a 503 is impossible — the only way
+    // to tell the client is an event. Closing silently would leave the widget waiting
+    // forever, unable to distinguish a crash from a slow answer.
+    if (res.headersSent) sendStreamError(res, "temporarily unavailable")
+    else sendJson(res, 503, { error: "temporarily unavailable" })
   }
 }

@@ -3,7 +3,7 @@ import { buildPrompt } from "./prompt/builder.js"
 import { ProviderError } from "./provider-error.js"
 import type { Provider } from "./provider.js"
 import type { Store } from "./store.js"
-import type { EscalationReason, PipelineResult, TokenUsage } from "./types.js"
+import type { EscalationReason, PipelineResult, Segment, TokenUsage } from "./types.js"
 
 const MAX_ROUNDS = 2
 const CANDIDATE_LIMIT = 8
@@ -60,8 +60,24 @@ export async function answer(args: {
   conversationId: string
   history: { role: "user" | "assistant"; content: string }[]
   question: string
+  /**
+   * Reports which stage the turn is in, so a caller can show progress.
+   *
+   * Optional and fire-and-forget: the pipeline never awaits it and never lets it fail the
+   * turn. A progress callback that could throw would let a cosmetic concern break an
+   * answer, which is the wrong trade in both directions.
+   */
+  onProgress?: (stage: "retrieving" | "generating" | "validating") => void
 }): Promise<PipelineResult> {
   const { store, provider, tenantId, conversationId, history, question } = args
+  const progress = (stage: "retrieving" | "generating" | "validating") => {
+    try {
+      args.onProgress?.(stage)
+    } catch {
+      // Swallowed on purpose — see the doc on `onProgress`. A broken listener must not
+      // cost the customer their answer.
+    }
+  }
   const config = await store.getTenantConfig(tenantId)
 
   await store.recordUserTurn({ tenantId, conversationId, text: question })
@@ -91,6 +107,27 @@ export async function answer(args: {
     return { kind: "refused", text: config.refusalText, reason, usage }
   }
 
+  // Answers a customer question from an approved canned answer, recording it exactly
+  // like a generated answer: one `general` segment, no citations. `static` mode's
+  // grounding guarantee comes from the human review at APPROVAL time (spec §6.1), not
+  // from the runtime validator — so this deliberately never touches `validateGrounding`.
+  const respondWithCanned = async (canned: { answer: string }): Promise<PipelineResult> => {
+    const segments: Segment[] = [{ kind: "general", text: canned.answer }]
+    await store.recordAnswer({ tenantId, conversationId, segments, citedChunkIds: [] })
+    return { kind: "answered", segments, citations: [], usage }
+  }
+
+  // `static`: zero cost, by construction. The provider is not touched AT ALL — not
+  // `embed`, not `complete` — because the entire point of this mode is that no runtime
+  // AI call exists to fail, rate-limit, or bill. A miss escalates rather than falling
+  // through to retrieval; `fallback_to_full` (per-skill) is out of scope here.
+  if (config.answerMode === "static") {
+    const canned = await store.matchCannedAnswer({ tenantId, question })
+    return canned ? respondWithCanned(canned) : refuse("no_source")
+  }
+
+  progress("retrieving")
+
   let embedding: number[]
   try {
     embedding = await provider.embed({ model: config.embeddingModel, text: question })
@@ -108,9 +145,28 @@ export async function answer(args: {
   // call that's guaranteed to fail validation.
   if (candidates.length === 0) return refuse("no_source")
 
+  // `thrifty`: still no generation. The best retrieved chunk is quoted VERBATIM as a
+  // `business_claim` citing itself — never composed by a model, so there is nothing to
+  // hallucinate. `provider.complete` is never called in this branch.
+  if (config.answerMode === "thrifty") {
+    const top = candidates[0]!
+    const segments: Segment[] = [
+      { kind: "business_claim", text: top.content, citations: [top.id] },
+    ]
+    await store.recordAnswer({ tenantId, conversationId, segments, citedChunkIds: [top.id] })
+    return {
+      kind: "answered",
+      segments,
+      citations: [{ chunkId: top.id, documentTitle: top.documentTitle }],
+      usage,
+    }
+  }
+
   let feedback: string | undefined
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     const prompt = buildPrompt({ config, history, candidates, question, ...(feedback ? { feedback } : {}) })
+
+    progress("generating")
 
     let result
     try {
@@ -118,6 +174,8 @@ export async function answer(args: {
     } catch (e) {
       return refuse(escalationReasonFor(e))
     }
+
+    progress("validating")
 
     const verdict = validateGrounding({
       answer: result.answer,

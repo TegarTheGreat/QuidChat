@@ -3,6 +3,7 @@ import type { Provider, Store } from "@quidchat/core"
 import { withTenant, type QuidDb } from "@quidchat/db"
 import { indexSource } from "@quidchat/ingest"
 import { sql, type SQL } from "drizzle-orm"
+import { setupStatus } from "./setup-status.js"
 import { lookupTenantBySlug } from "./tenant-lookup.js"
 
 /** Normalizes the `execute()` result, whose shape differs between drivers — see the
@@ -509,6 +510,42 @@ async function getUsage(
  * resolved with the same `lookupTenantBySlug` the public `/chat` route uses — not the
  * origin-allowlist path, which exists for visitors, not operators.
  */
+/**
+ * `GET /admin/setup?tenantSlug=…`
+ *
+ * What is stopping this tenant from answering, and what to do about it.
+ *
+ * A first-time owner has a technically valid installation that answers nothing, because
+ * there is no content and no allowed origin, and nothing else in the product tells them
+ * that. The advice is pure inspection — no model is involved — so this works in static
+ * mode and with no provider configured, which is exactly when an owner most needs to be
+ * told what is wrong.
+ */
+async function getSetup(
+  res: ServerResponse,
+  deps: AdminDeps,
+  searchParams: URLSearchParams,
+): Promise<void> {
+  const tenantSlug = searchParams.get("tenantSlug")
+  if (!tenantSlug) {
+    sendJson(res, 400, { error: "tenantSlug is required" })
+    return
+  }
+  const identity = await lookupTenantBySlug(deps.db, tenantSlug)
+  if (!identity) {
+    sendJson(res, 404, { error: "unknown tenant" })
+    return
+  }
+  const status = await setupStatus({
+    db: deps.db,
+    tenantId: identity.tenantId,
+    // The server was handed a provider at construction, so this is already known —
+    // re-deriving it from the environment could disagree with what is actually wired.
+    hasProvider: true,
+  })
+  sendJson(res, 200, status)
+}
+
 export async function handleAdminRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -534,6 +571,7 @@ export async function handleAdminRequest(
   if (method === "GET" && sub === "/conversations") return listConversations(res, deps, searchParams)
   if (method === "GET" && sub === "/escalations") return listEscalations(res, deps, searchParams)
   if (method === "GET" && sub === "/usage") return getUsage(res, deps, searchParams)
+  if (method === "GET" && sub === "/setup") return getSetup(res, deps, searchParams)
 
   sendJson(res, 404, { error: "not found" })
 }
