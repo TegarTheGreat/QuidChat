@@ -199,6 +199,39 @@ function appendSegment(
  * stays synchronous and never touches the network, which is what keeps it easy to
  * unit-test with a plain fake `deps`.
  */
+/**
+ * Puts the widget's CSS into its shadow root.
+ *
+ * Prefers a constructable stylesheet over a `<style>` element, because this bundle runs on
+ * somebody else's website and a strict `Content-Security-Policy` there — `style-src 'self'`,
+ * common on the kind of site that has a security team — blocks an inline `<style>` outright.
+ * The widget would mount completely unstyled, which looks like a broken product rather than a
+ * policy doing its job. A stylesheet built through the CSSOM is not inline content and is not
+ * blocked.
+ *
+ * The `<style>` fallback stays for browsers without `adoptedStyleSheets`, and for the happy_dom
+ * environment the unit tests run in, where the constructable path does not exist.
+ */
+function applyStyles(shadow: ShadowRoot, doc: Document, css: string): void {
+  const view = doc.defaultView as (Window & { CSSStyleSheet?: typeof CSSStyleSheet }) | null
+  const SheetCtor = view?.CSSStyleSheet
+  if (SheetCtor && "adoptedStyleSheets" in shadow) {
+    try {
+      const sheet = new SheetCtor()
+      // `replaceSync` is what makes this synchronous, so nothing renders before it is styled.
+      sheet.replaceSync(css)
+      shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet]
+      return
+    } catch {
+      // Some engines expose the constructor but not construction from another realm. Falling
+      // through costs nothing and is still correct anywhere CSP is not enforcing.
+    }
+  }
+  const style = doc.createElement("style")
+  style.textContent = css
+  shadow.appendChild(style)
+}
+
 export function mountWidget(
   container: HTMLElement,
   config: WidgetConfig,
@@ -208,9 +241,7 @@ export function mountWidget(
   const doc = container.ownerDocument
   const shadow = container.attachShadow({ mode: "open" })
 
-  const style = doc.createElement("style")
-  style.textContent = buildStyle(theme)
-  shadow.appendChild(style)
+  applyStyles(shadow, doc, buildStyle(theme))
 
   const launcher = doc.createElement("button")
   launcher.className = "launcher"

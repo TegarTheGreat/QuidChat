@@ -5,6 +5,22 @@ import type { WidgetConfig } from "./config.js"
 import { DEFAULT_THEME, sanitizeTheme } from "./theme.js"
 import { mountWidget } from "./ui.js"
 
+/**
+ * The CSS actually applied to the widget, however it got there.
+ *
+ * The widget prefers a constructable stylesheet so a host page's `style-src 'self'` cannot leave
+ * it unstyled, and falls back to a `<style>` element. A test that only looked for the element
+ * would pass or fail on the mechanism rather than on the CSS.
+ */
+function stylesOf(container: HTMLElement): string {
+  const shadow = container.shadowRoot!
+  const adopted = [...(shadow.adoptedStyleSheets ?? [])]
+    .flatMap((sheet) => [...sheet.cssRules].map((rule) => rule.cssText))
+    .join("\n")
+  return adopted || (shadow.querySelector("style")?.textContent ?? "")
+}
+
+
 /** Token counts are irrelevant to these tests; the shape just has to be present. */
 const ZERO_USAGE = { inputTokens: 0, outputTokens: 0, cachedTokens: null }
 
@@ -204,7 +220,7 @@ describe("widget theming", () => {
     document.body.appendChild(container)
     mountWidget(container, cfg, undefined, hostileTheme)
 
-    const styleText = container.shadowRoot!.querySelector("style")!.textContent!
+    const styleText = stylesOf(container)
     expect(styleText).not.toContain(".evil")
     expect(styleText).toContain(DEFAULT_THEME.primaryColor)
   })

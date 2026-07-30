@@ -46,6 +46,8 @@ Ask it something your document covers, and the answer arrives with the document'
 
 Your site and the QuidChat server are different origins, so the widget's requests are cross-origin. The public routes — the chat endpoints, the widget config and the bundle itself — answer preflights and echo the requesting origin, and that is all a browser needs. What decides whether a site may actually use your assistant is the per-tenant origin allowlist, which runs on the request itself and answers `403`. The CORS header is still sent on that `403` on purpose: withholding it would hide the refusal and its message from the widget, turning the most common setup mistake into an unexplained failure. The admin API deliberately has no CORS at all — the panel is served by the same process, so it is already same-origin.
 
+If your site sets a `Content-Security-Policy`, it needs to allow the bundle and the API — `script-src https://your-quidchat-host` and `connect-src https://your-quidchat-host`. Nothing else: the widget builds its stylesheet through the CSSOM rather than injecting a `<style>` element, so `style-src 'self'` leaves it looking exactly as intended instead of stripping it back to an unstyled button.
+
 ## What you get
 
 ```
