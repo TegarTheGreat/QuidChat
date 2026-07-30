@@ -1,0 +1,72 @@
+services:
+  quidchat:
+    build: .
+    ports:
+      - "${PORT:-3210}:3210"
+    environment:
+      # Present so the app picks the managed-Postgres tier over embedded PGlite —
+      # see readServeConfig in packages/cli/src/config.ts. The role is `postgres`
+      # (the image's default superuser) because migrations grant the `quidchat_app`
+      # role to whatever connects, and only a superuser can grant roles.
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-quidchat}@postgres:5432/quidchat
+      QUIDCHAT_ADMIN_TOKEN: ${QUIDCHAT_ADMIN_TOKEN:-}
+      # Provider keys: named but given no value, which tells Compose to read them
+      # from whatever is already in the shell's environment and pass nothing at all
+      # if a variable isn't set there. A key hardcoded here would end up in the image
+      # history and in anyone's `docker inspect`.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-}
+      TOGETHER_API_KEY: ${TOGETHER_API_KEY:-}
+      TOGETHER_BASE_URL: ${TOGETHER_BASE_URL:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-}
+      FIREWORKS_API_KEY: ${FIREWORKS_API_KEY:-}
+      FIREWORKS_BASE_URL: ${FIREWORKS_BASE_URL:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
+      LMSTUDIO_BASE_URL: ${LMSTUDIO_BASE_URL:-}
+      LLAMACPP_BASE_URL: ${LLAMACPP_BASE_URL:-}
+      # Channel credentials: absent means the corresponding webhook route 404s
+      # instead of running unauthenticated — see the Channels section of README.md.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_SECRET_TOKEN: ${TELEGRAM_SECRET_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WAHA_BASE_URL: ${WAHA_BASE_URL:-}
+      WAHA_SESSION: ${WAHA_SESSION:-}
+      WAHA_API_KEY: ${WAHA_API_KEY:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_PUBLIC_KEY: ${DISCORD_PUBLIC_KEY:-}
+    depends_on:
+      postgres:
+        # Not just "started": Postgres accepts TCP connections for a moment before
+        # it is actually ready to serve queries. Without this condition the app can
+        # win the race, fail its first connection, and (depending on the orchestrator)
+        # never get retried the same way a slow-starting dependency would be.
+        condition: service_healthy
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quidchat}
+      POSTGRES_DB: quidchat
+    volumes:
+      # Named, not bind-mounted: survives `docker compose down` and doesn't depend
+      # on a host path existing with the right permissions.
+      - quidchat_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d quidchat"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  quidchat_postgres_data:

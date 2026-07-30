@@ -26,11 +26,27 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
   const [text, setText] = React.useState("")
   const { state: createState, mutate: createSource } = useMutation(api.createTextSource)
 
+  const [url, setUrl] = React.useState("")
+  const [urlTitle, setUrlTitle] = React.useState("")
+  const { state: urlState, mutate: createFromUrl } = useMutation(api.createUrlSource)
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     await createSource({ tenantSlug, title, text })
     setTitle("")
     setText("")
+    setReloadKey((k) => k + 1)
+  }
+
+  async function handleUrlSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    await createFromUrl({
+      tenantSlug,
+      url,
+      ...(urlTitle.trim() ? { title: urlTitle.trim() } : {}),
+    })
+    setUrl("")
+    setUrlTitle("")
     setReloadKey((k) => k + 1)
   }
 
@@ -85,7 +101,52 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Add a text source</CardTitle>
+          <CardTitle>Read a page from your site</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={handleUrlSubmit}>
+            <div className="space-y-2">
+              <Label htmlFor="source-url">Page address</Label>
+              <Input
+                id="source-url"
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://myshop.example/delivery"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                One page at a time, and only the readable text — menus, footers and scripts
+                are dropped, because a menu repeated across a site becomes near-identical
+                chunks that crowd out the real answer. If the page builds its content in the
+                browser there is nothing to read, and pasting the text below works instead.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="source-url-title">Name it (optional)</Label>
+              <Input
+                id="source-url-title"
+                value={urlTitle}
+                onChange={(e) => setUrlTitle(e.target.value)}
+                placeholder="Delivery terms"
+              />
+              <p className="text-xs text-muted-foreground">
+                This is the name your customer sees attached to the answer. The page&rsquo;s own
+                title is used if you leave it blank, and &ldquo;Home | Acme&rdquo; is harder to
+                recognise than &ldquo;Delivery terms&rdquo;.
+              </p>
+            </div>
+            {urlState.status === "error" && <MutationError message={urlState.message} />}
+            <Button type="submit" disabled={urlState.status === "pending"}>
+              {urlState.status === "pending" ? "Reading…" : "Read and index"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Paste text instead</CardTitle>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleSubmit}>

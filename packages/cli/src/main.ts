@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs"
 import { runAddText } from "./add-text.js"
+import { runAddUrl } from "./add-url.js"
 import { runInit } from "./init.js"
 import { serve } from "./serve.js"
 
@@ -24,6 +25,10 @@ const USAGE = `Usage:
 
   quidchat add-text <slug> --title "<title>" (--file <path> | --stdin)
       Index text as a knowledge source for a tenant.
+
+  quidchat add-url <slug> <url> [--title "<title>"]
+      Read a page and index it. Private and local addresses are refused, including
+      via a redirect. Without --title, the page's own title is used.
 `
 
 /** Collects repeated flags, so `--origin a --origin b` yields both. */
@@ -93,6 +98,16 @@ async function main(): Promise<void> {
     const text = useStdin ? readFileSync(0, "utf8") : readFileSync(file!, "utf8")
 
     await runAddText({ env: process.env, slug, title, text })
+    return
+  }
+
+  if (command === "add-url") {
+    const slug = positional[0]
+    if (!slug) throw new Error(`a tenant slug is required\n\n${USAGE}`)
+    const url = positional[1]
+    if (!url) throw new Error(`a URL is required\n\n${USAGE}`)
+    const title = firstOf(named, "title")
+    await runAddUrl({ env: process.env, slug, url, ...(title ? { title } : {}) })
     return
   }
 

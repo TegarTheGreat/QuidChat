@@ -24,6 +24,11 @@ export async function addText(args: {
   slug: string
   title: string
   text: string
+  /** `url` when the text came from a fetched page. The row's `kind` and `uri` are what the
+   *  panel shows and what a future re-read would follow, so text pasted in and a page read
+   *  from the web must not land in the database looking identical. */
+  kind?: "text" | "url"
+  url?: string
   log?: (line: string) => void
 }): Promise<{ documentId: string; chunkCount: number }> {
   const log = args.log ?? ((line: string) => console.log(line))
@@ -54,10 +59,14 @@ export async function addText(args: {
 
   const config = await createStore(args.db).getTenantConfig(tenantId)
 
+  const kind = args.kind ?? "text"
+  // For pasted text the title is all there is to identify the source by; for a page, the URL
+  // is what identifies it and the title is only its name.
+  const uri = args.url ?? args.title
   const source = rowsOf(
     await args.db.execute(sql`
       INSERT INTO knowledge_sources (tenant_id, kind, uri, status)
-      VALUES (${tenantId}, 'text', ${args.title}, 'pending')
+      VALUES (${tenantId}, ${kind}, ${uri}, 'pending')
       RETURNING id
     `),
   )[0]
@@ -68,6 +77,7 @@ export async function addText(args: {
     tenantId,
     sourceId: source!.id as string,
     title: args.title,
+    ...(args.url !== undefined ? { url: args.url } : {}),
     text: args.text,
     embeddingModel: config.embeddingModel,
   })

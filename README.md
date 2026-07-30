@@ -25,6 +25,10 @@ node packages/cli/dist/main.mjs init my-shop \
 cat policy.txt | node packages/cli/dist/main.mjs add-text my-shop \
   --title "Store Policy" --stdin
 
+# Or point it at a page you already have
+node packages/cli/dist/main.mjs add-url my-shop https://myshop.example/delivery \
+  --title "Delivery terms"
+
 node packages/cli/dist/main.mjs serve
 ```
 
@@ -81,6 +85,16 @@ Point the platform at `POST /v1/channels/:channel/:tenantSlug`.
 Set the signature secret. Verification runs before anything is parsed or stored, so a forged request never reaches the pipeline — without it, anyone who learns the URL can put words in a business's conversation history and spend its budget.
 
 Every channel goes through the identical pipeline. Routing, retrieval, grounding, refusal and spend behave exactly as they do on the website, because the promise the product makes does not change with the transport.
+
+## Giving it knowledge
+
+Three ways in, all equivalent once the text is chunked: paste it in the panel, pipe it through `add-text`, or point at a page with `add-url` or **Knowledge → Read a page from your site**.
+
+A page is reduced to its readable prose. Scripts and stylesheets go because they are not language — they match nothing a customer would type and cost an embedding call each. Menus, headers and footers go too: a menu repeated across ninety pages becomes ninety near-identical chunks that crowd the real answer out of the retrieval window.
+
+Reading a URL means the server makes a request to an address someone else chose, so it is guarded rather than trusted. Only `http` and `https`. Loopback, the private ranges, carrier-grade NAT and IPv6 link-local are all refused — including `169.254.169.254`, the instance metadata endpoint that hands out cloud credentials to anything that asks. The check runs on every redirect hop, because a redirect is a second chance to name a target, and a hostname resolving to several addresses is refused if *any* of them is private. Non-text responses are refused with the type named, since a PDF embedded as binary noise costs money and makes retrieval worse.
+
+If a page builds its content in the browser there is nothing on the wire to read. QuidChat says so and tells you to paste the text instead, rather than indexing an empty shell.
 
 ## One assistant, several jobs
 

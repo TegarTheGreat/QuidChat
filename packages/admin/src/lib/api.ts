@@ -200,6 +200,15 @@ export const api = {
   listSources: (tenantSlug: string) =>
     request<Source[]>(`/v1/admin/sources${query({ tenantSlug })}`),
 
+  /** Reads a page and indexes it. Private and local addresses are refused by the server,
+   *  including via a redirect, so a URL a visitor could supply cannot be turned into a
+   *  request to something on the deployment's own network. */
+  createUrlSource: (body: { tenantSlug: string; url: string; title?: string }) =>
+    request<{ sourceId: string; title: string; url: string; status: string; error?: string }>(
+      "/v1/admin/sources/url",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
   createTextSource: (body: { tenantSlug: string; title: string; text: string }) =>
     request<Source>("/v1/admin/sources/text", {
       method: "POST",

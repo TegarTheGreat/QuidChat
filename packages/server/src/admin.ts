@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Provider, Store } from "@quidchat/core"
 import { withTenant, type QuidDb } from "@quidchat/db"
-import { indexSource } from "@quidchat/ingest"
+import { fetchPage, indexSource, UrlFetchError } from "@quidchat/ingest"
 import { sql, type SQL } from "drizzle-orm"
 import { setupStatus } from "./setup-status.js"
 import { lookupTenantBySlug } from "./tenant-lookup.js"
@@ -420,6 +420,84 @@ async function createTextSource(
     deps.logError("indexSource failed for a text source", e)
     const message = e instanceof Error ? e.message : String(e)
     sendJson(res, 201, { sourceId, status: "error", error: message })
+  }
+}
+
+/**
+ * `POST /admin/sources/url` — read a page and index it.
+ *
+ * The fetch happens BEFORE the source row is created. A page that cannot be read produces no
+ * row at all, rather than a permanent `error` row an owner has to find and delete after
+ * mistyping a URL. That is the opposite of the text route's ordering, and deliberately so:
+ * there, the text is already in hand and only the embedding can fail, so the row is worth
+ * keeping to explain the failure and allow a retry.
+ *
+ * A failed URL is a `400` with the fetcher's own message — "resolves to a private address",
+ * "is application/pdf", "has no readable text, paste it instead" — because each of those tells
+ * the owner what to do next, and a generic failure tells them nothing.
+ */
+async function createUrlSource(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const body = {
+    tenantSlug: typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
+    url: typeof raw.url === "string" ? raw.url : "",
+    title: typeof raw.title === "string" ? raw.title : null,
+  }
+
+  const tenantId = await resolveTenantOr404(res, deps.db, body.tenantSlug)
+  if (tenantId === null) return
+  if (body.url.trim() === "") {
+    sendJson(res, 400, { error: "url is required" })
+    return
+  }
+
+  let page: Awaited<ReturnType<typeof fetchPage>>
+  try {
+    page = await fetchPage(body.url.trim())
+  } catch (e) {
+    if (e instanceof UrlFetchError) {
+      sendJson(res, 400, { error: e.message })
+      return
+    }
+    deps.logError("fetching a URL source failed unexpectedly", e)
+    sendJson(res, 502, { error: "could not read that page" })
+    return
+  }
+
+  // The owner's own title wins when they gave one: a page titled "Home | Acme" is worse for
+  // them to recognise in a citation than "Delivery terms".
+  const title = body.title?.trim() || page.title
+  const { embeddingModel } = await deps.store.getTenantConfig(tenantId)
+
+  const sourceId = await withTenant(deps.db, tenantId, async (tx) => {
+    const result = await tx.execute(sql`
+      INSERT INTO knowledge_sources (tenant_id, kind, uri, status)
+      VALUES (${tenantId}, 'url', ${page.finalUrl}, 'pending')
+      RETURNING id
+    `)
+    return rowsOf(result)[0]!.id as string
+  })
+
+  try {
+    const indexed = await indexSource({
+      tenantId, sourceId, title, url: page.finalUrl, text: page.text,
+      embeddingModel, store: deps.store, provider: deps.provider,
+    })
+    sendJson(res, 201, {
+      sourceId, documentId: indexed.documentId, chunkCount: indexed.chunkCount,
+      title, url: page.finalUrl, status: "ready",
+    })
+  } catch (e) {
+    deps.logError("indexSource failed for a URL source", e)
+    sendJson(res, 201, {
+      sourceId, title, url: page.finalUrl,
+      status: "error", error: e instanceof Error ? e.message : String(e),
+    })
   }
 }
 
@@ -939,6 +1017,7 @@ export async function handleAdminRequest(
   if (method === "PATCH" && sub === "/settings") return patchSettings(req, res, deps)
   if (method === "GET" && sub === "/sources") return listSources(res, deps, searchParams)
   if (method === "POST" && sub === "/sources/text") return createTextSource(req, res, deps)
+  if (method === "POST" && sub === "/sources/url") return createUrlSource(req, res, deps)
   if (method === "GET" && sub === "/conversations") return listConversations(res, deps, searchParams)
   if (method === "GET" && sub === "/escalations") return listEscalations(res, deps, searchParams)
   if (method === "GET" && sub === "/usage") return getUsage(res, deps, searchParams)
