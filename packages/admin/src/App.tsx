@@ -16,6 +16,7 @@ import { KnowledgePage } from "./pages/knowledge"
 import { OverviewPage } from "./pages/overview"
 import { SetupPage } from "./pages/setup"
 import { CannedAnswersPage } from "./pages/canned-answers"
+import { ChannelsPage } from "./pages/channels"
 import { SkillsPage } from "./pages/skills"
 import { TenantsPage } from "./pages/tenants"
 
@@ -26,6 +27,7 @@ const SECTION_TITLES: Record<Section, string> = {
   conversations: "Conversations",
   skills: "Skills & routing",
   canned: "Canned answers",
+  channels: "Channels",
   escalations: "Escalations",
   tenants: "Tenants",
 }
@@ -81,6 +83,7 @@ function AdminApp() {
           )}
           {selectedTenant && section === "skills" && <SkillsPage tenantSlug={selectedTenant} />}
           {selectedTenant && section === "canned" && <CannedAnswersPage tenantSlug={selectedTenant} />}
+          {selectedTenant && section === "channels" && <ChannelsPage tenantSlug={selectedTenant} />}
           {selectedTenant && section === "escalations" && (
             <EscalationsPage tenantSlug={selectedTenant} />
           )}

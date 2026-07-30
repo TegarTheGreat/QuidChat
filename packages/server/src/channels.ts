@@ -13,6 +13,7 @@ import {
 import { sql } from "drizzle-orm"
 import { withTenant, type QuidDb } from "@quidchat/db"
 import { lookupTenantBySlug } from "./tenant-lookup.js"
+import { decryptSecrets, readSecretKey } from "./secrets.js"
 import { notifyEscalationInBackground } from "./escalation-notify.js"
 import type { ChatRateLimiter } from "./rate-limit.js"
 
@@ -90,6 +91,101 @@ function adapterFor(
         tenantSlug,
         botToken,
         ...(env.DISCORD_PUBLIC_KEY ? { publicKey: env.DISCORD_PUBLIC_KEY } : {}),
+      })
+    }
+    default:
+      return null
+  }
+}
+
+/**
+ * The tenant's own channel credentials, or null when they have none stored.
+ *
+ * Read before the environment is consulted, so a business that connected WhatsApp in the panel
+ * uses its own number even on a deployment that also has one configured in the environment.
+ * Without that precedence, a shared installation would answer every tenant's customers from one
+ * account — which is the exact thing per-tenant credentials exist to prevent.
+ *
+ * Returns null on ANY failure, including a missing or changed encryption key, and the caller
+ * falls back to the environment. A channel that stops working is visible in the panel, which
+ * reports the same decryption failure; refusing the webhook outright would take a working
+ * environment-configured channel down with it.
+ */
+async function storedChannelSecrets(args: {
+  db: QuidDb
+  tenantId: string
+  channel: string
+  env: Record<string, string | undefined>
+  logError: (message: string, cause: unknown) => void
+}): Promise<Record<string, string> | null> {
+  const { db, tenantId, channel, env, logError } = args
+  try {
+    const row = await withTenant(db, tenantId, async (tx) =>
+      rowsOf(
+        await tx.execute(sql`
+          SELECT secrets FROM channel_configs WHERE channel = ${channel} AND enabled = true
+        `),
+      )[0],
+    )
+    if (!row) return null
+    const secrets = decryptSecrets(row.secrets as string, readSecretKey(env), `${channel} credentials`)
+    const out: Record<string, string> = {}
+    for (const [key, value] of Object.entries(secrets as Record<string, unknown>)) {
+      if (typeof value === "string" && value !== "") out[key] = value
+    }
+    return Object.keys(out).length > 0 ? out : null
+  } catch (cause) {
+    logError(`could not read stored ${channel} credentials`, cause)
+    return null
+  }
+}
+
+/**
+ * Builds the adapter from a tenant's stored credentials.
+ *
+ * A separate function from `adapterFor` rather than a branch inside it, because the two read
+ * from different places and only this one can fail per tenant. Missing required fields return
+ * null and let the environment answer — the admin API already refuses to save an incomplete
+ * channel, so a row that reaches here without them predates that check or was written directly.
+ */
+function adapterFromSecrets(
+  channel: string,
+  tenantSlug: string,
+  secrets: Record<string, string>,
+): ChannelAdapter | null {
+  switch (channel) {
+    case "telegram": {
+      if (!secrets.botToken) return null
+      return telegramAdapter({
+        tenantSlug,
+        botToken: secrets.botToken,
+        ...(secrets.secretToken ? { secretToken: secrets.secretToken } : {}),
+      })
+    }
+    case "whatsapp": {
+      if (!secrets.phoneNumberId || !secrets.accessToken) return null
+      return whatsappCloudAdapter({
+        tenantSlug,
+        phoneNumberId: secrets.phoneNumberId,
+        accessToken: secrets.accessToken,
+        ...(secrets.appSecret ? { appSecret: secrets.appSecret } : {}),
+      })
+    }
+    case "waha": {
+      if (!secrets.baseUrl) return null
+      return wahaAdapter({
+        tenantSlug,
+        baseUrl: secrets.baseUrl,
+        ...(secrets.session ? { session: secrets.session } : {}),
+        ...(secrets.apiKey ? { apiKey: secrets.apiKey } : {}),
+      })
+    }
+    case "discord": {
+      if (!secrets.botToken) return null
+      return discordAdapter({
+        tenantSlug,
+        botToken: secrets.botToken,
+        ...(secrets.publicKey ? { publicKey: secrets.publicKey } : {}),
       })
     }
     default:
@@ -193,17 +289,40 @@ export async function handleChannelWebhook(
     return
   }
 
-  const adapter = adapterFor(channel, tenantSlug, deps.env)
-  if (!adapter) {
-    res.writeHead(404, { "content-type": "application/json" })
-    res.end(JSON.stringify({ error: `channel "${channel}" is not configured` }))
-    return
-  }
-
   const rawBody = await readRawBody(req)
   if (rawBody === null) {
     res.writeHead(413, { "content-type": "application/json" })
     res.end(JSON.stringify({ error: "request body too large" }))
+    return
+  }
+
+  // The tenant is resolved before the adapter now, because the adapter may be built from
+  // credentials that belong to the tenant. That moves the unknown-tenant 404 ahead of Discord's
+  // PING handshake, which is the honest order: a ping to a slug that does not exist should not
+  // be answered as though it did.
+  const identity = await lookupTenantBySlug(deps.db, tenantSlug)
+  if (!identity) {
+    res.writeHead(404, { "content-type": "application/json" })
+    res.end(JSON.stringify({ error: "unknown tenant" }))
+    return
+  }
+
+  // Stored credentials first, the environment second. On a shared installation an environment
+  // variable is one bot for everyone; a business that connected its own account in the panel
+  // must talk to its own customers from its own number, or the feature is decorative.
+  const stored = await storedChannelSecrets({
+    db: deps.db,
+    tenantId: identity.tenantId,
+    channel,
+    env: deps.env,
+    logError: deps.logError,
+  })
+  const adapter =
+    (stored ? adapterFromSecrets(channel, tenantSlug, stored) : null) ??
+    adapterFor(channel, tenantSlug, deps.env)
+  if (!adapter) {
+    res.writeHead(404, { "content-type": "application/json" })
+    res.end(JSON.stringify({ error: `channel "${channel}" is not configured` }))
     return
   }
 
@@ -223,13 +342,6 @@ export async function handleChannelWebhook(
     } catch {
       // Not JSON — fall through and let the shared handler reject it.
     }
-  }
-
-  const identity = await lookupTenantBySlug(deps.db, tenantSlug)
-  if (!identity) {
-    res.writeHead(404, { "content-type": "application/json" })
-    res.end(JSON.stringify({ error: "unknown tenant" }))
-    return
   }
 
   try {

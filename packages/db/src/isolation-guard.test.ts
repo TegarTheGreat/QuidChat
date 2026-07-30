@@ -286,6 +286,14 @@ describe("isolation of every table, measured by behavior", () => {
       INSERT INTO canned_answers (tenant_id, question, answer, status)
       VALUES (${tenantId}, ${`what are the hours for ${tag}?`}, 'Nine to five.', 'approved')
     `)
+    // Seeded like every other tenant-scoped table, and this one especially: it holds the
+    // credentials a business sends messages with, so a leak here would let one tenant reply as
+    // another. The value is a stand-in for a real encrypted blob — this test is about which
+    // rows are visible, not about the encryption, which secrets.test.ts covers.
+    await db.execute(sql`
+      INSERT INTO channel_configs (tenant_id, channel, secrets)
+      VALUES (${tenantId}, 'telegram', ${`v1.stub.${tag}`})
+    `)
   }
 
   beforeAll(async () => {

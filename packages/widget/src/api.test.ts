@@ -167,23 +167,20 @@ describe("rate limiting", () => {
   })
 })
 
-describe("streaming progress", () => {
-  /** Builds a Response whose body streams the given SSE text in the given pieces, so a payload
-   *  split mid-event is exercised rather than assumed to arrive whole. */
-  function sseResponse(chunks: string[], status = 200): Response {
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        const encoder = new TextEncoder()
-        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
-        controller.close()
-      },
-    })
-    return new Response(status === 200 ? stream : null, {
-      status,
-      headers: { "content-type": "text/event-stream" },
-    })
-  }
+/** A Response whose body streams the given SSE text in the given pieces, so a payload split
+ *  mid-event is exercised rather than assumed to arrive whole. */
+function sseResponse(chunks: string[]): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder()
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
+      controller.close()
+    },
+  })
+  return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } })
+}
 
+describe("streaming progress", () => {
   const answered = {
     conversationId: "c1",
     kind: "answered",

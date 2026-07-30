@@ -77,6 +77,10 @@ The website widget works out of the box. The others are opt-in — absent creden
 
 Point the platform at `POST /v1/channels/:channel/:tenantSlug`.
 
+Credentials go in **Channels** in the admin panel, or in the environment. Stored credentials win: on one installation serving several businesses, an environment variable is one bot for everyone, and a business that connected its own WhatsApp number has to answer its own customers from it. The environment stays the right choice for a single-tenant install and for a shared bot.
+
+Anything saved in the panel is encrypted with `QUIDCHAT_SECRET_KEY` (`openssl rand -base64 32`) using AES-256-GCM, and the panel never shows a stored value back — not even masked. There is nothing to do with a token except replace it, and a field that displays four characters of one is a field that leaks four characters of one. Without the key set, the panel says so rather than offering a form that cannot work; storing credentials in plain text is not offered as an alternative, because a database backup would then hand over the ability to send messages as the business.
+
 | Channel | Variables |
 |---|---|
 | Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_SECRET_TOKEN` |
@@ -146,6 +150,7 @@ Anthropic has no embeddings endpoint, and retrieval needs one. Set `ANTHROPIC_AP
 | `DATABASE_URL` | — | Managed Postgres. Absent means embedded PGlite |
 | `QUIDCHAT_DATA_DIR` | `./.quidchat/data` | Where PGlite stores data. `memory` for ephemeral |
 | `QUIDCHAT_ADMIN_TOKEN` | — | Required by the admin API; unset means admin routes refuse |
+| `QUIDCHAT_SECRET_KEY` | — | 32 bytes, base64 or hex. Encrypts channel credentials saved in the panel |
 
 The panel is served at `/panel` by the same process that serves the API, so an install has an interface without a second deployment. The API keeps `/admin/*`: one namespace for pages and endpoints would make every new route a question about which it is, and the first wrong guess would shadow a working endpoint with an HTML page.
 

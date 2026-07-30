@@ -204,6 +204,28 @@ export interface CannedAnswer {
   createdAt: string
 }
 
+export type ChannelId = "telegram" | "whatsapp" | "waha" | "discord"
+
+export interface ChannelStatus {
+  channel: ChannelId
+  enabled: boolean
+  updatedAt: string
+  /** Which credential fields are stored — never their values. The API does not return them,
+   *  not even masked: a field showing part of a bot token leaks part of a bot token. */
+  configuredFields: string[]
+  /** Set when the stored credentials cannot be read, which in practice means the encryption
+   *  key changed. Shown as-is, because it names the fix. */
+  error: string | null
+}
+
+export interface ChannelsResponse {
+  /** False when QUIDCHAT_SECRET_KEY is unset. Nothing can be saved without it, so the panel
+   *  says so instead of offering a form that will fail. */
+  secretKeyConfigured: boolean
+  fields: Record<string, { required: string[]; optional: string[] }>
+  channels: ChannelStatus[]
+}
+
 export const api = {
   // Every list endpoint answers with a NAMED object — { tenants: [...] } — and every caller
   // wants the array. Unwrapping here rather than in each page is why these types can stay
@@ -340,6 +362,28 @@ export const api = {
 
   deleteCannedAnswer: (body: { tenantSlug: string; id: string }) =>
     request<{ ok: true }>("/v1/admin/canned-answers", {
+      method: "DELETE",
+      body: JSON.stringify(body),
+    }),
+
+  listChannels: (tenantSlug: string) =>
+    request<ChannelsResponse>(`/v1/admin/channels${query({ tenantSlug })}`),
+
+  /** Whole-row replacement, not a patch: a business rotating a token must be able to tell
+   *  what is actually stored, with no chance the old value is still there underneath. */
+  saveChannel: (body: {
+    tenantSlug: string
+    channel: ChannelId
+    enabled: boolean
+    secrets: Record<string, string>
+  }) =>
+    request<{ channel: string; enabled: boolean; configuredFields: string[] }>(
+      "/v1/admin/channels",
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
+
+  deleteChannel: (body: { tenantSlug: string; channel: ChannelId }) =>
+    request<{ ok: true }>("/v1/admin/channels", {
       method: "DELETE",
       body: JSON.stringify(body),
     }),

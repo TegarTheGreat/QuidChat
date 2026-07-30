@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto"
 import { applyMigrations, createDb } from "@quidchat/db"
 import { resolveProviders, type ResolveResult } from "@quidchat/providers"
 import { createServer, startRetentionSchedule } from "@quidchat/server"
@@ -48,12 +49,26 @@ export async function serve(args: {
     logError: (message, cause) => console.error(message, cause),
   })
 
-  const server = createServer({ db, provider: resolved.provider })
+  const server = createServer({ db, provider: resolved.provider, env: args.env })
   await new Promise<void>((resolve) => server.listen(config.port, () => resolve()))
 
   const address = server.address()
   const port = typeof address === "object" && address !== null ? address.port : config.port
   log(`listening on http://localhost:${port}`)
+  log(`admin panel: http://localhost:${port}/panel`)
+
+  // The panel is useless without this, and the failure is invisible until someone opens it and
+  // every request answers 503. Saying so at start-up — with a token ready to paste — turns a
+  // confusing dead panel into a one-line fix. A token is NOT generated and used automatically:
+  // it would differ on every restart, so anyone who signed in would be locked out by the next
+  // one, and the process would be quietly protecting nothing an operator knows about.
+  if (!args.env.QUIDCHAT_ADMIN_TOKEN) {
+    log("")
+    log("The admin API is refusing every request because QUIDCHAT_ADMIN_TOKEN is not set.")
+    log("Set it and restart. Here is one you can use:")
+    log(`  export QUIDCHAT_ADMIN_TOKEN=${randomBytes(24).toString("base64url")}`)
+    log("")
+  }
 
   return {
     port,

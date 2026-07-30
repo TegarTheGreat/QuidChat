@@ -137,7 +137,8 @@ export function createServer(deps: ServerDeps): Server {
 
     if (pathname.startsWith("/admin/")) {
       handleAdminRequest(req, res, pathname, url.searchParams, {
-        db: deps.db, store, provider: deps.provider, logError, adminToken: env.QUIDCHAT_ADMIN_TOKEN,
+        db: deps.db, store, provider: deps.provider, logError,
+        adminToken: env.QUIDCHAT_ADMIN_TOKEN, env,
       }).catch((e: unknown) => {
         logError("unhandled error in admin route", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
