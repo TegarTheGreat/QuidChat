@@ -196,11 +196,9 @@ CREATE POLICY tenant_self ON tenants USING (id = current_tenant_id());
 -- message_citations dan admin_sessions: composite FK menjamin tenant_id cocok dengan parent.
 -- Kedua referensi parent mereka sekarang composite dan tidak bisa melintasi tenant.
 
--- Guard: setiap tabel ber-`tenant_id` wajib RLS aktif DAN forced, punya policy, DAN
--- policy itu wajib benar-benar menyebut current_tenant_id(). Pemeriksaan terakhir itu
--- yang membedakan "ada policy" dari "ada policy yang men-scope": `USING (true)` adalah
--- policy yang sah dan sama sekali tidak mengisolasi.
-DO $guard$
+-- Guard bagian 1: setiap tabel ber-`tenant_id` wajib RLS aktif DAN forced, dan wajib
+-- punya setidaknya satu policy.
+DO $guard1$
 DECLARE bad text;
 BEGIN
   SELECT string_agg(format('%s (%s)', t.nama, t.alasan), ', ') INTO bad
@@ -213,11 +211,6 @@ BEGIN
                SELECT 1 FROM pg_policies p
                WHERE p.schemaname = 'public' AND p.tablename = c.relname
              ) THEN 'tanpa policy'
-             WHEN NOT EXISTS (
-               SELECT 1 FROM pg_policies p
-               WHERE p.schemaname = 'public' AND p.tablename = c.relname
-                 AND p.qual LIKE '%current_tenant_id()%'
-             ) THEN 'policy tidak menyebut current_tenant_id()'
            END AS alasan
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind = 'r'
@@ -231,4 +224,30 @@ BEGIN
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'RLS tidak lengkap: %', bad;
   END IF;
-END $guard$;
+END $guard1$;
+
+-- Guard bagian 2: SETIAP policy permissive pada tabel ber-`tenant_id` wajib menyebut
+-- current_tenant_id(). Memeriksa "ada satu policy yang men-scope" TIDAK CUKUP: Postgres
+-- menggabungkan policy permissive dengan OR, jadi satu `USING (true)` yang ditambahkan
+-- di samping policy yang benar meruntuhkan isolasi sementara policy yang benar tetap ada.
+-- Diukur di PGlite: serangan itu mengubah 1 baris menjadi 2, dan versi guard yang hanya
+-- memeriksa keberadaan tetap lolos.
+DO $guard2$
+DECLARE bad text;
+BEGIN
+  SELECT string_agg(format('%s.%s', p.tablename, p.policyname), ', ') INTO bad
+  FROM pg_policies p
+  JOIN pg_class c ON c.relname = p.tablename
+  JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+  WHERE p.schemaname = 'public'
+    AND p.permissive = 'PERMISSIVE'
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns col
+      WHERE col.table_schema = 'public' AND col.table_name = p.tablename
+        AND col.column_name = 'tenant_id'
+    )
+    AND (p.qual IS NULL OR p.qual NOT LIKE '%current_tenant_id()%');
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'policy permissive tanpa current_tenant_id(): %', bad;
+  END IF;
+END $guard2$;

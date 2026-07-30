@@ -31,8 +31,18 @@ export function createStore(db: QuidDb): Store {
           SELECT chat_model, rewrite_model, embedding_model, refusal_text, high_risk_topics
           FROM tenant_settings
         `)
-        const row = rowsOf(res)[0]
-        if (!row) throw new Error(`tenant_settings tidak ditemukan: ${tenantId}`)
+        const rows = rowsOf(res)
+        if (rows.length === 0) throw new Error(`tenant_settings tidak ditemukan: ${tenantId}`)
+        // Lebih dari satu baris berarti RLS sedang TIDAK mengisolasi — di bawah policy yang
+        // benar, `SELECT` tanpa `WHERE` di dalam withTenant() hanya bisa melihat satu baris.
+        // Mengambil baris pertama secara diam-diam berarti membaca setelan tenant lain, dan
+        // karena setelan default setiap tenant identik, tidak ada test yang akan menyadarinya.
+        if (rows.length > 1) {
+          throw new Error(
+            `isolasi tenant gagal: tenant_settings mengembalikan ${rows.length} baris untuk satu tenant`,
+          )
+        }
+        const row = rows[0]!
         return {
           chatModel: row.chat_model as string,
           rewriteModel: row.rewrite_model as string,
