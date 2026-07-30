@@ -23,19 +23,69 @@ const DEFAULT_DEPS: UiDeps = { sendMessage: defaultSendMessage }
  * because that field of `tenant_settings.widget_theme` is exactly the kind of thing
  * a business reasonably wants to change — everything else below is not.
  */
-const STRINGS = {
-  launcherLabel: "Open chat assistant",
-  closeLabel: "Close chat",
-  inputLabel: "Message",
-  inputPlaceholder: "Type your message…",
-  sendLabel: "Send message",
-  typing: "Assistant is typing…",
-  // Named after what is happening rather than "Loading…". A visitor who reads "looking through
-  // our documents" understands both why it takes a moment and what kind of answer is coming.
-  retrieving: "Looking through our documents…",
-  generating: "Writing an answer…",
-  validating: "Checking it against our documents…",
+const COPY = {
+  en: {
+    launcherLabel: "Ask a question",
+    launcherAria: "Open chat assistant",
+    status: "Answers from this business's own documents",
+    closeLabel: "Close chat",
+    inputLabel: "Message",
+    inputPlaceholder: "Ask about products, delivery, warranty…",
+    sendLabel: "Send message",
+    typing: "Assistant is typing…",
+    // Named after what is happening rather than "Loading…". A visitor who reads "looking through
+    // our documents" understands both why it takes a moment and what kind of answer is coming.
+    retrieving: "Looking through our documents…",
+    generating: "Writing an answer…",
+    validating: "Checking it against our documents…",
+    sourcePrefix: "From",
+  },
+  id: {
+    launcherLabel: "Ada pertanyaan?",
+    launcherAria: "Buka asisten chat",
+    status: "Menjawab dari dokumen resmi toko",
+    closeLabel: "Tutup chat",
+    inputLabel: "Pesan",
+    inputPlaceholder: "Tanya soal produk, pengiriman, garansi…",
+    sendLabel: "Kirim pesan",
+    typing: "Asisten sedang mengetik…",
+    retrieving: "Mencari di dokumen kami…",
+    generating: "Menyusun jawaban…",
+    validating: "Mencocokkan dengan dokumen…",
+    sourcePrefix: "Dari",
+  },
 }
+
+/**
+ * The chrome a business does not write: button labels, the placeholder, the progress lines.
+ *
+ * English chrome around an Indonesian answer is its own kind of broken — the customer is being
+ * addressed in two languages by one assistant. The greeting and the refusal already come from the
+ * server per tenant; this is the rest, and it follows the same tenant setting.
+ */
+type Copy = (typeof COPY)["en"]
+
+function copyFor(locale: string): Copy {
+  return locale === "id" ? COPY.id : COPY.en
+}
+
+/** A document with a turned corner — the mark on every source chip. Inline SVG because a widget
+ *  cannot rely on an icon font being present on somebody else's page. */
+const DOC_MARK =
+  '<svg class="citation-mark" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+  '<path d="M9.5 1.5H4.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V4.5l-3-3Z" ' +
+  'stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>' +
+  '<path d="M9.5 1.5v3h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>'
+
+const CHAT_MARK =
+  '<svg class="launcher-mark" viewBox="0 0 20 20" fill="none" aria-hidden="true">' +
+  '<path d="M17 9.5c0 3.6-3.1 6.5-7 6.5-.9 0-1.8-.2-2.6-.4L3 17l1.2-3.1A6.2 6.2 0 0 1 3 9.5C3 5.9 6.1 3 10 3s7 2.9 7 6.5Z" ' +
+  'stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>'
+
+const SEND_MARK =
+  '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true">' +
+  '<path d="M3 10 17 3l-4.5 14L10 11.5 3 10Z" stroke="currentColor" stroke-width="1.6" ' +
+  'stroke-linejoin="round"/></svg>'
 
 /**
  * `theme.primaryColor` and `theme.position` are the only two values interpolated
@@ -47,123 +97,256 @@ const STRINGS = {
  */
 function buildStyle(theme: WidgetTheme): string {
   const side = theme.position
+  const other = side === "right" ? "left" : "right"
   return `
+  /*
+   * No web font is loaded. This bundle runs on somebody else's website, and pulling a typeface in
+   * would cost their page a render-blocking request and a layout shift for the sake of our
+   * branding. The personality here comes from the scale, weight and tracking of a system stack.
+   */
   :host {
     all: initial;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --qc-ink: #16191d;
+    --qc-muted: #656d79;
+    --qc-line: #e6e8ec;
+    --qc-surface: #ffffff;
+    --qc-canvas: #f6f7f9;
+    --qc-accent: ${theme.primaryColor};
+    /*
+     * The provenance colour is deliberately NOT the tenant's accent. A citation is QuidChat's
+     * guarantee that the sentence came from the business's own document — it is not the shop's
+     * decoration, and colouring it with the shop's brand would read as decoration.
+     */
+    --qc-cite: #0f6f5c;
+    --qc-cite-bg: #eef6f3;
+    --qc-radius: 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--qc-ink);
+    -webkit-font-smoothing: antialiased;
   }
   * { box-sizing: border-box; }
+  button { font: inherit; }
+  :focus-visible { outline: 2px solid var(--qc-accent); outline-offset: 2px; }
+
+  /* A bare emoji in a circle is what every widget does, and it tells a first-time visitor
+     nothing. The pill says what it is; it collapses to a disc only where there is no room. */
   .launcher {
     position: fixed;
     ${side}: 20px;
     bottom: 20px;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    height: 52px;
+    padding: 0 20px 0 17px;
     border: none;
-    background: ${theme.primaryColor};
+    border-radius: 26px;
+    background: var(--qc-accent);
     color: #fff;
-    font-size: 24px;
+    font-size: 15px;
+    font-weight: 550;
+    letter-spacing: -0.005em;
     cursor: pointer;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 1px 2px rgba(16, 20, 28, 0.18), 0 8px 24px -6px rgba(16, 20, 28, 0.32);
+    transition: transform 140ms ease, box-shadow 140ms ease;
   }
+  .launcher:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(16,20,28,.2), 0 14px 32px -8px rgba(16,20,28,.38); }
+  .launcher:active { transform: translateY(0); }
+  .launcher-mark { width: 19px; height: 19px; flex: none; }
+  .launcher[aria-expanded="true"] { opacity: 0; pointer-events: none; }
+
   .panel {
     position: fixed;
     ${side}: 20px;
-    bottom: 88px;
-    width: 320px;
+    bottom: 20px;
+    width: 384px;
     max-width: calc(100vw - 40px);
-    height: 440px;
-    max-height: calc(100vh - 120px);
+    height: 588px;
+    max-height: calc(100vh - 40px);
     display: flex;
     flex-direction: column;
-    background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+    background: var(--qc-surface);
+    border: 1px solid var(--qc-line);
+    border-radius: var(--qc-radius);
+    box-shadow: 0 2px 6px rgba(16, 20, 28, 0.06), 0 24px 56px -12px rgba(16, 20, 28, 0.28);
     overflow: hidden;
+    animation: qc-rise 180ms cubic-bezier(0.16, 0.9, 0.3, 1) both;
   }
   .panel[hidden] { display: none; }
-  /* On a phone the panel was a 320px box floating in a 390px screen: cramped for reading and
-     for typing, while most of the display went unused. Most customers arrive on a phone, so
-     below this width it takes the screen the way a messaging app does. The launcher stays put,
-     because a conversation someone wants to leave has to be closable without hunting. */
+  @keyframes qc-rise { from { opacity: 0; transform: translateY(10px) scale(0.985); } }
+
+  /* On a phone a 384px box floating in a 390px screen is cramped to read and to type in, while
+     most of the display goes unused. Below this width it takes the screen like a messaging app. */
   @media (max-width: 480px) {
     .panel {
-      left: 12px;
-      right: 12px;
-      width: auto;
-      max-width: none;
-      bottom: 84px;
-      height: calc(100vh - 100px);
-      max-height: none;
+      inset: 0;
+      width: auto; max-width: none; height: auto; max-height: none;
+      border: none; border-radius: 0;
     }
-    .message { max-width: 90%; }
+    .message { max-width: 92%; }
   }
+
   .header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 12px 16px;
-    background: ${theme.primaryColor};
-    color: #fff;
+    gap: 11px;
+    padding: 14px 14px 14px 18px;
+    border-bottom: 1px solid var(--qc-line);
+    background: var(--qc-surface);
   }
-  .header-title { font-weight: 600; font-size: 14px; }
+  .header-title { font-size: 15px; font-weight: 600; letter-spacing: -0.012em; }
+  /* Sits under the title rather than in it: a visitor wants to know someone will answer before
+     they have decided whether to type. */
+  .header-status {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--qc-muted); margin-top: 1px;
+  }
+  .header-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--qc-cite); flex: none; }
+  .header-text { min-width: 0; flex: 1; }
   .close {
+    flex: none;
+    width: 32px; height: 32px;
+    display: grid; place-items: center;
     background: transparent;
-    border: none;
-    color: #fff;
-    font-size: 18px;
+    border: none; border-radius: 8px;
+    color: var(--qc-muted);
+    font-size: 20px; line-height: 1;
     cursor: pointer;
-    line-height: 1;
+    transition: background 120ms ease, color 120ms ease;
   }
+  .close:hover { background: var(--qc-canvas); color: var(--qc-ink); }
+
   .messages {
     flex: 1;
     overflow-y: auto;
-    padding: 12px;
+    padding: 18px 16px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
+    background: var(--qc-canvas);
+    scrollbar-width: thin;
   }
   .message {
-    max-width: 85%;
-    padding: 8px 12px;
-    border-radius: 10px;
-    font-size: 14px;
-    line-height: 1.4;
-    white-space: pre-wrap;
+    max-width: 86%;
+    padding: 11px 14px;
+    font-size: 14.5px;
+    line-height: 1.55;
+    animation: qc-in 160ms cubic-bezier(0.16, 0.9, 0.3, 1) both;
   }
-  .message p { margin: 0 0 4px 0; }
+  @keyframes qc-in { from { opacity: 0; transform: translateY(5px); } }
+  .message p { margin: 0 0 7px 0; white-space: pre-wrap; }
   .message p:last-child { margin-bottom: 0; }
-  .message.visitor { align-self: flex-end; background: ${theme.primaryColor}; color: #fff; }
-  .message.assistant { align-self: flex-start; background: #f1f3f5; color: #111; }
-  .message.error { align-self: flex-start; background: #fdecec; color: #92140c; }
-  .citation { font-size: 12px; opacity: 0.7; }
+  /* Asymmetric corners: the flattened corner points at its author, which is what tells you at a
+     glance who is speaking without needing colour to carry it alone. */
+  .message.visitor {
+    align-self: flex-end;
+    background: var(--qc-accent);
+    color: #fff;
+    border-radius: 14px 14px 4px 14px;
+  }
+  .message.assistant {
+    align-self: flex-start;
+    background: var(--qc-surface);
+    border: 1px solid var(--qc-line);
+    border-radius: 14px 14px 14px 4px;
+    box-shadow: 0 1px 2px rgba(16, 20, 28, 0.04);
+  }
+  .message.error {
+    align-self: flex-start;
+    background: #fdf2f2;
+    border: 1px solid #f6d5d5;
+    color: #8c1d1d;
+    border-radius: 14px;
+  }
+
+  /*
+   * The source chip — the one thing here that no other chat widget can show, and the reason this
+   * product exists. It used to be twelve grey pixels at 70% opacity, which said "footnote". Every
+   * business claim traces to a document the owner uploaded, and that is the whole promise, so it
+   * is built to be read.
+   */
+  .citation {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 9px;
+    padding: 4px 10px 4px 8px;
+    background: var(--qc-cite-bg);
+    color: var(--qc-cite);
+    border-radius: 7px;
+    font-size: 11.5px;
+    font-weight: 550;
+    letter-spacing: 0.005em;
+    max-width: 100%;
+  }
+  .citation-mark { width: 12px; height: 12px; flex: none; }
+  .citation-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .typing { display: inline-flex; align-items: center; gap: 9px; }
+  .typing-dots { display: inline-flex; gap: 3px; }
+  .typing-dots i {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--qc-muted);
+    animation: qc-pulse 1.15s ease-in-out infinite;
+  }
+  .typing-dots i:nth-child(2) { animation-delay: 0.15s; }
+  .typing-dots i:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes qc-pulse { 0%, 60%, 100% { opacity: 0.28; } 30% { opacity: 1; } }
+  .typing-text { font-size: 12.5px; color: var(--qc-muted); }
+
   .composer {
     display: flex;
-    gap: 8px;
-    padding: 12px;
-    border-top: 1px solid #e5e7eb;
+    align-items: flex-end;
+    gap: 9px;
+    padding: 12px 14px 14px;
+    border-top: 1px solid var(--qc-line);
+    background: var(--qc-surface);
   }
   textarea {
     flex: 1;
     resize: none;
     font-family: inherit;
-    font-size: 14px;
-    padding: 8px;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    max-height: 80px;
+    font-size: 14.5px;
+    line-height: 1.5;
+    color: var(--qc-ink);
+    padding: 10px 12px;
+    border: 1px solid var(--qc-line);
+    border-radius: 11px;
+    background: var(--qc-canvas);
+    max-height: 108px;
+    transition: border-color 120ms ease, background 120ms ease;
   }
+  textarea:focus { outline: none; border-color: var(--qc-accent); background: var(--qc-surface); }
+  textarea::placeholder { color: var(--qc-muted); }
   .send {
-    border: none;
-    border-radius: 8px;
-    background: ${theme.primaryColor};
+    flex: none;
+    width: 40px; height: 40px;
+    display: grid; place-items: center;
+    border: none; border-radius: 11px;
+    background: var(--qc-accent);
     color: #fff;
-    padding: 0 14px;
     cursor: pointer;
-    font-size: 14px;
+    transition: opacity 120ms ease, transform 120ms ease;
   }
-  .send:disabled { opacity: 0.5; cursor: default; }
+  .send svg { width: 17px; height: 17px; }
+  .send:hover:not(:disabled) { transform: translateY(-1px); }
+  .send:disabled { opacity: 0.4; cursor: default; }
+
+  .footer {
+    padding: 0 14px 11px;
+    font-size: 11px;
+    color: var(--qc-muted);
+    text-align: ${other === "left" ? "right" : "left"};
+    background: var(--qc-surface);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .panel, .message { animation: none; }
+    .typing-dots i { animation: none; opacity: 0.6; }
+    .launcher, .send, .close, textarea { transition: none; }
+  }
 `
 }
 
@@ -176,6 +359,7 @@ function appendSegment(
   bubble: HTMLElement,
   segment: Segment,
   citationTitles: Map<string, string>,
+  copy: Copy,
 ): void {
   const doc = bubble.ownerDocument
   const p = doc.createElement("p")
@@ -183,23 +367,19 @@ function appendSegment(
   bubble.appendChild(p)
 
   if (segment.kind === "business_claim") {
-    const cite = doc.createElement("p")
-    cite.className = "citation"
-    // Document titles, not chunk ids. The whole point of showing a source is that the
-    // visitor recognises it — a UUID satisfies the shape of "you can see where this
-    // came from" without telling them anything.
-    //
-    // A segment carries the chunk ids it cited; the titles arrive separately on the
-    // result, so they are matched up here. Duplicates are collapsed because two chunks
-    // from the same document should read as one source, not the same name twice.
+    // Document titles, not chunk ids. The whole point of showing a source is that the visitor
+    // recognises it — a UUID satisfies the shape of "you can see where this came from" without
+    // telling them anything. Duplicates collapse: two chunks of one document are one source.
     const titles = [
-      ...new Set(
-        segment.citations.map(
-          (chunkId) => citationTitles.get(chunkId) ?? chunkId,
-        ),
-      ),
+      ...new Set(segment.citations.map((chunkId) => citationTitles.get(chunkId) ?? chunkId)),
     ]
-    cite.textContent = `Source: ${titles.join(", ")}`
+    const cite = doc.createElement("span")
+    cite.className = "citation"
+    cite.innerHTML = DOC_MARK
+    const label = doc.createElement("span")
+    label.className = "citation-text"
+    label.textContent = `${copy.sourcePrefix} ${titles.join(", ")}`
+    cite.appendChild(label)
     bubble.appendChild(cite)
   }
 }
@@ -260,12 +440,17 @@ export function mountWidget(
 
   applyStyles(shadow, doc, buildStyle(theme))
 
+  const copy = copyFor(theme.locale)
+
   const launcher = doc.createElement("button")
   launcher.className = "launcher"
-  launcher.setAttribute("aria-label", STRINGS.launcherLabel)
+  launcher.setAttribute("aria-label", copy.launcherAria)
   launcher.setAttribute("aria-haspopup", "dialog")
   launcher.setAttribute("aria-expanded", "false")
-  launcher.textContent = "💬"
+  launcher.innerHTML = CHAT_MARK
+  const launcherText = doc.createElement("span")
+  launcherText.textContent = copy.launcherLabel
+  launcher.appendChild(launcherText)
 
   const panel = doc.createElement("div")
   panel.className = "panel"
@@ -276,14 +461,26 @@ export function mountWidget(
 
   const header = doc.createElement("div")
   header.className = "header"
-  const title = doc.createElement("span")
+  const headerText = doc.createElement("div")
+  headerText.className = "header-text"
+  const title = doc.createElement("div")
   title.className = "header-title"
   title.textContent = theme.title
+  // A visitor decides whether to type before they have asked anything. Saying where the answers
+  // come from is what makes the difference between this and a bot that will guess at them.
+  const status = doc.createElement("div")
+  status.className = "header-status"
+  const dot = doc.createElement("span")
+  dot.className = "header-dot"
+  const statusText = doc.createElement("span")
+  statusText.textContent = copy.status
+  status.append(dot, statusText)
+  headerText.append(title, status)
   const closeButton = doc.createElement("button")
   closeButton.className = "close"
-  closeButton.setAttribute("aria-label", STRINGS.closeLabel)
+  closeButton.setAttribute("aria-label", copy.closeLabel)
   closeButton.textContent = "×"
-  header.append(title, closeButton)
+  header.append(headerText, closeButton)
 
   const messages = doc.createElement("div")
   messages.className = "messages"
@@ -293,17 +490,17 @@ export function mountWidget(
   const composer = doc.createElement("form")
   composer.className = "composer"
   const input = doc.createElement("textarea")
-  input.setAttribute("aria-label", STRINGS.inputLabel)
+  input.setAttribute("aria-label", copy.inputLabel)
   // The server refuses anything longer, and the browser stopping it at the keyboard is better
   // than a round trip that comes back as an error. Kept in step with MAX_MESSAGE_LENGTH there.
   input.setAttribute("maxlength", "4000")
-  input.setAttribute("placeholder", STRINGS.inputPlaceholder)
+  input.setAttribute("placeholder", copy.inputPlaceholder)
   input.rows = 1
   const sendButton = doc.createElement("button")
   sendButton.className = "send"
   sendButton.type = "submit"
-  sendButton.setAttribute("aria-label", STRINGS.sendLabel)
-  sendButton.textContent = "Send"
+  sendButton.setAttribute("aria-label", copy.sendLabel)
+  sendButton.innerHTML = SEND_MARK
   composer.append(input, sendButton)
 
   panel.append(header, messages, composer)
@@ -365,7 +562,7 @@ export function mountWidget(
       result.citations.map((c) => [c.chunkId, c.documentTitle]),
     )
     for (const segment of result.segments) {
-      appendSegment(bubble, segment, citationTitles)
+      appendSegment(bubble, segment, citationTitles, copy)
     }
   }
 
@@ -378,11 +575,12 @@ export function mountWidget(
 
   /** Replaces the indicator's text as the server reports each stage. */
   function setStage(stage: ProgressStage): void {
-    if (!typingIndicator) return
-    typingIndicator.textContent =
-      stage === "retrieving" ? STRINGS.retrieving
-      : stage === "generating" ? STRINGS.generating
-      : STRINGS.validating
+    const label = typingIndicator?.querySelector(".typing-text")
+    if (!label) return
+    label.textContent =
+      stage === "retrieving" ? copy.retrieving
+      : stage === "generating" ? copy.generating
+      : copy.validating
     messages.scrollTop = messages.scrollHeight
   }
 
@@ -390,9 +588,16 @@ export function mountWidget(
     pending = next
     sendButton.disabled = next
     if (next) {
-      typingIndicator = doc.createElement("p")
-      typingIndicator.className = "citation"
-      typingIndicator.textContent = STRINGS.typing
+      // Its own element, not the citation class it used to borrow: a citation is now a green
+      // provenance chip, and "the assistant is typing" is not a source.
+      typingIndicator = doc.createElement("div")
+      typingIndicator.className = "message assistant typing"
+      typingIndicator.innerHTML =
+        '<span class="typing-dots"><i></i><i></i><i></i></span>'
+      const typingText = doc.createElement("span")
+      typingText.className = "typing-text"
+      typingText.textContent = copy.typing
+      typingIndicator.appendChild(typingText)
       messages.appendChild(typingIndicator)
       messages.scrollTop = messages.scrollHeight
     } else if (typingIndicator) {

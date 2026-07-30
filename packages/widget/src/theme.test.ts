@@ -35,6 +35,7 @@ describe("sanitizeTheme", () => {
       primaryColor: "#00ff00",
       position: DEFAULT_THEME.position,
       title: "Acme Support",
+      locale: "en",
     })
   })
 
@@ -62,6 +63,23 @@ describe("fetchWidgetTheme", () => {
         new Response(JSON.stringify({ primaryColor: "#123456", position: "left", title: "Acme" }), { status: 200 }),
       ),
     )
-    expect(await fetchWidgetTheme(cfg)).toEqual({ primaryColor: "#123456", position: "left", title: "Acme" })
+    expect(await fetchWidgetTheme(cfg)).toEqual({
+      primaryColor: "#123456",
+      position: "left",
+      title: "Acme",
+      locale: "en",
+    })
+  })
+})
+
+describe("locale", () => {
+  it("takes a language the tenant chose, and ignores anything else", () => {
+    // The chrome follows the answers. An Indonesian shop whose assistant replies in Indonesian
+    // should not be sending its customers a button that says "Send".
+    expect(sanitizeTheme({ locale: "id" }).locale).toBe("id")
+    expect(sanitizeTheme({ locale: "en" }).locale).toBe("en")
+    for (const bad of ["fr", "", 7, null, undefined, {}]) {
+      expect(sanitizeTheme({ locale: bad }).locale, String(bad)).toBe("en")
+    }
   })
 })

@@ -22,7 +22,7 @@ function rowsOf(res: unknown): Record<string, unknown>[] {
  * at write time, so this allowlist, not the column's own contents, is what keeps a
  * public route from ever forwarding whatever else ends up in that blob.
  */
-const THEME_KEYS = ["primaryColor", "position", "title"] as const
+const THEME_KEYS = ["primaryColor", "position", "title", "locale"] as const
 
 /**
  * Serves the tenant's widget theme as JSON, e.g. `GET /widget-config?tenantSlug=acme`

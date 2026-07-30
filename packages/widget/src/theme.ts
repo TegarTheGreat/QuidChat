@@ -14,6 +14,12 @@ export type WidgetTheme = {
   position: "left" | "right"
   /** Shown in the panel header and as its accessible name. */
   title: string
+  /**
+   * Language for the chrome the business does not write — button labels, the placeholder, the
+   * progress lines. English chrome around an Indonesian answer means one assistant addressing a
+   * customer in two languages. Defaults to English so nothing that exists today changes.
+   */
+  locale: "en" | "id"
 }
 
 /** The widget's current hardcoded look, unchanged from before this module existed —
@@ -22,6 +28,7 @@ export const DEFAULT_THEME: WidgetTheme = {
   primaryColor: "#1a56db",
   position: "right",
   title: "Chat assistant",
+  locale: "en",
 }
 
 // Hex (3/4/6/8 digit, so shorthand and alpha forms both work) and functional rgb()/rgba().
@@ -60,6 +67,7 @@ export function sanitizeTheme(input: unknown): WidgetTheme {
     primaryColor: isValidColor(raw.primaryColor) ? raw.primaryColor : DEFAULT_THEME.primaryColor,
     position: raw.position === "left" || raw.position === "right" ? raw.position : DEFAULT_THEME.position,
     title: typeof raw.title === "string" && raw.title.trim() !== "" ? raw.title : DEFAULT_THEME.title,
+    locale: raw.locale === "id" || raw.locale === "en" ? raw.locale : DEFAULT_THEME.locale,
   }
 }
 

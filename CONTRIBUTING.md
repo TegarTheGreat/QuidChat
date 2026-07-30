@@ -62,6 +62,18 @@ Nothing else. The server reads credentials from the environment and from a tenan
 
 `Provider` is a public interface — a self-hosted deployment can supply its own. Read new fields defensively; a provider written before `toolCalls` existed once took down every turn with a `TypeError` the customer saw as a refusal.
 
+## The widget is somebody else's page
+
+Three constraints follow from that, and each has already been learned the hard way:
+
+**No web font.** Pulling a typeface in costs the host page a render-blocking request and a layout shift for the sake of our branding. Personality comes from scale, weight and tracking on a system stack.
+
+**The bundle URL never changes.** The embed is a fixed `<script src=".../quidchat.js">`, so caching must revalidate. It was once served `immutable, max-age=31536000` on the reasoning that a deploy replaces the file — but a browser caches by URL, so every site that had ever loaded the widget kept a year-old copy and would never receive a fix.
+
+**Chrome follows the answers.** Button labels and the placeholder come from `theme.locale`. English chrome around an Indonesian answer is one assistant addressing a customer in two languages.
+
+The source chip is the signature, and it is deliberately not the tenant's accent colour: a citation is QuidChat's guarantee that the sentence came from the business's own document, not the shop's decoration.
+
 ## Commits
 
 Present tense, and say why rather than what. The diff already says what.

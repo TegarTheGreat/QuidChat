@@ -142,7 +142,7 @@ export function createServer(deps: ServerDeps): Server {
     }
 
     if (pathname === "/quidchat.js") {
-      handleWidgetAsset(res).catch((e: unknown) => {
+      handleWidgetAsset(res, req).catch((e: unknown) => {
         logError("unhandled error serving widget bundle", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
       })
