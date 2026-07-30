@@ -134,6 +134,8 @@ A `static` tenant with no live answers refuses every question. That is deliberat
 - **A bounded conversation.** The last twenty messages travel with each question, not the whole thread. Without that bound a long conversation grows its own cost with every turn — the tenth question pays for the previous nine — and eventually exceeds the model's context window, failing for a reason no customer could understand. Ten exchanges is far more than a follow-up needs: "how much is that one?" refers to the last thing named.
 - **A real spend limit.** `monthly_budget_cents` is enforced *before* the provider is called, and every turn's real token usage is recorded — including refusals, which is where the expensive failures hide.
 
+  What it guarantees precisely: no turn *starts* once recorded spend has reached the limit. Turns already in flight finish, so a tenant answering several questions at the same instant can cross the line by roughly one turn per request in flight — measured at two cents over a twelve-cent limit with eight simultaneous requests. Making it exact would mean holding a lock across every model call, which costs more than it saves; the rate limit is what keeps the overshoot small.
+
 ## Channels
 
 The website widget works out of the box. The others are opt-in — absent credentials mean the webhook route returns `404`, because a business that only uses the widget should not have a live unauthenticated WhatsApp endpoint on its server.

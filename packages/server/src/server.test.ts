@@ -429,6 +429,47 @@ describe("chat endpoint", () => {
     }
   })
 
+
+  it("stops the next turn once spend has reached the limit, and says which reason", async () => {
+    // The guarantee is about the NEXT turn, not the ones already in flight: several questions
+    // asked at the same instant each pass the check before any of them records what it cost, so
+    // a tenant can cross the line by about one turn per request in flight. Making that exact
+    // would mean holding a lock across every model call, which costs more than it saves.
+    const tenantId = await seedTenant(db, {
+      slug: "budget-edge",
+      allowedOrigins: [ALLOWED_ORIGIN],
+      monthlyBudgetCents: 1,
+    })
+    await db.insert(usageEvents).values({
+      tenantId, model: "test", inputTokens: 100, outputTokens: 50, costCents: 5,
+    })
+
+    const provider = new FakeProvider([{ segments: [{ kind: "general", text: "Should not run." }] }])
+    const server = createServer({ db, provider, logError: () => {} })
+    await new Promise<void>((resolve) => server.listen(0, resolve))
+    const port = (server.address() as AddressInfo).port
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/v1/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: ALLOWED_ORIGIN },
+        body: JSON.stringify({ tenantSlug: "budget-edge", message: "warranty" }),
+      })
+      const json = (await res.json()) as { kind: string; reason?: string }
+      // A refusal, not an error: the business set this limit deliberately, and the customer is
+      // told the assistant cannot help rather than that something broke.
+      expect(res.status).toBe(200)
+      expect(json.kind).toBe("refused")
+      expect(json.reason).toBe("budget_exhausted")
+
+      // And the escalation is recorded, because a business owner reviewing why customers went
+      // unanswered needs to see that it was their own limit rather than missing content.
+      const raised = await db.select().from(escalations).where(eq(escalations.tenantId, tenantId))
+      expect(raised.some((e) => e.reason === "budget_exhausted")).toBe(true)
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
 })
 
 describe("budget enforcement", () => {
