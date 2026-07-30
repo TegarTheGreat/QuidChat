@@ -9,6 +9,7 @@ import { handleWidgetConfig } from "./widget-config.js"
 import { handleWidgetAsset } from "./widget-asset.js"
 import { applyCors, handlePreflight, isPublicPath } from "./cors.js"
 import { ChatRateLimiter, RateLimiter, type RateLimitConfig } from "./rate-limit.js"
+import { logFormatFrom, logRequest } from "./request-log.js"
 
 export type ServerDeps = {
   db: QuidDb
@@ -74,7 +75,13 @@ export function createServer(deps: ServerDeps): Server {
     deps.adminAuthLimit ?? { capacity: 10, refillPerSecond: 0.1 },
   )
 
+  const logFormat = logFormatFrom(env)
+
   return createHttpServer((req: IncomingMessage, res: ServerResponse) => {
+    // Attached before any routing, so a request that is refused before it reaches a handler —
+    // a bad origin, a rate limit, an unknown path — is logged like any other.
+    logRequest({ req, res, format: logFormat })
+
     const url = new URL(req.url ?? "/", "http://localhost")
     const pathname = stripVersionPrefix(url.pathname)
 

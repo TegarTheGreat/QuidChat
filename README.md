@@ -203,6 +203,7 @@ Anthropic has no embeddings endpoint, and retrieval needs one. Set `ANTHROPIC_AP
 | `QUIDCHAT_DATA_DIR` | `./.quidchat/data` | Where PGlite stores data. `memory` for ephemeral |
 | `QUIDCHAT_ADMIN_TOKEN` | — | Required by the admin API; unset means admin routes refuse. Compared in constant time, and wrong guesses are rate limited per source |
 | `QUIDCHAT_SECRET_KEY` | — | 32 bytes, base64 or hex. Encrypts channel credentials saved in the panel |
+| `QUIDCHAT_LOG` | `text` | One line per request. `json` for anything that parses logs, `off` for none |
 
 The panel is served at `/panel` by the same process that serves the API, so an install has an interface without a second deployment. The API keeps `/admin/*`: one namespace for pages and endpoints would make every new route a question about which it is, and the first wrong guess would shadow a working endpoint with an HTML page.
 
@@ -231,6 +232,8 @@ Postgres, at every scale, from one schema and one set of migrations.
 PGlite is real Postgres compiled to WASM, so row-level security, `pgvector` and full-text search behave in tests exactly as they do in production. That matters more than convenience: tenant isolation is only safe if it is genuinely tested, and contributors skip tests that need Docker.
 
 ## Stopping and restarting
+
+Every request writes one line — method, status, duration, path — and health checks write none, because a probe arrives every few seconds forever and says nothing about the product. It is on by default: a server whose output is silent looks dead, and its log is the first thing anyone reads when they think a deployment is broken.
 
 `SIGTERM` drains: the server stops accepting connections, finishes the requests it is already answering, and closes the database before exiting. A container runtime sends `SIGTERM` and waits a few seconds before killing the process, so without this a redeploy drops whoever was mid-question and, on the embedded tier, can leave their answer unflushed — answered and then forgotten. A second `SIGTERM` exits immediately, because someone sending it twice wants out now rather than a process that looks hung.
 
