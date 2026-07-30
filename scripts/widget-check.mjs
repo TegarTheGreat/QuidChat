@@ -90,7 +90,6 @@ await sleep(2500)
 
 // The widget lives in a shadow root, so everything below reaches through it — which is also a
 // check that it is isolated from the page rather than leaking styles into it.
-const root = `document.querySelector("#quidchat-widget, [data-quidchat-root], div").shadowRoot`
 const hasShadow = await evaluate(`Boolean([...document.querySelectorAll("*")].find(e => e.shadowRoot))`)
 const q = (sel) => `[...document.querySelectorAll("*")].find(e=>e.shadowRoot)?.shadowRoot.querySelector(${JSON.stringify(sel)})`
 
