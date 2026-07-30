@@ -10,30 +10,32 @@ export type DbConfig =
   | { kind: "postgres"; url: string }
 
 /**
- * Handle Drizzle mentah, tidak terikat tenant mana pun. Query lewat sini
- * langsung ke tabel-tabel ber-`tenant_id` (mis. `db.select().from(chunks)`)
- * mengembalikan baris milik SEMUA tenant, bukan nol dan bukan gagal — RLS
- * tidak melindunginya sama sekali. Satu-satunya jalan yang membuat isolasi
- * tenant benar-benar berlaku adalah `withTenant`; pakai handle mentah ini
- * hanya untuk tiga hal yang memang sengaja lintas-tenant: menerapkan migrasi,
- * seeding di test, dan pekerjaan administratif yang sengaja butuh akses ke
- * semua tenant sekaligus. Setiap baca atau tulis lain ke tabel ber-tenant
- * WAJIB lewat `withTenant`.
+ * Raw Drizzle handle, not bound to any tenant. Queries made directly through
+ * this against `tenant_id`-bearing tables (e.g. `db.select().from(chunks)`)
+ * return rows belonging to ALL tenants — not zero, not an error — because RLS
+ * offers it no protection at all. The only path that actually enforces tenant
+ * isolation is `withTenant`; use this raw handle only for the three things
+ * that are deliberately cross-tenant: applying migrations, seeding in tests,
+ * and administrative work that genuinely needs access to every tenant at
+ * once. Every other read or write to a tenant-scoped table MUST go through
+ * `withTenant`.
  */
 export type QuidDb =
   | ReturnType<typeof drizzlePglite<typeof schema>>
   | ReturnType<typeof drizzlePostgres<typeof schema>>
 
 /**
- * `url` untuk tier 3. Role yang dipakai konek WAJIB jadi anggota `quidchat_app` —
- * migrasi berusaha memberikannya otomatis; kalau environment-mu tidak mengizinkan,
- * jalankan `GRANT quidchat_app TO <role>` sebagai superuser saat deploy.
+ * `url` is for tier 3. The role used to connect MUST be a member of
+ * `quidchat_app` — migrations try to grant this automatically; if your
+ * environment doesn't allow that, run `GRANT quidchat_app TO <role>` as
+ * superuser at deploy time.
  *
- * Konek sebagai superuser TIDAK membatalkan isolasi di jalur `withTenant`:
- * `SET LOCAL ROLE quidchat_app` menurunkan `current_user`, jadi RLS tetap berlaku —
- * ini dibuktikan test isolasi, yang berjalan di PGlite sebagai superuser `postgres`.
- * Yang MEMANG melewati RLS hanyalah raw handle (`db` langsung, tanpa `withTenant`),
- * apa pun role-nya. Itu disengaja untuk migrasi dan onboarding tenant baru.
+ * Connecting as superuser does NOT defeat isolation on the `withTenant` path:
+ * `SET LOCAL ROLE quidchat_app` demotes `current_user`, so RLS still applies —
+ * this is proven by the isolation tests, which run on PGlite as the `postgres`
+ * superuser. What DOES bypass RLS is only the raw handle (`db` used directly,
+ * without `withTenant`), regardless of role. That is deliberate, for
+ * migrations and onboarding new tenants.
  */
 export async function createDb(config: DbConfig): Promise<QuidDb> {
   if (config.kind === "pglite") {

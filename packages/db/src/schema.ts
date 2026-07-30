@@ -47,14 +47,15 @@ export const documents = pgTable("documents", {
   url: text("url"),
 })
 
-// CATATAN: tabel `chunks` di database punya satu kolom lagi yang sengaja TIDAK
-// dimodelkan di sini — `tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple',
-// content)) STORED` — beserta dua index yang hanya ada di migrasi:
-// `chunks_tsv_idx` (GIN atas tsv) dan `chunks_embed_idx` (HNSW atas embedding).
-// Alasannya: `tsv` adalah kolom generated yang hanya dibaca lewat SQL mentah pada
-// query hybrid search, jadi Drizzle tidak perlu mengetahuinya. Konsekuensinya,
-// migrations/0001_init.sql adalah otoritas bentuk tabel ini — kalau menambah kolom
-// atau index di `chunks`, ubah SQL-nya juga, tidak cukup berkas ini.
+// NOTE: the `chunks` table in the database has one more column that is
+// deliberately NOT modeled here — `tsv tsvector GENERATED ALWAYS AS
+// (to_tsvector('simple', content)) STORED` — along with two indexes that only
+// exist in the migration: `chunks_tsv_idx` (GIN on tsv) and `chunks_embed_idx`
+// (HNSW on embedding). Reason: `tsv` is a generated column that's only ever
+// read through raw SQL in the hybrid search query, so Drizzle doesn't need to
+// know about it. Consequence: migrations/0001_init.sql is the source of truth
+// for this table's shape — if you add a column or index to `chunks`, change
+// the SQL too; this file alone isn't enough.
 export const chunks = pgTable("chunks", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),

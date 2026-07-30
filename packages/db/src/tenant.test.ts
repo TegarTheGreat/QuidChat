@@ -4,7 +4,7 @@ import { freshPglite } from "./testing.js"
 import { withTenant } from "./tenant.js"
 import { chunks, documents, knowledgeSources, tenants } from "./schema.js"
 
-/** Menyeragamkan hasil `execute()`: driver PGlite mengembalikan `{rows}`, postgres-js Array. */
+/** Normalizes the `execute()` result: the PGlite driver returns `{rows}`, postgres-js an Array. */
 function rowsOf(res: unknown): Record<string, unknown>[] {
   return Array.isArray(res)
     ? (res as Record<string, unknown>[])
@@ -40,9 +40,9 @@ describe("isolasi tenant", () => {
     expect(rowsB[0]!.tenantId).toBe(b)
   })
 
-  // Tenant id tak dikenal setara dengan tanpa konteks sama sekali di bawah
-  // semantik NULL Postgres: current_tenant_id() sama-sama tidak cocok dengan
-  // tenant_id manapun, jadi keduanya berakhir sebagai nol baris.
+  // An unknown tenant id is equivalent to having no context at all under
+  // Postgres's NULL semantics: current_tenant_id() equally fails to match any
+  // tenant_id, so both end up as zero rows.
   it("tenant id yang tidak dikenal mengembalikan nol baris, bukan semuanya", async () => {
     const db = await freshPglite()
     await seedTenant(db, "tenant-a")
@@ -58,14 +58,14 @@ describe("isolasi tenant", () => {
     const a = await seedTenant(db, "tenant-a")
     await seedTenant(db, "tenant-b")
 
-    // Tanpa withTenant: koneksi default adalah superuser, dan superuser melewati
-    // RLS sepenuhnya — termasuk FORCE ROW LEVEL SECURITY. Jadi query ini melihat
-    // SEMUA tenant. Ini bukan bug yang ditunggu perbaikannya; ini alasan kenapa
-    // setiap query ke tabel ber-tenant WAJIB lewat withTenant.
+    // Without withTenant: the default connection is superuser, and superuser bypasses
+    // RLS entirely — including FORCE ROW LEVEL SECURITY. So this query sees EVERY
+    // tenant. This isn't a bug waiting to be fixed; it's exactly why every query
+    // against a tenant-scoped table MUST go through withTenant.
     const raw = await db.select().from(chunks)
     expect(raw).toHaveLength(2)
 
-    // Lewat withTenant, tenant yang sama hanya melihat miliknya.
+    // Through withTenant, the same tenant only sees its own.
     const scoped = await withTenant(db, a, (tx) => tx.select().from(chunks))
     expect(scoped).toHaveLength(1)
   })
@@ -80,9 +80,9 @@ describe("isolasi tenant", () => {
       expect(di).toBe(id)
     })
 
-    // Di LUAR transaksi konteksnya wajib sudah hilang. Kalau `set_config` dipanggil dengan
-    // `false`, nilainya session-scoped dan bertahan — dan pada koneksi yang di-pool itu
-    // berarti permintaan berikutnya mewarisi tenant permintaan sebelumnya.
+    // OUTSIDE the transaction, the context must be gone. If `set_config` were called with
+    // `false`, the value would be session-scoped and persist — and on a pooled connection
+    // that would mean the next request inherits the previous request's tenant.
     const luar = rowsOf(await db.execute(sql`SELECT current_tenant_id() AS t`))[0]!.t
     expect(luar).toBeNull()
   })

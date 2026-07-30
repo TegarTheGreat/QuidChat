@@ -7,16 +7,16 @@ import {
 } from "./schema.js"
 import { withTenant } from "./tenant.js"
 
-// Parameternya `offset`, bukan `seed` — nama `seed` sudah dipakai fungsi seeding
-// di bawah, dan menaunginya membuat lint mengeluh serta pembaca ragu.
+// Parameter is `offset`, not `seed` — the name `seed` is already used by the
+// seeding function below, and shadowing it makes lint complain and readers unsure.
 function fakeEmbedding(offset: number): number[] {
   return Array.from({ length: 1536 }, (_, i) => Math.sin(offset + i) * 0.01)
 }
 
 /**
- * Menyiapkan satu tenant lengkap: settings, sumber, dokumen, dua chunk, dan satu
- * percakapan. `garansiText` dibuat berbeda antar tenant supaya test isolasi bisa
- * membuktikan tenant MANA yang datanya terlihat — bukan sekadar bahwa hasilnya kosong.
+ * Sets up one complete tenant: settings, source, document, two chunks, and one
+ * conversation. `garansiText` is made different per tenant so isolation tests can
+ * prove WHICH tenant's data is visible — not just that the result is empty.
  */
 async function seed(
   db: Awaited<ReturnType<typeof freshPglite>>,
@@ -30,15 +30,15 @@ async function seed(
   const [d] = await db.insert(documents)
     .values({ tenantId: t!.id, sourceId: s!.id, title: "Kebijakan" }).returning()
   const rows = await db.insert(chunks).values([
-    // Memuat kata kuncinya, embedding JAUH dari query uji.
+    // Contains the keyword, embedding FAR from the test query.
     { tenantId: t!.id, documentId: d!.id, ordinal: 0,
       content: garansiText,
       embedding: fakeEmbedding(50), embeddingModel: "test" },
-    // TIDAK memuat kata kuncinya, embedding IDENTIK dengan query uji.
+    // Does NOT contain the keyword, embedding IDENTICAL to the test query.
     { tenantId: t!.id, documentId: d!.id, ordinal: 1,
       content: SEM_ONLY,
       embedding: fakeEmbedding(1), embeddingModel: "test" },
-    // Embedding identik TAPI model berbeda -> harus tersaring dari jalur vektor.
+    // Identical embedding BUT a different model -> must be filtered out of the vector path.
     { tenantId: t!.id, documentId: d!.id, ordinal: 2,
       content: MODEL_LAIN,
       embedding: fakeEmbedding(1), embeddingModel: "model-lain" },
@@ -55,37 +55,37 @@ const MODEL_LAIN = "Garansi lama: ini di-embed dengan model lain."
 const TANPA_EMBEDDING = "Kebijakan pengembalian barang berlaku tujuh hari."
 
 /**
- * ID chunk eksplisit, bukan bawaan `defaultRandom()`. Skenario di bawah butuh urutan
- * PERINGKAT yang deterministik antar baris yang SENGAJA dibuat ber-ts_rank sama (satu
- * kemunculan kata kunci) dan/atau ber-jarak kosinus sama — dan `ORDER BY ..., c.id`
- * di `store.ts` memakai id sebagai pemutus seri. Dengan id acak, siapa menang seri
- * berubah tiap jalan test, dan test yang bergantung padanya jadi flaky.
+ * Explicit chunk IDs, instead of the default `defaultRandom()`. The scenarios below
+ * need deterministic RANK ordering among rows that are DELIBERATELY built with the
+ * same ts_rank (one keyword occurrence) and/or the same cosine distance — and
+ * `ORDER BY ..., c.id` in `store.ts` uses id as the tiebreaker. With random ids, who
+ * wins the tie changes on every test run, making tests that depend on it flaky.
  */
 function fixedId(kategori: string, n: number): string {
   return `00000000-0000-4000-8000-${kategori}${String(n).padStart(8, "0")}`
 }
 
 /**
- * Skenario "12 chunk tak relevan" dari kalkulasi di `store.ts`, dibuat NYATA lewat
- * fixture, bukan cuma di komentar. Tenant terpisah dari `toko`/`warung` supaya ~28
- * baris chunk-nya tidak mengubah apa yang dilihat test lain.
+ * The "12 irrelevant chunks" scenario from the calculation in `store.ts`, made REAL
+ * through a fixture instead of staying just a comment. Kept in a tenant separate from
+ * `toko`/`warung` so its ~28 chunk rows don't change what other tests see.
  *
- * - `TANPA_EMBEDDING`: satu kemunculan kata kunci, id terkecil -> peringkat kata
- *   kunci #1 terjamin (menang seri lewat id, bukan lewat relevansi teks — ts_rank
- *   TERBUKTI sama untuk satu kemunculan berapa pun panjang dokumennya).
- * - 12 chunk "hanya kata kunci": memuat kata kuncinya, TANPA embedding. Mengisi
- *   peringkat kata kunci #2-13. Satu-daftar selamanya, jadi TIDAK PERNAH mengalahkan
- *   `TANPA_EMBEDDING` di k mana pun — amannya independen dari k.
- * - 12 chunk "hanya vektor": embedding DEKAT ke vektor query, TIDAK memuat kata
- *   kuncinya. Mengisi peringkat vektor #1-12. Sama-sama satu-daftar, sama amannya.
- * - 3 "chunk tak relevan": SEPERTI `TANPA_EMBEDDING`, MEMUAT kata kuncinya (satu
- *   kemunculan, ts_rank sama) DAN punya embedding — jadi DUA-daftar, dengan
- *   peringkat kata-kunci #14-16 dan peringkat vektor #13-15 (di belakang ke-24
- *   chunk satu-daftar di atas). Itulah "Catatan operasional nomor 2 tentang
- *   pengiriman" yang disebut di alasan konstanta: relevansinya buruk di KEDUA
- *   jalur, tapi kehadiran ganda itu sendiri cukup mengalahkan `TANPA_EMBEDDING`
- *   pada k=60 (skor gabungan ~0,0268 vs 0,0164) dan TIDAK CUKUP pada k=10
- *   (~0,0851 vs 0,0909) — persis arah yang harus dibalik oleh perbaikan ini.
+ * - `TANPA_EMBEDDING`: one keyword occurrence, smallest id -> guaranteed keyword rank
+ *   #1 (wins the tie via id, not via text relevance — ts_rank is PROVEN identical for
+ *   one occurrence regardless of document length).
+ * - 12 "keyword-only" chunks: contain the keyword, WITHOUT an embedding. Fill keyword
+ *   ranks #2-13. Permanently single-list, so they can NEVER beat `TANPA_EMBEDDING` at
+ *   any k — its safety is independent of k.
+ * - 12 "vector-only" chunks: embedding CLOSE to the query vector, do NOT contain the
+ *   keyword. Fill vector ranks #1-12. Also single-list, equally safe.
+ * - 3 "irrelevant chunks": LIKE `TANPA_EMBEDDING`, they CONTAIN the keyword (one
+ *   occurrence, same ts_rank) AND have an embedding — so they're DUAL-list, with
+ *   keyword ranks #14-16 and vector ranks #13-15 (behind the 24 single-list chunks
+ *   above). These are the "shipping note number 2" chunks referenced in the constant's
+ *   rationale: their relevance is poor on BOTH paths, but the dual presence alone is
+ *   enough to beat `TANPA_EMBEDDING` at k=60 (combined score ~0.0268 vs 0.0164) and
+ *   NOT enough at k=10 (~0.0851 vs 0.0909) — exactly the reversal this fix is meant
+ *   to produce.
  */
 async function seedRrfGap(db: Awaited<ReturnType<typeof freshPglite>>) {
   const [t] = await db.insert(tenants).values({ slug: "gudang", name: "gudang" }).returning()
@@ -125,17 +125,17 @@ async function seedRrfGap(db: Awaited<ReturnType<typeof freshPglite>>) {
   return { tenantId: t!.id }
 }
 
-// SATU database dipakai bersama oleh seluruh test di file ini, lewat `beforeAll`.
-// Dua alasan:
-//   1. `freshPglite()` membangun Postgres WASM lengkap dan menerapkan migrasi —
-//      sekitar 7 detik dan beberapa ratus MB per instance. EMPAT instance dalam
-//      satu file membuat worker vitest mati dengan "Worker exited unexpectedly".
-//      Itu terukur, bukan dugaan.
-//   2. Test di bawah ini aman berbagi: tiga yang pertama hanya membaca, dan yang
-//      terakhir hanya menulis ke `messages`, `message_citations`, dan
-//      `escalations` — tabel yang tidak dibaca test lain. Kalau nanti ada test
-//      yang membaca tabel tulis itu, urutan test mulai berpengaruh dan file ini
-//      harus dipecah, bukan ditambahi.
+// ONE database is shared by every test in this file, via `beforeAll`.
+// Two reasons:
+//   1. `freshPglite()` builds a full WASM Postgres and applies migrations —
+//      about 7 seconds and several hundred MB per instance. FOUR instances in
+//      one file kills the vitest worker with "Worker exited unexpectedly".
+//      That's measured, not a guess.
+//   2. The tests below are safe to share: the first three only read, and the
+//      last one only writes to `messages`, `message_citations`, and
+//      `escalations` — tables no other test reads. If a future test reads
+//      those written-to tables, test order starts to matter and this file
+//      should be split, not added to.
 describe("createStore", () => {
   let db: Awaited<ReturnType<typeof freshPglite>>
   let toko: Awaited<ReturnType<typeof seed>>
@@ -167,14 +167,14 @@ describe("createStore", () => {
   })
 
   it("jalur kata kunci hidup: chunk ber-kata-kunci menang walau embedding-nya jauh", async () => {
-    // Embedding query sengaja jauh dari SEMUA chunk, jadi satu-satunya alasan sebuah
-    // chunk bisa menang adalah jalur kata kunci. Kalau suku ts_rank dihapus dari
-    // implementasi, test ini gagal — yang tidak terjadi pada versi sebelumnya.
+    // The query embedding is deliberately far from EVERY chunk, so the only reason a
+    // chunk can win is the keyword path. If the ts_rank term were removed from the
+    // implementation, this test would fail — which did not happen with an earlier version.
     //
-    // Offset 600, bukan 999: `fakeEmbedding` berbasis sin(offset+i), jadi periodik.
-    // Diverifikasi lewat perhitungan cosine manual bahwa 600 membuat jalur semantik
-    // SENDIRIAN memenangkan SEM_ONLY (bukan GARANSI_TOKO) — sehingga tanpa jalur kata
-    // kunci, test ini benar-benar gagal, bukan kebetulan tetap lolos.
+    // Offset 600, not 999: `fakeEmbedding` is based on sin(offset+i), so it's periodic.
+    // Verified by manual cosine calculation that 600 makes the semantic path ALONE win
+    // SEM_ONLY (not GARANSI_TOKO) — so without the keyword path, this test genuinely
+    // fails, rather than happening to pass anyway.
     const hits = await createStore(db).searchChunks({
       tenantId: toko.tenantId, query: "garansi",
       embedding: fakeEmbedding(600), embeddingModel: "test", limit: 1,
@@ -183,8 +183,8 @@ describe("createStore", () => {
   })
 
   it("jalur semantik hidup: tanpa kecocokan kata kunci, yang terdekat tetap ditemukan", async () => {
-    // Query yang tidak cocok kata kunci apa pun. Kalau suku cosine dihapus, jalur
-    // kata kunci tidak mengembalikan apa pun dan test ini gagal.
+    // A query that matches no keyword at all. If the cosine term were removed, the
+    // keyword path would return nothing and this test would fail.
     const hits = await createStore(db).searchChunks({
       tenantId: toko.tenantId, query: "zzz tidak ada di mana pun",
       embedding: fakeEmbedding(1), embeddingModel: "test", limit: 1,
@@ -193,21 +193,22 @@ describe("createStore", () => {
   })
 
   it("jalur vektor hanya mempertimbangkan model embedding yang diminta", async () => {
-    // Filter `embedding_model` ada di CTE `sem` SAJA, dan itu memang benar: isi teks
-    // sebuah chunk tidak bergantung pada model embedding-nya, jadi jalur kata kunci
-    // sah mencakup semua chunk. Yang dijaga adalah ruang vektornya tidak tercampur.
+    // The `embedding_model` filter lives in the `sem` CTE ONLY, and that's correct: a
+    // chunk's text content doesn't depend on its embedding model, so the keyword path
+    // is right to cover every chunk. What's being guarded is that the vector space
+    // isn't mixed.
     //
-    // Fixture-nya sengaja MEMUAT kata kunci "garansi". Versi sebelumnya tidak, dan
-    // karena itu test-nya lolos tanpa membuktikan apa pun tentang filter tersebut.
+    // The fixture deliberately CONTAINS the keyword "garansi". An earlier version did
+    // not, and because of that the test passed without proving anything about the filter.
     const lewatKataKunci = await createStore(db).searchChunks({
       tenantId: toko.tenantId, query: "garansi",
       embedding: fakeEmbedding(600), embeddingModel: "test", limit: 10,
     })
-    // Lewat jalur kata kunci ia MEMANG boleh muncul — isinya valid.
+    // Through the keyword path it's SUPPOSED to appear — that's valid.
     expect(lewatKataKunci.map((h) => h.content)).toContain(MODEL_LAIN)
 
-    // Tapi lewat jalur vektor ia TIDAK boleh: query tanpa kecocokan kata kunci apa pun,
-    // dengan embedding identik dengan chunk itu, tetap tidak boleh mengembalikannya.
+    // But through the vector path it must NOT: a query that matches no keyword at all,
+    // with an embedding identical to that chunk, still must not return it.
     const lewatVektor = await createStore(db).searchChunks({
       tenantId: toko.tenantId, query: "zzz tidak ada di mana pun",
       embedding: fakeEmbedding(1), embeddingModel: "test", limit: 10,
@@ -216,17 +217,18 @@ describe("createStore", () => {
   })
 
   it("chunk ber-kata-kunci tanpa embedding tetap bisa ditemukan di antara chunk tak relevan", async () => {
-    // Kasus nyata: dokumen baru diunggah, embedding-nya belum selesai dibuat, lalu
-    // pelanggan bertanya. Fixture-nya (lihat `seedRrfGap`) membangun skenario persis
-    // seperti yang diukur di alasan konstanta RRF: `TANPA_EMBEDDING` bersaing dengan
-    // 24 chunk satu-daftar (aman di k mana pun) DAN 3 chunk dua-daftar yang relevansi
-    // teksnya buruk tapi kehadiran gandanya, pada k=60, tetap cukup mengalahkannya.
+    // A real-world case: a new document is uploaded, its embedding hasn't finished
+    // generating yet, and then a customer asks a question. The fixture (see
+    // `seedRrfGap`) builds exactly the scenario measured in the RRF constant's
+    // rationale: `TANPA_EMBEDDING` competes against 24 single-list chunks (safe at any
+    // k) AND 3 dual-list chunks whose text relevance is poor but whose dual presence,
+    // at k=60, is still enough to beat it.
     //
-    // Query "pengembalian barang" 2 kata SENGAJA, bukan "garansi": dengan fixture
-    // 4-chunk lama, satu-satunya chunk yang cocok kata kunci untuk query ini SELALU
-    // masuk `limit`, apa pun konstantanya — test itu lolos tanpa membuktikan apa pun.
-    // Diverifikasi lewat `pnpm vitest` berulang bahwa hasil ini stabil, bukan
-    // kebetulan menang seri id (lihat `fixedId`).
+    // The query "pengembalian barang" is deliberately 2 words, not "garansi": with the
+    // old 4-chunk fixture, the one chunk that matched this query's keyword ALWAYS made
+    // it into `limit`, regardless of the constant — that test passed without proving
+    // anything. Verified via repeated `pnpm vitest` runs that this result is stable,
+    // not a lucky id tiebreak (see `fixedId`).
     const hits = await createStore(db).searchChunks({
       tenantId: gudang.tenantId, query: "pengembalian barang",
       embedding: fakeEmbedding(600), embeddingModel: "test", limit: 3,
@@ -235,10 +237,10 @@ describe("createStore", () => {
   })
 
   it("setiap tenant hanya melihat chunk miliknya sendiri", async () => {
-    // DUA tenant sungguhan, masing-masing punya chunk yang bisa dibedakan.
-    // Menanyai satu uuid acak yang tidak punya data hanya membuktikan "kosong", dan
-    // itu tidak membedakan "RLS menyaring" dari "tenant ini memang tak punya apa-apa".
-    // Di sini kedua tenant punya isi, jadi kalau RLS bocor, test ini gagal.
+    // TWO real tenants, each with distinguishable chunks.
+    // Querying a random uuid with no data only proves "empty", and that doesn't
+    // distinguish "RLS is filtering" from "this tenant simply has nothing". Here both
+    // tenants have content, so if RLS leaks, this test fails.
     const store = createStore(db)
     const args = { query: "garansi", embedding: fakeEmbedding(1), embeddingModel: "test", limit: 5 }
 
@@ -252,7 +254,7 @@ describe("createStore", () => {
     expect(isiWarung).toContain(GARANSI_WARUNG)
     expect(isiWarung).not.toContain(GARANSI_TOKO)
 
-    // Tenant yang sama sekali tidak ada tetap harus kosong.
+    // A tenant that doesn't exist at all must still come back empty.
     const isiAsing = await store.searchChunks({
       tenantId: "00000000-0000-0000-0000-000000000000", ...args,
     })

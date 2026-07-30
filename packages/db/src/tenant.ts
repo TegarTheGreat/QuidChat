@@ -7,27 +7,28 @@ import type * as schema from "./schema.js"
 type Relations = ExtractTablesWithRelations<typeof schema>
 
 /**
- * Bentuk `tx` yang sesungguhnya di dalam callback `db.transaction()`, untuk
- * kedua driver. Ini SENGAJA bukan `QuidDb`: `QuidDb` membawa `$client` (akses
- * ke koneksi mentah), sesuatu yang tidak berarti di dalam satu transaksi.
- * Permukaan query yang dipakai konsumen (`select`, `insert`, `update`,
- * `delete`, `execute`, dst) sama persis dengan `QuidDb`, jadi tidak ada
- * fungsionalitas yang hilang — hanya properti yang memang tidak relevan di
- * sini yang tidak ikut. Karena tipe callback tidak lagi memaksakan `$client`
- * yang tidak ada, tidak diperlukan cast atau `@ts-expect-error` sama sekali.
+ * The actual shape of `tx` inside the `db.transaction()` callback, for both
+ * drivers. This is DELIBERATELY not `QuidDb`: `QuidDb` carries `$client`
+ * (access to the raw connection), which doesn't mean anything inside a single
+ * transaction. The query surface consumers use (`select`, `insert`, `update`,
+ * `delete`, `execute`, etc.) is identical to `QuidDb`, so no functionality is
+ * lost — only the property that genuinely doesn't apply here is left out.
+ * Because the callback type no longer forces a `$client` that doesn't exist,
+ * no cast or `@ts-expect-error` is needed anywhere.
  */
 export type QuidTx =
   | PgliteTransaction<typeof schema, Relations>
   | PostgresJsTransaction<typeof schema, Relations>
 
 /**
- * Menjalankan `fn` di dalam satu transaksi dengan role aplikasi dan konteks
- * tenant terpasang. Keduanya `SET LOCAL`, jadi otomatis lepas saat transaksi
- * selesai — tidak ada kebocoran konteks ke query berikutnya di koneksi yang sama.
+ * Runs `fn` inside a single transaction with the application role and tenant
+ * context set. Both are `SET LOCAL`, so they're automatically released when
+ * the transaction ends — no context leaks into the next query on the same
+ * connection.
  *
- * Ini satu-satunya jalan yang membuat RLS benar-benar berlaku (lihat catatan
- * pada `QuidDb`/`createDb`) — tanpanya, query jalan sebagai superuser dan
- * melihat semua tenant, bukan gagal atau kosong.
+ * This is the only path that makes RLS actually take effect (see the note on
+ * `QuidDb`/`createDb`) — without it, queries run as superuser and see every
+ * tenant, rather than failing or coming back empty.
  */
 export async function withTenant<T>(
   db: QuidDb,
@@ -37,28 +38,29 @@ export async function withTenant<T>(
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL ROLE quidchat_app`)
     await tx.execute(sql`SELECT set_config('quidchat.tenant_id', ${tenantId}, true)`)
-    // Iterative scan WAJIB aktif justru KARENA isolasi tenant memakai RLS.
+    // Iterative scan MUST be on precisely BECAUSE tenant isolation uses RLS.
     //
-    // pgvector menerapkan filter SETELAH penelusuran indeks HNSW, bukan selama.
-    // Predikat RLS `tenant_id = current_tenant_id()` adalah salah satu filter itu.
-    // Dengan `hnsw.ef_search` default 40 dan iterative scan mati, sebuah
-    // `ORDER BY embedding <=> v LIMIT k` bisa mengembalikan LEBIH SEDIKIT dari k
-    // baris — bukan karena datanya tidak ada, tapi karena 40 baris yang diperiksa
-    // indeks kebetulan milik tenant lain dan tersaring habis setelahnya.
+    // pgvector applies filters AFTER traversing the HNSW index, not during.
+    // The RLS predicate `tenant_id = current_tenant_id()` is one of those
+    // filters. With the default `hnsw.ef_search` of 40 and iterative scan
+    // off, an `ORDER BY embedding <=> v LIMIT k` can return FEWER than k
+    // rows — not because the data isn't there, but because the 40 rows the
+    // index examined happened to belong to other tenants and got filtered
+    // out afterward.
     //
-    // Akibatnya kehilangan recall yang SUNYI, dan justru paling parah pada kasus
-    // yang paling wajar di sistem multi-tenant: satu tenant kecil di tabel besar,
-    // atau tenant yang sedang re-index sehingga `embedding_model`-nya bercampur.
-    // Tidak ada error, tidak ada log — hanya asisten yang menjawab "maaf, belum ada
-    // informasi itu" padahal dokumennya ada.
+    // The result is silent recall loss, and it's worst in exactly the case
+    // that's most common in a multi-tenant system: one small tenant in a
+    // large table, or a tenant mid-reindex with mixed `embedding_model`
+    // values. No error, no log — just the assistant answering "sorry, I
+    // don't have that information" when the document is actually there.
     //
-    // `strict_order`, bukan `relaxed_order`: RRF di `searchChunks` memfusikan
-    // berdasarkan PERINGKAT, jadi peringkatnya harus benar. `hnsw.max_scan_tuples`
-    // (default 20.000) yang membatasi agar penelusurannya tidak liar.
+    // `strict_order`, not `relaxed_order`: the RRF in `searchChunks` fuses
+    // by RANK, so the ranking has to be correct. `hnsw.max_scan_tuples`
+    // (default 20,000) is what keeps the scan from running away.
     //
-    // Diverifikasi: parameter ini ber-konteks `user`, jadi bisa disetel oleh
-    // `quidchat_app` yang bukan superuser, dan `SET LOCAL` benar lepas saat
-    // transaksi selesai.
+    // Verified: this parameter is `user`-context, so it can be set by the
+    // non-superuser `quidchat_app`, and `SET LOCAL` does correctly release it
+    // when the transaction ends.
     await tx.execute(sql`SET LOCAL hnsw.iterative_scan = strict_order`)
     return fn(tx)
   })

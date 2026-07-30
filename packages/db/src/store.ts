@@ -4,14 +4,15 @@ import type { QuidDb } from "./client.js"
 import { withTenant } from "./tenant.js"
 
 /**
- * Menyeragamkan hasil `execute()` yang bentuknya BERBEDA antar driver:
- * driver PGlite mengembalikan objek ber-`rows`, sedangkan driver postgres-js
- * mengembalikan hasil `client.unsafe()` yang berupa Array (dengan properti
- * tambahan seperti `count` dan `command`, tapi TANPA `.rows`).
+ * Normalizes the `execute()` result, whose shape DIFFERS between drivers:
+ * the PGlite driver returns an object with `rows`, while the postgres-js
+ * driver returns the result of `client.unsafe()`, which is an Array (with
+ * extra properties like `count` and `command`, but WITHOUT `.rows`).
  *
- * Tanpa penyeragaman ini, mengakses `.rows` langsung akan bekerja di seluruh
- * test — yang memakai PGlite — lalu menghasilkan `undefined` di tier 3 yang
- * memakai postgres-js. Bug yang lolos setiap test dan hanya muncul di produksi.
+ * Without this normalization, accessing `.rows` directly would work across
+ * the entire test suite — which uses PGlite — and then produce `undefined`
+ * in tier 3, which uses postgres-js. A bug that passes every test and only
+ * shows up in production.
  */
 function rowsOf(res: unknown): Record<string, unknown>[] {
   return Array.isArray(res)
@@ -23,20 +24,21 @@ export function createStore(db: QuidDb): Store {
   return {
     async getTenantConfig(tenantId: string): Promise<TenantConfig> {
       return withTenant(db, tenantId, async (tx) => {
-        // TANPA `WHERE tenant_id` — dan itu wajib. RLS yang men-scope. Filter aplikasi
-        // di sini akan mengembalikan baris yang benar bahkan ketika policy-nya sudah
-        // runtuh, sehingga kebocoran isolasi lolos seluruh test dan baru terlihat di
-        // produksi. Terbukti: policy bocor + filter ini = 7/7 test tetap hijau.
+        // NO `WHERE tenant_id` here — and that's required. RLS does the scoping. An
+        // application-level filter here would return the correct row even when the
+        // policy has collapsed, so an isolation leak would pass every test and only
+        // become visible in production. Proven: a leaky policy plus this filter left
+        // 7/7 tests green.
         const res = await tx.execute(sql`
           SELECT chat_model, rewrite_model, embedding_model, refusal_text, high_risk_topics
           FROM tenant_settings
         `)
         const rows = rowsOf(res)
         if (rows.length === 0) throw new Error(`tenant_settings tidak ditemukan: ${tenantId}`)
-        // Lebih dari satu baris berarti RLS sedang TIDAK mengisolasi — di bawah policy yang
-        // benar, `SELECT` tanpa `WHERE` di dalam withTenant() hanya bisa melihat satu baris.
-        // Mengambil baris pertama secara diam-diam berarti membaca setelan tenant lain, dan
-        // karena setelan default setiap tenant identik, tidak ada test yang akan menyadarinya.
+        // More than one row means RLS is NOT isolating — under a correct policy, a
+        // `SELECT` with no `WHERE` inside withTenant() can only ever see one row.
+        // Silently taking the first row would mean reading another tenant's settings,
+        // and because every tenant's defaults are identical, no test would notice.
         if (rows.length > 1) {
           throw new Error(
             `isolasi tenant gagal: tenant_settings mengembalikan ${rows.length} baris untuk satu tenant`,
@@ -55,32 +57,32 @@ export function createStore(db: QuidDb): Store {
 
     async searchChunks({ tenantId, query, embedding, embeddingModel, limit }): Promise<Candidate[]> {
       const vec = `[${embedding.join(",")}]`
-      // Kolam per jalur dibuat lebih besar dari `limit` supaya fusi punya bahan;
-      // 20 sebagai dasar agar limit kecil tidak mempersempit kandidatnya.
+      // The per-path pool is made larger than `limit` so the fusion has material to
+      // work with; 20 as a floor so a small limit doesn't narrow the candidate set.
       const poolSize = Math.max(limit * 4, 20)
       return withTenant(db, tenantId, async (tx) => {
-        // Reciprocal Rank Fusion. Kedua jalur diambil top-k SENDIRI-SENDIRI lalu
-        // digabung berdasarkan PERINGKAT, bukan berdasarkan skor mentah.
+        // Reciprocal Rank Fusion. Both paths are taken top-k INDEPENDENTLY and then
+        // combined by RANK, not by raw score.
         //
-        // Menjumlahkan skor mentah tidak bisa dipakai: ts_rank untuk kecocokan satu kata
-        // sekitar 0,06 sementara (1 - cosine) berkisar [-1, 1]. Diukur di PGlite, chunk
-        // yang MEMUAT kata kuncinya kalah dari chunk yang tidak memuatnya sama sekali.
-        // RRF tidak peduli skala — hanya urutan — jadi kedua jalur benar-benar berbobot.
+        // Summing raw scores can't be used: ts_rank for a single-word match is about
+        // 0.0608 while (1 - cosine) spans [-1, 1]. Measured on PGlite, a chunk that
+        // DOES contain the keyword lost to a chunk that doesn't contain it at all.
+        // RRF doesn't care about scale — only order — so both paths get real weight.
         //
-        // Efek samping yang penting: CTE `sem` memakai bentuk
-        // `ORDER BY embedding <=> vec LIMIT k`, satu-satunya bentuk yang BISA memakai
-        // indeks HNSW. Versi lama yang mengurutkan berdasarkan jumlah dua skor tidak
-        // pernah bisa memakainya.
+        // Important side effect: the `sem` CTE uses the form
+        // `ORDER BY embedding <=> vec LIMIT k`, the only form that CAN use the HNSW
+        // index. The old version, which ordered by the sum of the two scores, could
+        // never use it.
         //
-        // "Bisa", bukan "pasti", dan bedanya penting. pgvector menerapkan filter
-        // SETELAH penelusuran indeks — jadi `embedding_model` di bawah ini DAN predikat
-        // RLS `tenant_id` keduanya post-scan. Tanpa penanganan, itu berarti kehilangan
-        // recall yang sunyi: indeks memeriksa `ef_search` baris, filternya membuang
-        // sebagian besar, dan hasilnya kurang dari `poolSize` tanpa error apa pun.
-        // Karena itu `withTenant` menyalakan `hnsw.iterative_scan = strict_order` —
-        // lihat alasan lengkapnya di sana. Apakah perencana benar-benar memilih indeks
-        // pada skala produksi belum diukur; test di PGlite bertabel kecil selalu
-        // memilih sequential scan karena memang lebih murah.
+        // "Can", not "will", and the difference matters. pgvector applies filters
+        // AFTER traversing the index — so the `embedding_model` filter below AND the
+        // RLS `tenant_id` predicate are both post-scan. Left unhandled, that means
+        // silent recall loss: the index checks `ef_search` rows, the filters discard
+        // most of them, and the result comes back under `poolSize` with no error at
+        // all. That's why `withTenant` turns on `hnsw.iterative_scan = strict_order` —
+        // see the full reasoning there. Whether the planner actually picks the index
+        // at production scale hasn't been measured; the small-table tests on PGlite
+        // always pick a sequential scan because it's genuinely cheaper there.
         const res = await tx.execute(sql`
           WITH kw AS (
             SELECT c.id,
@@ -102,26 +104,26 @@ export function createStore(db: QuidDb): Store {
             LIMIT ${poolSize}
           ),
           fused AS (
-            -- Konstanta RRF = 10, BUKAN 60 dari makalah aslinya. Alasannya aritmetika,
-            -- bukan selera.
+            -- RRF constant = 10, NOT the 60 from the original paper. The reason is
+            -- arithmetic, not taste.
             --
-            -- Skor maksimum chunk yang hanya muncul di SATU daftar adalah 1/(k+1).
-            -- Skor minimum chunk yang muncul di KEDUA daftar adalah 2/(k+pool).
-            -- Dengan k=60 dan pool=32: 0,01639 < 0,02174 — jadi chunk yang hadir di
-            -- kedua daftar mengalahkan SETIAP chunk satu-daftar, sebaik apa pun
-            -- kecocokannya.
+            -- The maximum score for a chunk that appears in only ONE list is 1/(k+1).
+            -- The minimum score for a chunk that appears in BOTH lists is 2/(k+pool).
+            -- With k=60 and pool=32: 0.01639 < 0.02174 — so a chunk present in both
+            -- lists beats EVERY single-list chunk, no matter how good its match is.
             --
-            -- Itu bukan sekadar tidak optimal, itu penyingkiran struktural: chunk
-            -- ber-'embedding IS NULL' dan chunk yang masih memakai model embedding lama
-            -- TIDAK BISA masuk daftar 'sem', jadi mereka selamanya satu-daftar. Terukur:
-            -- satu chunk penjawab tanpa embedding di antara 12 chunk tak relevan
-            -- ber-embedding jatuh ke peringkat 4; dengan >=8 chunk dua-daftar ia keluar
-            -- dari jendela kandidat dan pipeline MENOLAK padahal jawabannya ada.
+            -- That's not just suboptimal, it's a structural exclusion: chunks with
+            -- 'embedding IS NULL' and chunks still on an old embedding model CANNOT
+            -- enter the 'sem' list, so they are permanently single-list. Measured: one
+            -- answering chunk without an embedding, among 12 irrelevant chunks that do
+            -- have embeddings, fell to rank 4; with >=8 dual-list chunks it drops out of
+            -- the candidate window and the pipeline REFUSES even though the answer
+            -- exists.
             --
-            -- Syaratnya k < pool − 2. Karena poolSize = max(limit*4, 20), kolam bisa
-            -- sekecil 20, jadi k harus < 18. k=10 memenuhi seluruh rentang (0,09091 >
-            -- 0,04762) dan TETAP membuat kehadiran di kedua daftar menguntungkan
-            -- (0,18182 > 0,09091) — hanya tidak lagi mutlak.
+            -- The requirement is k < pool − 2. Since poolSize = max(limit*4, 20), the
+            -- pool can be as small as 20, so k must be < 18. k=10 satisfies the whole
+            -- range (0.09091 > 0.04762) and STILL makes presence in both lists
+            -- advantageous (0.18182 > 0.09091) — just no longer absolute.
             SELECT id, SUM(1.0 / (10 + rnk)) AS score
             FROM (SELECT id, rnk FROM kw UNION ALL SELECT id, rnk FROM sem) u
             GROUP BY id
@@ -151,11 +153,11 @@ export function createStore(db: QuidDb): Store {
         `)
         const messageId = rowsOf(res)[0]!.id as string
         for (const chunkId of citedChunkIds) {
-          // `tenant_id` WAJIB disertakan. Kolomnya `NOT NULL` tanpa default, dan
-          // dua foreign key komposit tabel ini — (tenant_id, message_id) dan
-          // (tenant_id, chunk_id) — memakainya untuk memastikan sebuah sitasi
-          // tidak pernah bisa menunjuk baris milik tenant lain. Menghilangkannya
-          // membuat setiap pemanggilan recordAnswer gagal.
+          // `tenant_id` MUST be included. The column is `NOT NULL` with no default,
+          // and this table's two composite foreign keys — (tenant_id, message_id) and
+          // (tenant_id, chunk_id) — use it to guarantee a citation can never point at
+          // a row belonging to another tenant. Omitting it makes every call to
+          // recordAnswer fail.
           await tx.execute(sql`
             INSERT INTO message_citations (tenant_id, message_id, chunk_id)
             VALUES (${tenantId}, ${messageId}, ${chunkId})

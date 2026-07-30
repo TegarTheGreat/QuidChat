@@ -1,27 +1,29 @@
 /**
- * Test yang MENYERANG isolasi tenant, lalu menuntut pertahanannya berbunyi.
+ * Tests that ATTACK tenant isolation, then demand the defenses actually fire.
  *
- * Review akhir Rencana 1 menemukan cacatnya bukan dengan membaca kode, tapi dengan
- * merusaknya dan melihat suite tetap hijau. Serangan pertama yang dipakai: menambahkan
- * `CREATE POLICY leak ON tenant_settings USING (true)` DI SAMPING policy yang men-scope.
- * Postgres menggabungkan policy permissive dengan OR, jadi isolasinya runtuh sementara
- * policy yang benar tetap ada — dan waktu itu NOL test gagal. Review Rencana 2 menemukan
- * dua serangan lagi dengan cara yang sama, keduanya lolos dari versi guard saat itu (lihat
- * `describe` kedua di bawah).
+ * The final review of Plan 1 found the flaw not by reading the code, but by
+ * breaking it and watching the suite stay green. The first attack used: adding
+ * `CREATE POLICY leak ON tenant_settings USING (true)` ALONGSIDE the scoping
+ * policy. Postgres combines permissive policies with OR, so isolation collapsed
+ * while the correct policy was still in place — and at the time, ZERO tests
+ * failed. The Plan 2 review found two more attacks the same way, both of which
+ * slipped past the guard version at the time (see the second `describe` below).
  *
- * Berkas ini menjadikan serangan-serangan itu bagian permanen dari suite. Ada tiga
- * pertahanan:
+ * This file makes those attacks a permanent part of the suite. There are three
+ * layers of defense:
  *
- *   1. Guard di migrasi (blok `guard_isolasi`), yang menolak SETIAP tabel ber-RLS yang
- *      policy permissive-nya — pada `qual` maupun `with_check` — bukan PERSIS
- *      `(kunci = current_tenant_id())`. Guard-nya DIEKSTRAK LANGSUNG dari berkas migrasi,
- *      bukan disalin ke sini — kalau seseorang melemahkan guard-nya, test ini yang gagal.
- *   2. `getTenantConfig`, yang menolak hasil lebih dari satu baris. Tanpa itu, kode
- *      diam-diam mengambil baris pertama, yang bisa milik tenant lain — dan karena
- *      setelan default setiap tenant identik di instalasi baru, tidak ada assertion
- *      biasa yang akan menyadarinya.
- *   3. Test perilaku di `describe` kedua, yang mengukur akibat lewat query sungguhan,
- *      bukan bentuk teks policy — lihat docstring-nya untuk cakupan persisnya.
+ *   1. The guard in the migration (the `guard_isolasi` block), which rejects
+ *      ANY RLS-enabled table whose permissive policy — on `qual` or
+ *      `with_check` — is not EXACTLY `(key = current_tenant_id())`. The guard
+ *      is EXTRACTED DIRECTLY from the migration file rather than copied here —
+ *      if someone weakens the guard, this test is what fails.
+ *   2. `getTenantConfig`, which rejects a result of more than one row. Without
+ *      that, the code would silently take the first row, which could belong to
+ *      another tenant — and because every tenant's defaults are identical on a
+ *      fresh install, no ordinary assertion would notice.
+ *   3. The behavioral tests in the second `describe`, which measure the effect
+ *      through real queries rather than the text shape of a policy — see its
+ *      docstring for the exact coverage.
  */
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
@@ -32,14 +34,14 @@ import { createStore } from "./store.js"
 import { withTenant } from "./tenant.js"
 import { freshPglite } from "./testing.js"
 
-/** Menyeragamkan hasil `execute()`: driver PGlite mengembalikan `{rows}`, postgres-js Array. */
+/** Normalizes the `execute()` result: the PGlite driver returns `{rows}`, postgres-js an Array. */
 function rowsOf(res: unknown): Record<string, unknown>[] {
   return Array.isArray(res)
     ? (res as Record<string, unknown>[])
     : ((res as { rows?: Record<string, unknown>[] }).rows ?? [])
 }
 
-/** Mengambil satu blok `DO $nama$ ... END $nama$;` dari berkas migrasi yang terkirim. */
+/** Extracts a single `DO $name$ ... END $name$;` block from the applied migration file. */
 function blokGuard(nama: string): string {
   const migrasi = readFileSync(
     join(process.cwd(), "packages/db/migrations/0001_init.sql"),
@@ -62,8 +64,8 @@ describe("isolasi tenant di bawah serangan", () => {
     const [a] = await db.insert(tenants).values({ slug: "a", name: "A" }).returning()
     const [b] = await db.insert(tenants).values({ slug: "b", name: "B" }).returning()
     tenantA = a!.id
-    // Dua tenant, keduanya punya setelan. Satu tenant saja tidak cukup: kebocoran
-    // hanya terlihat kalau ada data tenant lain yang bisa bocor.
+    // Two tenants, both with settings. A single tenant wouldn't be enough: a leak
+    // is only visible if there's another tenant's data that could leak.
     await db.insert(tenantSettings).values({ tenantId: a!.id })
     await db.insert(tenantSettings).values({ tenantId: b!.id })
     guard = blokGuard("guard_isolasi")
@@ -81,13 +83,13 @@ describe("isolasi tenant di bawah serangan", () => {
 
   it("guard migrasi MENOLAK policy bocor yang ditambahkan berdampingan", async () => {
     await db.execute(sql`CREATE POLICY leak ON tenant_settings USING (true)`)
-    // Kalau assertion ini gagal, guard-nya sudah dilemahkan dan kebocoran isolasi
-    // bisa mendarat lewat migrasi tanpa ada yang menyadarinya.
+    // If this assertion fails, the guard has been weakened and an isolation leak
+    // could land through a migration with nobody noticing.
     await expect(db.execute(sql.raw(guard))).rejects.toThrow()
   })
 
   it("getTenantConfig MELEMPAR alih-alih membaca setelan tenant lain", async () => {
-    // Policy bocor dari test sebelumnya masih terpasang; itu memang yang diuji.
+    // The leaky policy from the previous test is still in place; that's exactly what's being tested.
     await expect(createStore(db).getTenantConfig(tenantA)).rejects.toThrow(
       "isolasi tenant gagal",
     )
@@ -95,11 +97,11 @@ describe("isolasi tenant di bawah serangan", () => {
   })
 
   it("guard migrasi MENOLAK policy yang hanya MENYEBUT current_tenant_id()", async () => {
-    // Serangan yang mengalahkan versi kedua guard. `USING (current_tenant_id() IS NOT NULL)`
-    // menyebut fungsinya tanpa membatasi satu baris pun, jadi pemeriksaan "mengandung"
-    // lolos sementara tabelnya terbuka penuh. Pemeriksaan substring tidak akan pernah
-    // bisa membuktikan sebuah policy membatasi — guard-nya sekarang menuntut ekspresi
-    // yang PERSIS, dan test ini yang menjaganya tetap begitu.
+    // The attack that defeated the second version of the guard. `USING (current_tenant_id()
+    // IS NOT NULL)` mentions the function without restricting a single row, so a
+    // "contains" check would pass while the table sits wide open. A substring check can
+    // never prove a policy is actually restrictive — the guard now demands an EXACT
+    // expression, and this test is what keeps it that way.
     await db.execute(
       sql`CREATE POLICY leak_menyebut ON conversations USING (current_tenant_id() IS NOT NULL)`,
     )
@@ -108,10 +110,10 @@ describe("isolasi tenant di bawah serangan", () => {
   })
 
   it("guard MENOLAK with_check yang dibocorkan — jalur TULIS", async () => {
-    // Versi guard sebelumnya hanya memeriksa `qual`, yaitu jalur BACA. Dengan
-    // `WITH CHECK (true)` sebuah tenant bisa MENULIS baris milik tenant lain:
-    // terukur, satu baris usage_events 500.000 sen masuk ke buku besar orang lain,
-    // dan satu pesan assistant palsu masuk ke transkrip bisnis lain.
+    // The previous version of the guard only checked `qual`, the READ path. With
+    // `WITH CHECK (true)` a tenant can WRITE rows belonging to another tenant:
+    // measured, one usage_events row of 500,000 cents landed in someone else's
+    // ledger, and one fake assistant message landed in another business's transcript.
     await db.execute(sql`DROP POLICY tenant_isolation ON usage_events`)
     await db.execute(sql`
       CREATE POLICY tenant_isolation ON usage_events
@@ -126,9 +128,9 @@ describe("isolasi tenant di bawah serangan", () => {
   })
 
   it("guard MENOLAK policy tenants yang dibocorkan", async () => {
-    // `tenants` berkunci `id`, bukan `tenant_id`, jadi ia luput dari SETIAP lapis
-    // pertahanan versi sebelumnya. Membocorkannya membuat seluruh daftar pelanggan
-    // bisa dibaca tenant mana pun.
+    // `tenants` is keyed on `id`, not `tenant_id`, so it slipped past EVERY earlier
+    // layer of defense. Leaking it means the entire customer list becomes readable
+    // by any tenant.
     await db.execute(sql`DROP POLICY tenant_self ON tenants`)
     await db.execute(sql`CREATE POLICY tenant_self ON tenants USING (true)`)
     await expect(db.execute(sql.raw(guard))).rejects.toThrow()
@@ -137,9 +139,8 @@ describe("isolasi tenant di bawah serangan", () => {
   })
 
   it("guard MENOLAK RLS yang dimatikan", async () => {
-    // Mematok bagian guard yang memeriksa aktif+forced. Di versi sebelumnya bagian ini
-    // ada di blok terpisah yang tidak dipanggil test mana pun, jadi menghapusnya
-    // meninggalkan 44/44 hijau.
+    // Pins down the part of the guard that checks enabled+forced. In an earlier version
+    // this lived in a separate block that no test called, so removing it left 44/44 green.
     await db.execute(sql`ALTER TABLE chunks DISABLE ROW LEVEL SECURITY`)
     await expect(db.execute(sql.raw(guard))).rejects.toThrow()
     await db.execute(sql`ALTER TABLE chunks ENABLE ROW LEVEL SECURITY`)
@@ -147,17 +148,18 @@ describe("isolasi tenant di bawah serangan", () => {
   })
 
   it("guard MENOLAK tabel baru tanpa RLS", async () => {
-    // Memaku ENUMERASI guard, bukan isinya. Kalau guard ditulis ulang menjadi daftar
-    // keras nama tabel, kedelapan test serangan lain TETAP hijau — semuanya menyasar
-    // tabel yang terdaftar. Test inilah yang menangkapnya, dan ia juga menutup skenario
-    // paling mungkin di dunia nyata: migrasi berikutnya menambahkan tabel dan lupa RLS.
+    // Pins down the guard's ENUMERATION, not just its content. If the guard were
+    // rewritten as a hardcoded list of table names, the other eight attack tests would
+    // STILL be green — they all target already-listed tables. This test is the one that
+    // catches that, and it also covers the most likely real-world scenario: the next
+    // migration adds a table and forgets RLS.
     await db.execute(sql`CREATE TABLE lupa_rls (tenant_id uuid NOT NULL, isi text)`)
     await expect(db.execute(sql.raw(guard))).rejects.toThrow()
     await db.execute(sql`DROP TABLE lupa_rls`)
   })
 
   it("guard MENOLAK tabel di skema lain tanpa RLS", async () => {
-    // Serangan yang terukur bocor BACA DAN TULIS: `analytics.leads`.
+    // An attack measured to leak both READ AND WRITE: `analytics.leads`.
     await db.execute(sql`CREATE SCHEMA analytics`)
     await db.execute(sql`CREATE TABLE analytics.leads (tenant_id uuid NOT NULL, catatan text)`)
     await expect(db.execute(sql.raw(guard))).rejects.toThrow()
@@ -165,8 +167,8 @@ describe("isolasi tenant di bawah serangan", () => {
   })
 
   it("guard MENOLAK tabel terpartisi tanpa RLS", async () => {
-    // Parent tabel terpartisi ber-relkind 'p', bukan 'r', jadi guard lama tidak pernah
-    // melihatnya dan `USING (true)` di sana lolos.
+    // The parent of a partitioned table has relkind 'p', not 'r', so the old guard never
+    // saw it and a `USING (true)` there would pass.
     await db.execute(sql`
       CREATE TABLE audit_log (tenant_id uuid NOT NULL, saat timestamptz NOT NULL)
       PARTITION BY RANGE (saat)
@@ -180,7 +182,7 @@ describe("isolasi tenant di bawah serangan", () => {
     await db.execute(sql`CREATE VIEW ringkasan AS SELECT tenant_id, visitor_id FROM conversations`)
     await db.execute(sql`GRANT SELECT ON ringkasan TO quidchat_app`)
     await expect(db.execute(sql.raw(guardView))).rejects.toThrow()
-    // Dan dengan security_invoker menyala, guard-nya lolos.
+    // And with security_invoker on, the guard passes.
     await db.execute(sql`DROP VIEW ringkasan`)
     await db.execute(sql`
       CREATE VIEW ringkasan WITH (security_invoker = true) AS
@@ -203,26 +205,26 @@ describe("isolasi tenant di bawah serangan", () => {
 })
 
 /**
- * Test PERILAKU, bukan analisis teks.
+ * BEHAVIORAL tests, not text analysis.
  *
- * Guard di migrasi memeriksa BENTUK policy. Berkas ini mengukur AKIBATNYA: untuk SETIAP
- * tabel yang dilindungi RLS — dienumerasi lewat `relrowsecurity`, bukan lewat keberadaan
- * kolom `tenant_id`, jadi `tenants` ikut terhitung — jumlah baris yang terlihat satu
- * tenant di dalam `withTenant` wajib sama dengan jumlah baris yang benar-benar
- * miliknya (jalur BACA), dan upaya menanam baris berkunci tenant lain wajib ditolak
- * (jalur TULIS).
+ * The guard in the migration checks the SHAPE of a policy. This file measures the
+ * EFFECT: for EVERY table protected by RLS — enumerated via `relrowsecurity`, not via
+ * the presence of a `tenant_id` column, so `tenants` is included too — the number of
+ * rows a single tenant can see inside `withTenant` must equal the number of rows it
+ * actually owns (the READ path), and any attempt to plant a row keyed to another
+ * tenant must be rejected (the WRITE path).
  *
- * Yang TIDAK dicakup: view, fungsi `SECURITY DEFINER`, dan kode aplikasi yang memakai
- * raw handle (koneksi tanpa lewat `withTenant`) sama sekali tidak diperiksa di sini.
- * Cakupannya berhenti pada tabel ber-RLS yang diakses lewat `withTenant` — bukan
- * jaminan menyeluruh atas cacat policy apa pun di mana pun.
+ * What's NOT covered: views, `SECURITY DEFINER` functions, and application code that
+ * uses the raw handle (a connection that bypasses `withTenant`) are not checked here
+ * at all. Coverage stops at RLS-protected tables accessed through `withTenant` — this
+ * is not a blanket guarantee against every possible policy flaw everywhere.
  */
 describe("isolasi setiap tabel, diukur dari perilakunya", () => {
   let db: Awaited<ReturnType<typeof freshPglite>>
   let idA: string
   let idB: string
 
-  /** Mengisi SEMUA tabel ber-`tenant_id` untuk satu tenant, menghormati urutan FK. */
+  /** Populates ALL `tenant_id`-bearing tables for one tenant, respecting FK order. */
   async function isiPenuh(tenantId: string, tanda: string) {
     const satu = async (q: ReturnType<typeof sql>) =>
       rowsOf(await db.execute(q))[0]!.id as string
@@ -278,13 +280,13 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
     const ids = rowsOf(r).map((x) => x.id as string)
     idA = ids[0]!
     idB = ids[1]!
-    // KEDUA tenant diisi. Satu tenant saja membuat setiap tabel "aman" secara hampa:
-    // tidak ada data orang lain yang bisa bocor, jadi tidak ada yang dibuktikan.
+    // BOTH tenants are populated. A single tenant would make every table "safe" only
+    // vacuously: there's no one else's data that could leak, so nothing is proven.
     await isiPenuh(ids[0]!, "a")
     await isiPenuh(ids[1]!, "b")
   })
 
-  /** Semua tabel yang dilindungi RLS, beserta kunci tenant masing-masing. */
+  /** All RLS-protected tables, along with each one's tenant key. */
   async function tabelBerRls(): Promise<{ nama: string; kunci: string }[]> {
     const r = await db.execute(sql`
       SELECT c.relname AS nama,
@@ -317,9 +319,9 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
       )
       if (milik === 0) hampa.push(nama)
       if (terlihat !== milik) bocor.push(`${nama}: terlihat ${terlihat}, milik ${milik}`)
-      // Selain jumlah, periksa bahwa setiap tenant_id yang terlihat memang milik tenant
-      // ini. Membandingkan jumlah saja akan meloloskan kasus di mana satu tenant melihat
-      // tepat sebanyak baris milik tenant LAIN.
+      // Beyond the count, check that every visible tenant_id actually belongs to this
+      // tenant. Comparing counts alone would let through the case where a tenant sees
+      // exactly as many rows as it should, but they're rows belonging to ANOTHER tenant.
       if (kunci === "tenant_id") {
         const asing = await withTenant(db, idA, async (tx) =>
           rowsOf(
@@ -331,13 +333,13 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
     }
     expect(bocor).toEqual([])
     expect(hampa).toEqual([])
-    // Batas BAWAH, bukan angka pasti. Menambah tabel ber-RLS yang benar terlindungi
-    // seharusnya TIDAK memerahkan test ini; yang harus memerahkannya adalah tabel yang
-    // TIDAK terlindungi — dan itu justru tidak masuk enumerasi ini, jadi ditangkap oleh
-    // test "guard MENOLAK tabel baru tanpa RLS" di berkas yang sama.
+    // A LOWER bound, not an exact number. Adding a table that's correctly protected by
+    // RLS should NOT turn this test red; what should turn it red is a table that is NOT
+    // protected — and that case doesn't even make it into this enumeration, so it's
+    // caught by the "guard MENOLAK tabel baru tanpa RLS" test in the same file instead.
     expect(tabel.length).toBeGreaterThanOrEqual(12)
-    // Setiap tabel yang punya kolom tenant_id WAJIB ber-RLS. Ini yang menangkap tabel
-    // baru yang lupa dilindungi, dari arah perilaku alih-alih dari arah guard.
+    // Every table with a tenant_id column MUST have RLS. This is what catches a new
+    // table that forgot protection, from the behavior side rather than the guard side.
     const tanpaRls = rowsOf(
       await db.execute(sql`
         SELECT c.relname AS nama
@@ -355,8 +357,8 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
   })
 
   it("withTenant menyalakan iterative scan, karena RLS menyaring setelah index scan", async () => {
-    // Tanpa ini, `ORDER BY embedding <=> v LIMIT k` bisa mengembalikan kurang dari k
-    // baris untuk tenant kecil di tabel besar — kehilangan recall tanpa error apa pun.
+    // Without this, `ORDER BY embedding <=> v LIMIT k` can return fewer than k rows for
+    // a small tenant in a large table — silent recall loss, no error at all.
     const nilai = await withTenant(db, idA, async (tx) => {
       const r = await tx.execute(sql`SHOW hnsw.iterative_scan`)
       return rowsOf(r)[0]!["hnsw.iterative_scan"] as string
@@ -365,10 +367,10 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
   })
 
   it("tenant tidak bisa MENULIS baris milik tenant lain", async () => {
-    // Jalur tulis. Isolasi baca yang sempurna tidak ada gunanya kalau sebuah tenant
-    // masih bisa menanam baris di data tenant lain — dan itu justru yang paling
-    // merusak: klaim bisnis palsu di transkrip orang lain, atau biaya di buku besar
-    // orang lain.
+    // The write path. Perfect read isolation is worthless if a tenant can still plant
+    // rows in another tenant's data — and that's precisely the most damaging case:
+    // fake business claims in someone else's transcript, or charges on someone else's
+    // ledger.
     const gagal: string[] = []
     const upaya: [string, ReturnType<typeof sql>][] = [
       ["usage_events", sql`
@@ -396,9 +398,9 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
   })
 
   it("tenant tidak bisa MENGUBAH atau MENGHAPUS baris milik tenant lain, maupun MEMINDAHKAN baris sendiri", async () => {
-    // UPDATE baris milik tenant lain harus TIDAK berpengaruh (RLS menyembunyikannya,
-    // jadi nol baris terpengaruh), dan memindahkan baris SENDIRI ke tenant lain harus
-    // DITOLAK oleh with_check.
+    // UPDATE on another tenant's rows must have NO effect (RLS hides them, so zero rows
+    // affected), and moving one's OWN row to another tenant must be REJECTED by
+    // with_check.
     const hasil = await withTenant(db, idA, async (tx) => {
       const upd = await tx.execute(sql.raw(
         `UPDATE conversations SET visitor_id = 'dicuri' WHERE tenant_id = '${idB}'`,
@@ -407,8 +409,8 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
     })
     expect(hasil).toBe(0)
 
-    // DELETE baris milik tenant lain harus sama: RLS menyembunyikannya, jadi nol
-    // baris terpengaruh — bukan error, dan bukan pula baris tenant lain yang lenyap.
+    // DELETE on another tenant's rows must behave the same: RLS hides them, so zero
+    // rows are affected — not an error, and not the other tenant's rows disappearing.
     const hasilHapus = await withTenant(db, idA, async (tx) => {
       const del = await tx.execute(sql.raw(`DELETE FROM conversations WHERE tenant_id = '${idB}'`))
       return rowsOf(del).length
@@ -427,9 +429,9 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
   })
 
   it("app role tidak bisa menghapus atau mengubah baris tenants", async () => {
-    // DELETE dulu berhasil dan meng-cascade habis seluruh data tenant itu sendiri.
-    // UPDATE slug dulu berhasil, dan indeks unik slug yang GLOBAL menjadikannya oracle
-    // keberadaan lintas tenant.
+    // DELETE would previously succeed and cascade-delete an entire tenant's own data.
+    // UPDATE on slug would previously succeed, and the GLOBALLY unique slug index turns
+    // it into a cross-tenant existence oracle.
     for (const perintah of [
       sql`DELETE FROM tenants`,
       sql`UPDATE tenants SET slug = 'apa-pun'`,
