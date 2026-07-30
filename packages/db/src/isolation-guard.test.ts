@@ -242,6 +242,18 @@ describe("isolation of every table, measured by behavior", () => {
       INSERT INTO knowledge_sources (tenant_id, kind, uri, status)
       VALUES (${tenantId}, 'text', ${`${tag}.txt`}, 'ready') RETURNING id
     `)
+    const skillId = await one(sql`
+      INSERT INTO skills (tenant_id, name, is_fallback)
+      VALUES (${tenantId}, ${`Skill ${tag}`}, true) RETURNING id
+    `)
+    await db.execute(sql`
+      INSERT INTO skill_sources (tenant_id, skill_id, source_id)
+      VALUES (${tenantId}, ${skillId}, ${sourceId})
+    `)
+    await db.execute(sql`
+      INSERT INTO routing_rules (tenant_id, skill_id, position, kind)
+      VALUES (${tenantId}, ${skillId}, 0, 'fallback')
+    `)
     const docId = await one(sql`
       INSERT INTO documents (tenant_id, source_id, title)
       VALUES (${tenantId}, ${sourceId}, ${`Document ${tag}`}) RETURNING id
@@ -269,6 +281,10 @@ describe("isolation of every table, measured by behavior", () => {
     await db.execute(sql`
       INSERT INTO usage_events (tenant_id, model, input_tokens, output_tokens, cost_cents)
       VALUES (${tenantId}, 'test', 10, 5, 1)
+    `)
+    await db.execute(sql`
+      INSERT INTO canned_answers (tenant_id, question, answer, status)
+      VALUES (${tenantId}, ${`what are the hours for ${tag}?`}, 'Nine to five.', 'approved')
     `)
   }
 

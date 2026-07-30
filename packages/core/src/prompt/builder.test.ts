@@ -8,6 +8,7 @@ const config: TenantConfig = {
   embeddingModel: "text-embedding-3-small",
   refusalText: "Sorry, I don't have that information yet.",
   highRiskTopics: ["price", "warranty"],
+  answerMode: "full",
 }
 
 const history = [
