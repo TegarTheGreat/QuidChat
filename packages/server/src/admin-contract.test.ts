@@ -171,6 +171,54 @@ describe("the admin panel's client against the admin API", () => {
   })
 })
 
+describe("usage and escalations", () => {
+  it("reads this month's spend under the names the overview renders", async () => {
+    const api = await client()
+    const usage = await api.getUsage("contract")
+    // The overview read `monthlyCostCents`, which the server has never sent, and the type had
+    // an index signature so it compiled and rendered an empty figure. Named fields only now.
+    expect(typeof usage.costCents).toBe("number")
+    expect(typeof usage.inputTokens).toBe("number")
+    expect(typeof usage.outputTokens).toBe("number")
+  })
+
+  it("marks an escalation handled and puts it back", async () => {
+    const api = await client()
+    // A tenant of its own, with nothing to answer from. The shared one has a document by this
+    // point and would answer the question instead of escalating — and an escalation produced by
+    // asking a real question is worth more here than a row inserted behind the API's back.
+    const [bare] = await db.insert(tenants).values({ slug: "contract-bare", name: "Bare" }).returning()
+    await db.insert(tenantSettings).values({
+      tenantId: bare!.id,
+      allowedOrigins: ["https://contract.example"],
+    })
+    const chat = await fetch(`${baseUrl}/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://contract.example" },
+      body: JSON.stringify({ tenantSlug: "contract-bare", message: "do you deliver to Bali?" }),
+    })
+    expect(chat.status).toBe(200)
+
+    const [escalation] = await api.listEscalations("contract-bare")
+    expect(escalation?.question).toBe("do you deliver to Bali?")
+    expect(escalation?.resolvedAt).toBeNull()
+
+    const resolved = await api.resolveEscalation({
+      tenantSlug: "contract-bare",
+      id: escalation!.id,
+      resolved: true,
+    })
+    expect(resolved.resolvedAt).toBeTruthy()
+
+    const reopened = await api.resolveEscalation({
+      tenantSlug: "contract-bare",
+      id: escalation!.id,
+      resolved: false,
+    })
+    expect(reopened.resolvedAt).toBeNull()
+  })
+})
+
 describe("channel credentials", () => {
   it("saves a channel and reports which fields are stored, never their values", async () => {
     const api = await client()

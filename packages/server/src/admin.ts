@@ -791,6 +791,54 @@ async function deleteChannel(
   sendJson(res, 200, { ok: true })
 }
 
+/**
+ * `POST /admin/escalations/resolve` — mark one as handled.
+ *
+ * Without this the list only grows. An owner who has just written the answer to a question has
+ * no way to say so, so the screen that exists to show them what still needs attention shows
+ * them everything they have ever been asked. `resolved_at` has been in the schema since the
+ * first migration and nothing ever set it.
+ *
+ * Unresolving is the same route with `resolved: false`, because deciding an answer was wrong
+ * has to be as easy as deciding it was right.
+ */
+async function resolveEscalation(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const body = {
+    tenantSlug: typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
+    id: typeof raw.id === "string" ? raw.id : "",
+    resolved: raw.resolved !== false,
+  }
+
+  const tenantId = await resolveTenantOr404(res, deps.db, body.tenantSlug)
+  if (tenantId === null) return
+  if (!body.id) {
+    sendJson(res, 400, { error: "id is required" })
+    return
+  }
+
+  const updated = await withTenant(deps.db, tenantId, async (tx) =>
+    rowsOf(
+      await tx.execute(sql`
+        UPDATE escalations
+        SET resolved_at = ${body.resolved ? sql`now()` : sql`NULL`}
+        WHERE id = ${body.id}
+        RETURNING id, resolved_at
+      `),
+    )[0],
+  )
+  if (!updated) {
+    sendJson(res, 404, { error: "escalation not found" })
+    return
+  }
+  sendJson(res, 200, { id: updated.id, resolvedAt: updated.resolved_at })
+}
+
 async function listConversations(
   res: ServerResponse,
   deps: AdminDeps,
@@ -944,7 +992,9 @@ async function listEscalations(
                LIMIT 1
              ) AS question
       FROM escalations e
-      ORDER BY e.occurred_at DESC, e.id DESC
+      -- Unhandled first, newest first within that. This screen is a queue, and a resolved item
+      -- pushing an unhandled one further down the page defeats the reason to open it.
+      ORDER BY (e.resolved_at IS NULL) DESC, e.occurred_at DESC, e.id DESC
     `)
     return rowsOf(result)
   })
@@ -1411,6 +1461,7 @@ export async function handleAdminRequest(
   if (method === "GET" && sub === "/conversations") return listConversations(res, deps, searchParams)
   if (method === "GET" && sub === "/conversation") return getConversation(res, deps, searchParams)
   if (method === "GET" && sub === "/escalations") return listEscalations(res, deps, searchParams)
+  if (method === "POST" && sub === "/escalations/resolve") return resolveEscalation(req, res, deps)
   if (method === "GET" && sub === "/usage") return getUsage(res, deps, searchParams)
   if (method === "GET" && sub === "/setup") return getSetup(res, deps, searchParams)
   if (method === "GET" && sub === "/skills") return getSkills(res, deps, searchParams)

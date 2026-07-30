@@ -76,6 +76,10 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
       // refused for the same question the owner just answered.
       approved: true,
     })
+    // Marked handled in the same step. Writing the answer IS handling it, and leaving the row
+    // open would make this queue grow forever no matter how much work someone did on it. Done
+    // after the answer is saved, so a failure to save never marks anything as handled.
+    await api.resolveEscalation({ tenantSlug, id: answering.id, resolved: true })
     setAnswering(null)
     setAnswer("")
     setReloadKey((k) => k + 1)
@@ -124,6 +128,7 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
                       <TableRow>
                         <TableHead>What the customer asked</TableHead>
                         <TableHead>When</TableHead>
+                        <TableHead>State</TableHead>
                         <TableHead className="text-right">Answer it</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -140,6 +145,13 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
                           <TableCell className="whitespace-nowrap text-muted-foreground">
                             {escalation.occurredAt}
                           </TableCell>
+                          <TableCell>
+                            {escalation.resolvedAt ? (
+                              <Badge variant="secondary">Handled</Badge>
+                            ) : (
+                              <Badge variant="outline">Open</Badge>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">
                             <Button
                               type="button"
@@ -151,6 +163,26 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
                               onClick={() => startAnswering(escalation)}
                             >
                               Write an answer
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="ml-2"
+                              // Some escalations need no answer — a provider outage, a budget
+                              // that has since been raised. Dismissing one has to be possible
+                              // without inventing a canned answer for it.
+                              onClick={() =>
+                                void api
+                                  .resolveEscalation({
+                                    tenantSlug,
+                                    id: escalation.id,
+                                    resolved: !escalation.resolvedAt,
+                                  })
+                                  .then(() => setReloadKey((k) => k + 1))
+                              }
+                            >
+                              {escalation.resolvedAt ? "Reopen" : "Dismiss"}
                             </Button>
                           </TableCell>
                         </TableRow>

@@ -14,8 +14,7 @@ export function OverviewPage({ tenantSlug }: { tenantSlug: string }) {
   const settings = useFetch(() => api.getSettings(tenantSlug), [tenantSlug])
   const escalations = useFetch(() => api.listEscalations(tenantSlug), [tenantSlug])
 
-  const usageCents =
-    usage.status === "success" ? (usage.data["monthlyCostCents"] as number | undefined) : undefined
+  const usageCents = usage.status === "success" ? usage.data.costCents : undefined
   const budgetCents = settings.status === "success" ? settings.data.monthly_budget_cents : undefined
   const remainingCents =
     budgetCents !== undefined && usageCents !== undefined ? budgetCents - usageCents : undefined

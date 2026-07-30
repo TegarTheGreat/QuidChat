@@ -153,10 +153,18 @@ export interface Escalation {
   conversationId?: string
 }
 
+/**
+ * This month's spend, exactly as `GET /admin/usage` names it.
+ *
+ * No index signature. The previous shape had one, so `usage.data["monthlyCostCents"]` — a field
+ * the server has never sent — typechecked and rendered as an empty figure on the overview
+ * screen. A type that accepts any key cannot disagree with the server, which is the only useful
+ * thing a type can do here.
+ */
 export interface Usage {
-  monthlyCostCents?: number
-  monthlyTokens?: number
-  [key: string]: unknown
+  inputTokens: number
+  outputTokens: number
+  costCents: number
 }
 
 
@@ -291,6 +299,13 @@ export const api = {
     request<{ escalations: Escalation[] }>(`/v1/admin/escalations${query({ tenantSlug })}`).then(
       (r) => r.escalations,
     ),
+
+  /** Marks an escalation handled, or puts it back. */
+  resolveEscalation: (body: { tenantSlug: string; id: string; resolved: boolean }) =>
+    request<{ id: string; resolvedAt: string | null }>("/v1/admin/escalations/resolve", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   getUsage: (tenantSlug: string) =>
     request<Usage>(`/v1/admin/usage${query({ tenantSlug })}`),
