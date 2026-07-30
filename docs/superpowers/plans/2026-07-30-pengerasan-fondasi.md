@@ -695,6 +695,11 @@ Di `packages/core/src/store.ts`:
 
 Di `packages/core/src/pipeline.ts`, catat turn user lebih dulu, dan buat `refuse` menyimpan teks penolakannya sebagai pesan assistant:
 
+**Catatan tipe.** Repo ini menyetel `exactOptionalPropertyTypes: true` di
+`tsconfig.base.json`, jadi meneruskan `feedback: undefined` ke properti opsional GAGAL
+typecheck. Bentuk yang benar adalah spread bersyarat: `...(feedback ? { feedback } : {})`.
+Aturan yang sama berlaku untuk properti opsional apa pun di rencana ini.
+
 ```ts
   const { store, provider, tenantId, conversationId, history, question } = args
   const config = await store.getTenantConfig(tenantId)
