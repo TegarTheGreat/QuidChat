@@ -2,7 +2,9 @@
   "name": "quidchat",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.22.3" },
+  "engines": {
+    "node": ">=22.22.3"
+  },
   "packageManager": "pnpm@11.15.1",
   "scripts": {
     "build": "pnpm -r build",
@@ -10,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint .",
-    "format": "oxfmt ."
+    "format": "oxfmt .",
+    "generate:migrations": "node scripts/generate-migrations.mjs"
   },
   "devDependencies": {
     "@types/node": "26.1.2",

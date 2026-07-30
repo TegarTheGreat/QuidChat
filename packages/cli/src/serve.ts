@@ -1,0 +1,78 @@
+import { applyMigrations, createDb } from "@quidchat/db"
+import { resolveProviders, type ResolveResult } from "@quidchat/providers"
+import { createServer } from "@quidchat/server"
+import { readServeConfig } from "./config.js"
+
+export type ServeResult = {
+  port: number
+  close: () => Promise<void>
+}
+
+/**
+ * Starts QuidChat: opens the database, applies migrations, resolves a provider from the
+ * environment, and listens.
+ *
+ * `log` is injected rather than calling `console.log` directly so a test can assert what
+ * an operator is told. What it is told matters: this is the only place that reports which
+ * provider was chosen and which database is in use, and a start-up that hides those
+ * decisions is what turns "zero configuration" from convenience into confusion.
+ */
+export async function serve(args: {
+  env: Record<string, string | undefined>
+  log?: (line: string) => void
+}): Promise<ServeResult> {
+  const log = args.log ?? ((line: string) => console.log(line))
+  const config = readServeConfig(args.env)
+
+  const resolved = resolveProviders(args.env)
+  if (!resolved.provider) {
+    // Refusing to start beats starting and failing on the first visitor question. The
+    // trace explains exactly which keys were looked for, so the fix is one line away
+    // instead of a guess.
+    throw new Error(explainNoProvider(resolved))
+  }
+
+  log(`database: ${config.dbOrigin}`)
+  const db = await createDb(config.db)
+  await applyMigrations(db)
+  log("migrations: applied")
+
+  log(`provider: chat via ${resolved.chosen.chat}, embeddings via ${resolved.chosen.embed}`)
+
+  const server = createServer({ db, provider: resolved.provider })
+  await new Promise<void>((resolve) => server.listen(config.port, () => resolve()))
+
+  const address = server.address()
+  const port = typeof address === "object" && address !== null ? address.port : config.port
+  log(`listening on http://localhost:${port}`)
+
+  return {
+    port,
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      ),
+  }
+}
+
+/**
+ * Turns an empty resolution into a message that names the fix.
+ *
+ * "No provider configured" would be true and useless. Listing the variables that were
+ * checked turns a support conversation into a single line of shell.
+ */
+function explainNoProvider(resolved: ResolveResult): string {
+  const checked = resolved.trace.map((t) => `  ${t.envVar} (${t.preset})`).join("\n")
+  const embedNote =
+    resolved.chosen.chat !== null && resolved.chosen.embed === null
+      ? `\n\n${resolved.chosen.chat} was found, but it has no embeddings endpoint and ` +
+        "retrieval needs one. Set a key for a provider that does — OPENAI_API_KEY is " +
+        "the usual pairing — and chat will stay on " +
+        `${resolved.chosen.chat}.`
+      : ""
+
+  return (
+    "No usable AI provider found in the environment.\n\n" +
+    `Set one of these and start again:\n${checked}${embedNote}`
+  )
+}

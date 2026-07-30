@@ -27,6 +27,31 @@ importers:
         specifier: 4.1.10
         version: 4.1.10(@types/node@26.1.2)(happy-dom@20.11.1)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.1)(tsx@4.23.1))
 
+  packages/cli:
+    dependencies:
+      '@electric-sql/pglite':
+        specifier: 0.5.4
+        version: 0.5.4
+      '@electric-sql/pglite-pgvector':
+        specifier: 0.0.5
+        version: 0.0.5(@electric-sql/pglite@0.5.4)
+      drizzle-orm:
+        specifier: 0.45.2
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(postgres@3.4.9)
+      postgres:
+        specifier: 3.4.9
+        version: 3.4.9
+    devDependencies:
+      '@quidchat/db':
+        specifier: workspace:*
+        version: link:../db
+      '@quidchat/providers':
+        specifier: workspace:*
+        version: link:../providers
+      '@quidchat/server':
+        specifier: workspace:*
+        version: link:../server
+
   packages/core: {}
 
   packages/db:
