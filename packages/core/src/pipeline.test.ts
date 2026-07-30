@@ -67,6 +67,29 @@ describe("answer", () => {
     if (res.kind === "refused") expect(res.reason).toBe("ungrounded")
   })
 
+  it("meneruskan kegagalan getTenantConfig, tidak mengubahnya jadi penolakan", async () => {
+    const store = new MemoryStore([])
+    store.getTenantConfig = async () => {
+      throw new Error("settings tidak terbaca")
+    }
+    const provider = new FakeProvider([])
+    await expect(answer({ store, provider, ...ctx })).rejects.toThrow("settings tidak terbaca")
+    // Tidak ada eskalasi yang tercatat: kegagalan infrastruktur bukan sinyal bisnis.
+    expect(store.recordedEscalations).toEqual([])
+  })
+
+  it("meneruskan kegagalan searchChunks, tidak mengubahnya jadi penolakan", async () => {
+    const store = new MemoryStore([candidate])
+    store.searchChunks = async () => {
+      throw new Error("database tidak terjangkau")
+    }
+    const provider = new FakeProvider([])
+    await expect(answer({ store, provider, ...ctx })).rejects.toThrow("database tidak terjangkau")
+    expect(store.recordedEscalations).toEqual([])
+    // Embedding sudah terjadi sebelum store gagal — dinyatakan supaya batasnya jelas.
+    expect(provider.embedCalls).toHaveLength(1)
+  })
+
   it("menolak dengan schema_invalid saat provider melempar", async () => {
     const store = new MemoryStore([candidate])
     const provider: Provider = {
