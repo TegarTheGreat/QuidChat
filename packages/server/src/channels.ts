@@ -13,6 +13,7 @@ import {
 import { sql } from "drizzle-orm"
 import { withTenant, type QuidDb } from "@quidchat/db"
 import { lookupTenantBySlug } from "./tenant-lookup.js"
+import { notifyEscalationInBackground } from "./escalation-notify.js"
 import type { ChatRateLimiter } from "./rate-limit.js"
 
 function rowsOf(res: unknown): Record<string, unknown>[] {
@@ -269,6 +270,19 @@ export async function handleChannelWebhook(
           history,
           question: incoming.text,
         })
+        if (outcome.kind === "refused") {
+          // Same signal as on the web, and the channel is carried through so the business can
+          // tell a WhatsApp customer waiting on them from a website visitor.
+          notifyEscalationInBackground({
+            db: deps.db,
+            notice: {
+              tenantId: identity.tenantId, conversationId, question: incoming.text,
+              reason: outcome.reason, channel: adapter.id,
+            },
+            logError: deps.logError,
+          })
+        }
+
         return outcome.kind === "answered"
           ? {
               kind: "answered",

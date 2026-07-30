@@ -184,6 +184,15 @@ The two are separate on purpose. An answer typed into the panel is approved as i
 
 A `static` tenant with no live answers refuses every question. That is deliberate — the alternative is making one up.
 
+## When it cannot answer
+
+A refusal is the moment a person needs to take over, so the business hears about it. Choose how in **Settings → Answering**:
+
+- **Record it here** — the default. The question lands under **Escalations** with the reason it could not be answered. Nothing is sent anywhere, which is the honest behaviour for a business that has not said where to send it.
+- **Post it to a webhook** — a JSON `POST` with the customer's question, the reason and the channel. One mechanism covers Slack, Discord, n8n, Zapier, a CRM and a two-line script; email would mean SMTP credentials, a queue and bounce handling to reach a place most teams forward to chat anyway.
+
+The notice is sent in the background. A slow relay must not make an unanswerable question slow for the customer who asked it, and a relay that is down is logged for the operator rather than turned into an error the customer sees. The question is in the payload because the reason alone says the assistant could not answer, while the question says what to write.
+
 ## Keeping only what you need
 
 `retention_days` deletes conversations once they pass it. The server runs a pass at start-up and once a day after; `quidchat prune` does the same thing once and exits, for anyone who would rather see it in their own crontab.

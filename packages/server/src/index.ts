@@ -5,3 +5,5 @@ export { ChatRateLimiter, DEFAULT_TENANT_LIMIT, DEFAULT_VISITOR_LIMIT, RateLimit
 export type { RateLimitConfig, RateLimitDecision } from "./rate-limit.js"
 export { pruneExpiredConversations, startRetentionSchedule } from "./retention.js"
 export type { PruneResult } from "./retention.js"
+export { notifyEscalation, notifyEscalationInBackground } from "./escalation-notify.js"
+export type { EscalationNotice } from "./escalation-notify.js"

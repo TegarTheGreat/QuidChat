@@ -214,17 +214,37 @@ export function SettingsDialog({
                           rows={3}
                         />
                       </Field>
-                      <Field label="Escalation mode">
-                        <Input
+                      <Field label="When it cannot answer">
+                        <select
+                          aria-label="Escalation mode"
+                          className="h-9 w-full rounded-md border bg-background px-2 text-sm"
                           value={draft.escalation_mode}
-                          onChange={(e) => update("escalation_mode", e.target.value)}
-                        />
+                          onChange={(e) => {
+                            const next = e.target.value
+                            if (next === "collect_contact" || next === "webhook") {
+                              update("escalation_mode", next)
+                            }
+                          }}
+                        >
+                          <option value="collect_contact">
+                            record it here — read them under Escalations
+                          </option>
+                          <option value="webhook">
+                            post it to a webhook — Slack, Discord, n8n, your CRM
+                          </option>
+                        </select>
                       </Field>
-                      <Field label="Escalation target">
+                      <Field label="Webhook URL">
                         <Input
                           value={draft.escalation_target}
                           onChange={(e) => update("escalation_target", e.target.value)}
+                          placeholder="https://hooks.slack.com/services/…"
                         />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Sent as JSON with the customer&rsquo;s question, the reason, and the
+                          channel — the question is the part that tells you what to write. Only
+                          used when the mode above is set to webhook.
+                        </p>
                       </Field>
                       <Field label="High-risk topics">
                         <TagInput

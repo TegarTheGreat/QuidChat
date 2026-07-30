@@ -313,6 +313,27 @@ async function patchSettings(
         return
       }
       setClauses.push(sql`${sql.raw(key)} = ${value}`)
+    } else if (key === "escalation_mode") {
+      // No CHECK constraint backs this column, so an unrecognised value would be accepted and
+      // then silently behave as record-only — the business would believe they had configured
+      // delivery and hear nothing. Validated here, where the message can say what is allowed.
+      if (typeof value !== "string" || !["collect_contact", "webhook"].includes(value)) {
+        sendJson(res, 400, { error: "escalation_mode must be collect_contact or webhook" })
+        return
+      }
+      setClauses.push(sql`${sql.raw(key)} = ${value}`)
+    } else if (key === "escalation_target") {
+      // Only checked for shape, not reachability. A target that is not a URL at all would
+      // fail on every escalation with nothing but a log line to show for it.
+      if (typeof value !== "string") {
+        sendJson(res, 400, { error: "escalation_target must be a string" })
+        return
+      }
+      if (value.trim() !== "" && !/^https?:\/\//.test(value.trim())) {
+        sendJson(res, 400, { error: "escalation_target must be an http or https URL" })
+        return
+      }
+      setClauses.push(sql`${sql.raw(key)} = ${value.trim()}`)
     } else if (key === "widget_theme") {
       if (typeof value !== "object" || value === null || Array.isArray(value)) {
         sendJson(res, 400, { error: "widget_theme must be an object" })

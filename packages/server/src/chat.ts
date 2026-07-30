@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm"
 import { monthlyBudgetCents, recordUsage, spentThisMonthCents } from "./budget.js"
 import { lookupTenantBySlug } from "./tenant-lookup.js"
 import { openEventStream, sendProgress, sendResult, sendStreamError } from "./stream.js"
+import { notifyEscalationInBackground } from "./escalation-notify.js"
 import type { ChatRateLimiter } from "./rate-limit.js"
 
 /** Normalizes the `execute()` result, whose shape differs between drivers — see the
@@ -264,6 +265,14 @@ export async function handleChat(
         segments: [{ kind: "general", text: config.refusalText }],
         citedChunkIds: [],
       })
+      notifyEscalationInBackground({
+        db: deps.db,
+        notice: {
+          tenantId: identity.tenantId, conversationId, question: chatRequest.message,
+          reason: "budget_exhausted", channel: "web",
+        },
+        logError: deps.logError,
+      })
       sendJson(res, 200, {
         conversationId, kind: "refused", text: config.refusalText, reason: "budget_exhausted",
       })
@@ -296,6 +305,20 @@ export async function handleChat(
         tenantId: identity.tenantId,
         model: config.chatModel,
         usage: result.usage,
+      })
+    }
+
+    // A refusal IS the escalation signal — the assistant declining is exactly the moment a
+    // person needs to take over — so the notice goes out here rather than from inside the
+    // pipeline, which stays free of network and configuration concerns.
+    if (result.kind === "refused") {
+      notifyEscalationInBackground({
+        db: deps.db,
+        notice: {
+          tenantId: identity.tenantId, conversationId, question: chatRequest.message,
+          reason: result.reason, channel: "web",
+        },
+        logError: deps.logError,
       })
     }
 
