@@ -3,6 +3,29 @@ import { withTenant } from "@quidchat/db"
 import { sql, type SQL } from "drizzle-orm"
 import { pgTextArray, readJsonBody, resolveTenantOr404, rowsOf, sendJson, type AdminDeps } from "./shared.js"
 
+/**
+ * The one settings row for a tenant, or a loud failure.
+ *
+ * `getTenantConfig` and the setup endpoint have always asserted this; these two routes quietly
+ * took the first row instead, and the difference is not theoretical. A database left inconsistent
+ * by an unclean shutdown — an OOM kill, a `kill -9` — can hold two live versions of a row whose
+ * primary key says only one may exist. Reads then return one and writes land on the other, so a
+ * business changes a setting in the panel, sees success, and nothing happens.
+ *
+ * Reporting it is the whole point. A silent wrong answer here is a business believing they have
+ * configured something they have not.
+ */
+export function onlySettingsRow(rows: Record<string, unknown>[], tenantId: string): Record<string, unknown> | null {
+  if (rows.length === 0) return null
+  if (rows.length > 1) {
+    throw new Error(
+      `tenant_settings holds ${rows.length} rows for ${tenantId}, which its primary key forbids — ` +
+        "the database is inconsistent, most likely after an unclean shutdown",
+    )
+  }
+  return rows[0]!
+}
+
 // Part of the admin API. The router and the shared helpers live in `../admin.ts`.
 
 export async function getSettings(
@@ -17,7 +40,7 @@ export async function getSettings(
     // No `WHERE tenant_id` — RLS does the scoping, same as every other read in
     // `@quidchat/db`'s `store.ts`.
     const result = await tx.execute(sql`SELECT * FROM tenant_settings`)
-    return rowsOf(result)[0]
+    return onlySettingsRow(rowsOf(result), tenantId)
   })
   if (!row) {
     sendJson(res, 404, { error: "tenant settings not found" })
@@ -125,7 +148,7 @@ export async function patchSettings(
   const row = await withTenant(deps.db, tenantId, async (tx) => {
     await tx.execute(sql`UPDATE tenant_settings SET ${sql.join(setClauses, sql`, `)}`)
     const result = await tx.execute(sql`SELECT * FROM tenant_settings`)
-    return rowsOf(result)[0]
+    return onlySettingsRow(rowsOf(result), tenantId)
   })
   sendJson(res, 200, row)
 }
