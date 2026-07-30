@@ -1,6 +1,6 @@
 import {
-  boolean, index, integer, jsonb, pgTable, primaryKey,
-  text, timestamp, uuid, vector,
+  index, integer, jsonb, pgTable, primaryKey,
+  text, timestamp, unique, uuid, vector,
 } from "drizzle-orm/pg-core"
 
 export const tenants = pgTable("tenants", {
@@ -32,9 +32,9 @@ export const tenantSettings = pgTable("tenant_settings", {
 export const knowledgeSources = pgTable("knowledge_sources", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
-  kind: text("kind").notNull(),
+  kind: text("kind", { enum: ["url", "file", "text"] }).notNull(),
   uri: text("uri").notNull(),
-  status: text("status").notNull().default("pending"),
+  status: text("status", { enum: ["pending", "indexing", "ready", "error"] }).notNull().default("pending"),
   lastIndexedAt: timestamp("last_indexed_at", { withTimezone: true }),
   error: text("error"),
 })
@@ -47,6 +47,14 @@ export const documents = pgTable("documents", {
   url: text("url"),
 })
 
+// CATATAN: tabel `chunks` di database punya satu kolom lagi yang sengaja TIDAK
+// dimodelkan di sini — `tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple',
+// content)) STORED` — beserta dua index yang hanya ada di migrasi:
+// `chunks_tsv_idx` (GIN atas tsv) dan `chunks_embed_idx` (HNSW atas embedding).
+// Alasannya: `tsv` adalah kolom generated yang hanya dibaca lewat SQL mentah pada
+// query hybrid search, jadi Drizzle tidak perlu mengetahuinya. Konsekuensinya,
+// migrations/0001_init.sql adalah otoritas bentuk tabel ini — kalau menambah kolom
+// atau index di `chunks`, ubah SQL-nya juga, tidak cukup berkas ini.
 export const chunks = pgTable("chunks", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
@@ -63,7 +71,7 @@ export const conversations = pgTable("conversations", {
   channel: text("channel").notNull(),
   visitorId: text("visitor_id").notNull(),
   handoffCount: integer("handoff_count").notNull().default(0),
-  status: text("status").notNull().default("active"),
+  status: text("status", { enum: ["active", "idle", "escalated", "closed"] }).notNull().default("active"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 })
 
@@ -71,7 +79,7 @@ export const messages = pgTable("messages", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
-  role: text("role").notNull(),
+  role: text("role", { enum: ["user", "assistant"] }).notNull(),
   content: text("content").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 })
@@ -85,7 +93,10 @@ export const escalations = pgTable("escalations", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
-  reason: text("reason").notNull(),
+  reason: text("reason", {
+    enum: ["no_source", "ungrounded", "budget_exhausted", "provider_unavailable",
+           "schema_invalid", "handoff_limit", "visitor_request"],
+  }).notNull(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
 })
 
@@ -108,7 +119,7 @@ export const adminUsers = pgTable("admin_users", {
   role: text("role").notNull().default("owner"),
   oauthProvider: text("oauth_provider"),
   oauthSubject: text("oauth_subject"),
-})
+}, (t) => [unique("admin_users_tenant_email_key").on(t.tenantId, t.email)])
 
 export const adminSessions = pgTable("admin_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
