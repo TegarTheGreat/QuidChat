@@ -1,3 +1,4 @@
+import type { RoutingRule, Skill } from "./routing/router.js"
 import type { Candidate, EscalationReason, Segment, TenantConfig } from "./types.js"
 
 export interface Store {
@@ -16,7 +17,44 @@ export interface Store {
      */
     embeddingModel: string
     limit: number
+    /**
+     * Restricts both the keyword and the vector CTE to chunks whose document belongs to
+     * one of these knowledge sources — the skill-scoping boundary from spec §3.5.
+     * `undefined` (not passed at all) means unscoped: every source the tenant owns.
+     * An empty array is a real, different case — a skill linked to NO source — and must
+     * return no candidates, not fall back to "everything".
+     */
+    sourceIds?: string[]
   }): Promise<Candidate[]>
+
+  /** All skills belonging to the tenant, enabled or not — filtering by `enabled` is
+   *  the caller's job (the panel needs to show disabled skills too). */
+  listSkills(tenantId: string): Promise<Skill[]>
+
+  /** All routing rules belonging to the tenant, in no particular order — the caller
+   *  sorts by `position` (see `route()` in `routing/router.ts`). */
+  listRoutingRules(tenantId: string): Promise<RoutingRule[]>
+
+  /** The knowledge source ids a skill is linked to, via `skill_sources`. */
+  sourceIdsForSkill(args: { tenantId: string; skillId: string }): Promise<string[]>
+
+  /** Increments `conversations.handoff_count` by one and returns the new value —
+   *  the count the caller compares against `max_handoffs_per_conversation`. */
+  incrementHandoffCount(args: { tenantId: string; conversationId: string }): Promise<number>
+
+  /**
+   * Matches a customer question against `canned_answers` — `static` mode's only
+   * data source. Full-text match first, trigram similarity as a fallback for
+   * near misses, best match first.
+   *
+   * MUST be filtered to `status = 'approved'`. A `draft` row is AI-proposed text
+   * that no human has reviewed yet; the entire trustworthiness of `static` mode
+   * rests on nothing reaching a customer before that review happens.
+   */
+  matchCannedAnswer(args: {
+    tenantId: string
+    question: string
+  }): Promise<{ id: string; answer: string } | null>
 
   recordAnswer(args: {
     tenantId: string

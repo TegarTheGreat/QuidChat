@@ -1,4 +1,5 @@
 import type { Capabilities, CompleteResult, Provider, PromptParts } from "../provider.js"
+import type { RoutingRule, Skill } from "../routing/router.js"
 import type { Store } from "../store.js"
 import type { Answer, Candidate, EscalationReason, Segment, TenantConfig } from "../types.js"
 
@@ -8,6 +9,15 @@ export const DEFAULT_CONFIG: TenantConfig = {
   embeddingModel: "fake-embedding-model",
   refusalText: "Sorry, I don't have that information yet.",
   highRiskTopics: ["price", "discount", "warranty", "refund", "stock", "legal"],
+  answerMode: "full",
+}
+
+/** A `canned_answers` row, shaped for the in-memory fake's matcher. */
+export type FakeCannedAnswer = {
+  id: string
+  question: string
+  answer: string
+  status: "draft" | "approved"
 }
 
 /**
@@ -28,18 +38,55 @@ export class MemoryStore implements Store {
     embeddingModel: string
   }[] = []
   sourceStatuses: { sourceId: string; status: string; error: string | undefined }[] = []
+  /** Set by a test to control what `incrementHandoffCount` returns next. */
+  handoffCounts = new Map<string, number>()
 
   constructor(
     private candidates: Candidate[] = [],
     private config: TenantConfig = DEFAULT_CONFIG,
+    private skills: Skill[] = [],
+    private routingRules: RoutingRule[] = [],
+    private skillSources: Record<string, string[]> = {},
+    private cannedAnswers: FakeCannedAnswer[] = [],
   ) {}
 
   async getTenantConfig(): Promise<TenantConfig> {
     return this.config
   }
 
-  async searchChunks(): Promise<Candidate[]> {
+  async searchChunks(args: { sourceIds?: string[] } = {}): Promise<Candidate[]> {
+    // Mirrors the real store's skill-scoping rule: an explicitly empty `sourceIds`
+    // means "linked to nothing", so it must return nothing, not the fixture's full list.
+    if (args.sourceIds !== undefined && args.sourceIds.length === 0) return []
     return this.candidates
+  }
+
+  async matchCannedAnswer(args: { question: string }): Promise<{ id: string; answer: string } | null> {
+    // Mirrors the real store's rule: `draft` never matches, no matter how good the fit —
+    // that filter is what keeps unreviewed AI text from ever reaching a customer.
+    const q = args.question.trim().toLowerCase()
+    const hit = this.cannedAnswers.find(
+      (c) => c.status === "approved" && c.question.trim().toLowerCase() === q,
+    )
+    return hit ? { id: hit.id, answer: hit.answer } : null
+  }
+
+  async listSkills(): Promise<Skill[]> {
+    return this.skills
+  }
+
+  async listRoutingRules(): Promise<RoutingRule[]> {
+    return this.routingRules
+  }
+
+  async sourceIdsForSkill(args: { skillId: string }): Promise<string[]> {
+    return this.skillSources[args.skillId] ?? []
+  }
+
+  async incrementHandoffCount(args: { conversationId: string }): Promise<number> {
+    const next = (this.handoffCounts.get(args.conversationId) ?? 0) + 1
+    this.handoffCounts.set(args.conversationId, next)
+    return next
   }
 
   async recordAnswer(args: { segments: Segment[]; citedChunkIds: string[] }): Promise<void> {
@@ -116,5 +163,31 @@ export class FakeProvider implements Provider {
       tools: true, vision: false, thinking: false,
       promptCaching: { minPrefixTokens: 1024, maxBreakpoints: 4 },
     }
+  }
+}
+
+/**
+ * A provider whose every method throws. The only way to PROVE `static` mode never
+ * touches the provider at runtime — measuring a call count can't distinguish "not
+ * called" from "called and the count assertion was skipped by mistake"; a provider
+ * that explodes on contact makes an accidental call impossible to miss.
+ */
+export class ThrowingProvider implements Provider {
+  readonly id = "throwing"
+
+  async complete(): Promise<CompleteResult> {
+    throw new Error("ThrowingProvider: complete() must not be called in static mode")
+  }
+
+  async generateText(): Promise<string> {
+    throw new Error("ThrowingProvider: generateText() must not be called in static mode")
+  }
+
+  async embed(): Promise<number[]> {
+    throw new Error("ThrowingProvider: embed() must not be called in static mode")
+  }
+
+  async capabilities(): Promise<Capabilities> {
+    throw new Error("ThrowingProvider: capabilities() must not be called in static mode")
   }
 }

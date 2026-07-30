@@ -1,3 +1,5 @@
+import type { AnswerMode } from "./modes.js"
+
 export type Segment =
   | { text: string; kind: "general" }
   | { text: string; kind: "business_claim"; citations: string[] }
@@ -21,6 +23,8 @@ export type TenantConfig = {
   embeddingModel: string
   refusalText: string
   highRiskTopics: string[]
+  /** The tenant's default answer mode — see `modes.ts` for how a skill may override it. */
+  answerMode: AnswerMode
 }
 
 export type EscalationReason =

@@ -1,4 +1,4 @@
-import type { Candidate, Segment, Store, TenantConfig } from "@quidchat/core"
+import type { Candidate, RoutingRule, Segment, Skill, Store, TenantConfig } from "@quidchat/core"
 import { sql } from "drizzle-orm"
 import type { QuidDb } from "./client.js"
 import { withTenant } from "./tenant.js"
@@ -30,7 +30,7 @@ export function createStore(db: QuidDb): Store {
         // become visible in production. Proven: a leaky policy plus this filter left
         // 7/7 tests green.
         const res = await tx.execute(sql`
-          SELECT chat_model, rewrite_model, embedding_model, refusal_text, high_risk_topics
+          SELECT chat_model, rewrite_model, embedding_model, refusal_text, high_risk_topics, answer_mode
           FROM tenant_settings
         `)
         const rows = rowsOf(res)
@@ -51,15 +51,29 @@ export function createStore(db: QuidDb): Store {
           embeddingModel: row.embedding_model as string,
           refusalText: row.refusal_text as string,
           highRiskTopics: row.high_risk_topics as string[],
+          answerMode: row.answer_mode as TenantConfig["answerMode"],
         }
       })
     },
 
-    async searchChunks({ tenantId, query, embedding, embeddingModel, limit }): Promise<Candidate[]> {
+    async searchChunks({ tenantId, query, embedding, embeddingModel, limit, sourceIds }): Promise<Candidate[]> {
+      // A skill linked to NO source at all must find nothing — not "everything". This
+      // is a real, deliberate case (spec §3.5), not an error, and it's handled before
+      // touching the database: `IN ()` isn't valid SQL, so the empty case can't just
+      // fall through the query below.
+      if (sourceIds !== undefined && sourceIds.length === 0) return []
+
       const vec = `[${embedding.join(",")}]`
       // The per-path pool is made larger than `limit` so the fusion has material to
       // work with; 20 as a floor so a small limit doesn't narrow the candidate set.
       const poolSize = Math.max(limit * 4, 20)
+      // Skill-scoped retrieval: when `sourceIds` is given, both CTEs below are restricted
+      // to chunks whose document belongs to one of those knowledge sources — the second
+      // isolation boundary from spec §3.5, enforced INSIDE the query rather than filtered
+      // in the application after results come back. `undefined` means unscoped.
+      const sourceFilter = sourceIds
+        ? sql`AND d.source_id IN (${sql.join(sourceIds.map((id) => sql`${id}`), sql`, `)})`
+        : sql``
       return withTenant(db, tenantId, async (tx) => {
         // Reciprocal Rank Fusion. Both paths are taken top-k INDEPENDENTLY and then
         // combined by RANK, not by raw score.
@@ -90,7 +104,9 @@ export function createStore(db: QuidDb): Store {
                      ORDER BY ts_rank(c.tsv, plainto_tsquery('simple', ${query})) DESC, c.id
                    ) AS rnk
             FROM chunks c
+            JOIN documents d ON d.id = c.document_id
             WHERE c.tsv @@ plainto_tsquery('simple', ${query})
+              ${sourceFilter}
             ORDER BY ts_rank(c.tsv, plainto_tsquery('simple', ${query})) DESC, c.id
             LIMIT ${poolSize}
           ),
@@ -98,8 +114,10 @@ export function createStore(db: QuidDb): Store {
             SELECT c.id,
                    row_number() OVER (ORDER BY c.embedding <=> ${vec}::vector, c.id) AS rnk
             FROM chunks c
+            JOIN documents d ON d.id = c.document_id
             WHERE c.embedding IS NOT NULL
               AND c.embedding_model = ${embeddingModel}
+              ${sourceFilter}
             ORDER BY c.embedding <=> ${vec}::vector, c.id
             LIMIT ${poolSize}
           ),
@@ -140,6 +158,38 @@ export function createStore(db: QuidDb): Store {
           content: r.content as string,
           documentTitle: r.title as string,
         }))
+      })
+    },
+
+    async matchCannedAnswer({ tenantId, question }): Promise<{ id: string; answer: string } | null> {
+      return withTenant(db, tenantId, async (tx) => {
+        // Full-text match (priority 1) is tried first; trigram similarity (priority 2)
+        // is a FALLBACK for near misses, not a competitor — ordering by priority before
+        // score means any full-text hit always outranks a trigram-only one, no matter
+        // how the raw scores compare. `status = 'approved'` is filtered in BOTH halves
+        // of the union: a `draft` row must never be reachable through either path,
+        // because nothing AI-authored may reach a customer before a human approves it.
+        const res = await tx.execute(sql`
+          SELECT id, answer FROM (
+            SELECT id, answer, 1 AS priority,
+                   ts_rank(tsv, plainto_tsquery('simple', ${question})) AS score
+            FROM canned_answers
+            WHERE status = 'approved'
+              AND tsv @@ plainto_tsquery('simple', ${question})
+            UNION ALL
+            SELECT id, answer, 2 AS priority,
+                   similarity(question, ${question}) AS score
+            FROM canned_answers
+            WHERE status = 'approved'
+              AND question % ${question}
+          ) matches
+          ORDER BY priority ASC, score DESC
+          LIMIT 1
+        `)
+        const rows = rowsOf(res)
+        if (rows.length === 0) return null
+        const row = rows[0]!
+        return { id: row.id as string, answer: row.answer as string }
       })
     },
 
@@ -225,6 +275,69 @@ export function createStore(db: QuidDb): Store {
               last_indexed_at = CASE WHEN ${status} = 'ready' THEN now() ELSE last_indexed_at END
           WHERE id = ${sourceId}
         `)
+      })
+    },
+
+    async listSkills(tenantId: string): Promise<Skill[]> {
+      return withTenant(db, tenantId, async (tx) => {
+        // NO `WHERE tenant_id` — RLS scopes this, same as every other read in this file.
+        const res = await tx.execute(sql`
+          SELECT id, name, system_prompt, enabled, is_fallback, answer_mode
+          FROM skills
+        `)
+        return rowsOf(res).map((r) => ({
+          id: r.id as string,
+          name: r.name as string,
+          // `system_prompt` is nullable in the database (a skill can be created before
+          // its persona is written), but the pipeline's `Skill` type wants a string —
+          // an unset prompt behaves as an empty one rather than as a special case.
+          systemPrompt: (r.system_prompt as string | null) ?? "",
+          enabled: r.enabled as boolean,
+          isFallback: r.is_fallback as boolean,
+          answerMode: r.answer_mode as string | null,
+        }))
+      })
+    },
+
+    async listRoutingRules(tenantId: string): Promise<RoutingRule[]> {
+      return withTenant(db, tenantId, async (tx) => {
+        const res = await tx.execute(sql`
+          SELECT id, skill_id, position, kind, pattern, enabled
+          FROM routing_rules
+        `)
+        return rowsOf(res).map((r) => ({
+          id: r.id as string,
+          skillId: r.skill_id as string,
+          position: r.position as number,
+          kind: r.kind as RoutingRule["kind"],
+          pattern: r.pattern as string | null,
+          enabled: r.enabled as boolean,
+        }))
+      })
+    },
+
+    async sourceIdsForSkill({ tenantId, skillId }): Promise<string[]> {
+      return withTenant(db, tenantId, async (tx) => {
+        const res = await tx.execute(sql`
+          SELECT source_id FROM skill_sources WHERE skill_id = ${skillId}
+        `)
+        return rowsOf(res).map((r) => r.source_id as string)
+      })
+    },
+
+    async incrementHandoffCount({ tenantId, conversationId }): Promise<number> {
+      return withTenant(db, tenantId, async (tx) => {
+        const res = await tx.execute(sql`
+          UPDATE conversations
+          SET handoff_count = handoff_count + 1
+          WHERE id = ${conversationId}
+          RETURNING handoff_count
+        `)
+        const rows = rowsOf(res)
+        if (rows.length === 0) {
+          throw new Error(`conversation not found: ${conversationId}`)
+        }
+        return rows[0]!.handoff_count as number
       })
     },
   }

@@ -1,5 +1,5 @@
 import {
-  index, integer, jsonb, pgTable, primaryKey,
+  boolean, index, integer, jsonb, pgTable, primaryKey,
   text, timestamp, unique, uuid, vector,
 } from "drizzle-orm/pg-core"
 
@@ -27,6 +27,7 @@ export const tenantSettings = pgTable("tenant_settings", {
   widgetTheme: jsonb("widget_theme").notNull().default({}),
   maxHandoffsPerTurn: integer("max_handoffs_per_turn").notNull().default(2),
   maxHandoffsPerConversation: integer("max_handoffs_per_conversation").notNull().default(5),
+  answerMode: text("answer_mode", { enum: ["static", "thrifty", "full"] }).notNull().default("full"),
 })
 
 export const knowledgeSources = pgTable("knowledge_sources", {
@@ -129,3 +130,49 @@ export const adminSessions = pgTable("admin_sessions", {
   adminUserId: uuid("admin_user_id").notNull().references(() => adminUsers.id, { onDelete: "cascade" }),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 })
+
+export const skills = pgTable("skills", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  systemPrompt: text("system_prompt"),
+  enabled: boolean("enabled").notNull().default(true),
+  isFallback: boolean("is_fallback").notNull().default(false),
+  // NULL means "inherit tenant_settings' answer mode" — see migrations/0002_skills.sql.
+  answerMode: text("answer_mode", { enum: ["static", "thrifty", "full"] }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [unique("skills_tenant_id_key").on(t.tenantId, t.id)])
+
+// Knowledge scoping: which sources a skill may retrieve from (spec §3.5). No own `id` —
+// same shape as `messageCitations` above: both composite FKs pin `tenant_id`, so a row
+// can never link a skill and a source belonging to different tenants.
+export const skillSources = pgTable("skill_sources", {
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  skillId: uuid("skill_id").notNull().references(() => skills.id, { onDelete: "cascade" }),
+  sourceId: uuid("source_id").notNull().references(() => knowledgeSources.id, { onDelete: "cascade" }),
+}, (t) => [primaryKey({ columns: [t.skillId, t.sourceId] })])
+
+// NOTE: like `chunks.tsv` above, `canned_answers` has one more column not
+// modeled here — `tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple',
+// question)) STORED` — plus the GIN index on it and the trigram GIN index on
+// `question` itself. `migrations/0003_answer_modes.sql` is the source of truth
+// for this table's shape.
+export const cannedAnswers = pgTable("canned_answers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  question: text("question").notNull(),
+  answer: text("answer").notNull(),
+  status: text("status", { enum: ["draft", "approved"] }).notNull().default("draft"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [unique("canned_answers_tenant_id_key").on(t.tenantId, t.id)])
+
+export const routingRules = pgTable("routing_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  skillId: uuid("skill_id").notNull().references(() => skills.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+  kind: text("kind", { enum: ["keyword", "semantic", "llm", "fallback"] }).notNull(),
+  pattern: text("pattern"),
+  enabled: boolean("enabled").notNull().default(true),
+}, (t) => [unique("routing_rules_tenant_id_key").on(t.tenantId, t.id)])
