@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { buildPrompt, prefixOf } from "./builder.js"
 import type { Candidate, TenantConfig } from "../types.js"
 
@@ -63,5 +63,22 @@ describe("buildPrompt", () => {
     const p = buildPrompt({ config, history, candidates: [], question: "q" })
     expect(p.history).toEqual(history)
     expect(p.history).not.toBe(history)
+  })
+
+  it("prefix tetap identik walau waktu berjalan di antara dua pemanggilan", () => {
+    // Inilah regresi yang spec §11.1 sebut sebagai alasan test ini ada: satu `new Date()`
+    // di system prompt membatalkan cache setiap pesan, tanpa error dan tanpa log.
+    // Test tanpa jam palsu TIDAK menangkapnya — dua pemanggilan jatuh di milidetik yang
+    // sama, jadi stempel waktunya kebetulan sama dan prefix-nya tetap cocok.
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"))
+      const a = buildPrompt({ config, history, candidates: [c("k1", "isi")], question: "q1" })
+      vi.advanceTimersByTime(60 * 60 * 1000) // satu jam
+      const b = buildPrompt({ config, history, candidates: [c("k2", "lain")], question: "q2" })
+      expect(prefixOf(a)).toBe(prefixOf(b))
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
