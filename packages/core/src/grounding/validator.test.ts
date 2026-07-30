@@ -59,5 +59,9 @@ describe("validateGrounding", () => {
   it("menolak jawaban kosong", () => {
     const v = run([])
     expect(v.ok).toBe(false)
+    // Violation-nya ikut diperiksa. Tanpa ini, implementasi yang menolak jawaban
+    // kosong dengan label yang salah — misalnya `missing_citation` — tetap lolos,
+    // dan pemanggil yang membedakan penyebab penolakan jadi salah bercabang.
+    if (!v.ok) expect(v.violation).toBe("empty_answer")
   })
 })
