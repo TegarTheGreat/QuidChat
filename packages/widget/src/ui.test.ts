@@ -4,6 +4,9 @@ import type { ChatResponse } from "./api.js"
 import type { WidgetConfig } from "./config.js"
 import { mountWidget } from "./ui.js"
 
+/** Token counts are irrelevant to these tests; the shape just has to be present. */
+const ZERO_USAGE = { inputTokens: 0, outputTokens: 0, cachedTokens: null }
+
 const cfg: WidgetConfig = { tenantSlug: "acme", apiBase: "https://api.example.test" }
 
 /** A promise the test controls the resolution of, so it can assert on the widget's
@@ -62,6 +65,7 @@ describe("widget UI", () => {
       kind: "refused",
       text: "I don't have information about that.",
       reason: "no_source",
+      usage: ZERO_USAGE,
     }))
 
     launcher.click()
@@ -76,14 +80,19 @@ describe("widget UI", () => {
       conversationId: "c1",
       kind: "answered",
       segments: [{ kind: "business_claim", text: "The warranty lasts 12 months.", citations: ["chunk-42"] }],
-      citedChunkIds: ["chunk-42"],
+      citations: [{ chunkId: "chunk-42", documentTitle: "Warranty Policy" }],
+      usage: ZERO_USAGE,
     }))
 
     launcher.click()
     await send("How long is the warranty?")
     await vi.waitFor(() => {
       expect(messageList.textContent).toContain("The warranty lasts 12 months.")
-      expect(messageList.textContent).toContain("chunk-42")
+      // The DOCUMENT TITLE is shown, not the chunk id. A visitor recognises "Warranty
+      // Policy"; a UUID tells them nothing, and would satisfy the letter of "show the
+      // source" while defeating its purpose.
+      expect(messageList.textContent).toContain("Warranty Policy")
+      expect(messageList.textContent).not.toContain("chunk-42")
     })
   })
 
@@ -92,7 +101,7 @@ describe("widget UI", () => {
       conversationId: "c1",
       kind: "answered",
       segments: [{ kind: "general", text: "Sure, happy to help!" }],
-      citedChunkIds: [],
+      citations: [], usage: ZERO_USAGE,
     }))
 
     launcher.click()
@@ -113,7 +122,7 @@ describe("widget UI", () => {
     expect(sendButton.disabled).toBe(true)
     expect(messageList.textContent).toContain("Assistant is typing")
 
-    resolve({ conversationId: "c1", kind: "answered", segments: [], citedChunkIds: [] })
+    resolve({ conversationId: "c1", kind: "answered", segments: [], citations: [], usage: ZERO_USAGE })
     await vi.waitFor(() => {
       expect(sendButton.disabled).toBe(false)
     })
@@ -124,7 +133,7 @@ describe("widget UI", () => {
       conversationId: "c1",
       kind: "answered",
       segments: [],
-      citedChunkIds: [],
+      citations: [], usage: ZERO_USAGE,
     }))
     const { launcher, input, pressEnter } = mount(sendMessage)
 
@@ -147,7 +156,7 @@ describe("widget UI", () => {
       conversationId: "c1",
       kind: "answered",
       segments: [],
-      citedChunkIds: [],
+      citations: [], usage: ZERO_USAGE,
     }))
 
     launcher.click()
@@ -162,7 +171,7 @@ describe("widget UI", () => {
       conversationId: "c1",
       kind: "answered",
       segments: [],
-      citedChunkIds: [],
+      citations: [], usage: ZERO_USAGE,
     }))
 
     launcher.click()

@@ -255,12 +255,20 @@ export async function handleChat(
       question: chatRequest.message,
     })
 
-    if (result.kind === "answered") {
+    // Recorded for refusals as well as answers, and using the provider's own token
+    // counts rather than an estimate. The `ungrounded` path generates twice and shows
+    // the visitor nothing, so billing only successes would leave the most expensive
+    // outcome in the system unbilled and therefore unbounded by any budget.
+    //
+    // Skipped only when nothing was generated at all — an empty knowledge base refuses
+    // before the first completion, and a zero-cost row would just be noise in the
+    // tenant's usage history.
+    if (result.usage.inputTokens > 0 || result.usage.outputTokens > 0) {
       const config = await deps.store.getTenantConfig(identity.tenantId)
-      const inputText = [...history.map((h) => h.content), chatRequest.message].join(" ")
-      const outputText = result.segments.map((s) => s.text).join(" ")
       await recordUsage(deps.db, {
-        tenantId: identity.tenantId, model: config.chatModel, inputText, outputText,
+        tenantId: identity.tenantId,
+        model: config.chatModel,
+        usage: result.usage,
       })
     }
 

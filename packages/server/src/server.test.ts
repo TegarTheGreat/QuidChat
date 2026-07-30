@@ -131,9 +131,16 @@ describe("chat endpoint", () => {
         origin: ALLOWED_ORIGIN,
       })
       expect(res.status).toBe(200)
-      const json = await res.json() as { kind: string; citedChunkIds: string[] }
+      const json = await res.json() as {
+        kind: string
+        citations: { chunkId: string; documentTitle: string }[]
+      }
       expect(json.kind).toBe("answered")
-      expect(json.citedChunkIds.length).toBeGreaterThan(0)
+      expect(json.citations.length).toBeGreaterThan(0)
+      // The document TITLE crosses the API, not just the chunk id. This is what the
+      // widget shows a visitor, and a UUID would satisfy "you can see the source"
+      // without telling them anything. "Policy" is the title seeded above.
+      expect(json.citations[0]!.documentTitle).toBe("Policy")
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }

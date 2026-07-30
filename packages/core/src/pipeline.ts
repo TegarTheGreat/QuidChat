@@ -3,7 +3,7 @@ import { buildPrompt } from "./prompt/builder.js"
 import { ProviderError } from "./provider-error.js"
 import type { Provider } from "./provider.js"
 import type { Store } from "./store.js"
-import type { EscalationReason, PipelineResult } from "./types.js"
+import type { EscalationReason, PipelineResult, TokenUsage } from "./types.js"
 
 const MAX_ROUNDS = 2
 const CANDIDATE_LIMIT = 8
@@ -66,6 +66,18 @@ export async function answer(args: {
 
   await store.recordUserTurn({ tenantId, conversationId, text: question })
 
+  // Summed across every provider call this turn makes, so a refusal reports what it
+  // actually cost. The ungrounded path generates twice before giving up; reporting only
+  // on success would let the most expensive outcome accumulate no recorded spend.
+  const usage: TokenUsage = { inputTokens: 0, outputTokens: 0, cachedTokens: null }
+  const addUsage = (u: TokenUsage) => {
+    usage.inputTokens += u.inputTokens
+    usage.outputTokens += u.outputTokens
+    // `null` means unreported. Only promote to a number once a provider actually
+    // reports one, so "unreported" and "zero cached" stay distinguishable.
+    if (u.cachedTokens !== null) usage.cachedTokens = (usage.cachedTokens ?? 0) + u.cachedTokens
+  }
+
   const refuse = async (reason: EscalationReason): Promise<PipelineResult> => {
     await store.recordEscalation({ tenantId, conversationId, reason })
     // The refusal text is recorded in the transcript too. Without this, a tenant who
@@ -76,7 +88,7 @@ export async function answer(args: {
       segments: [{ kind: "general", text: config.refusalText }],
       citedChunkIds: [],
     })
-    return { kind: "refused", text: config.refusalText, reason }
+    return { kind: "refused", text: config.refusalText, reason, usage }
   }
 
   let embedding: number[]
@@ -113,16 +125,29 @@ export async function answer(args: {
       highRiskTopics: config.highRiskTopics,
     })
 
+    addUsage(result.usage)
+
     if (verdict.ok) {
       await store.recordAnswer({
         tenantId, conversationId,
         segments: result.answer.segments,
         citedChunkIds: verdict.citedChunkIds,
       })
+      // The candidate set is still in hand here, so each cited id can be paired with the
+      // document it came from. `recordAnswer` keeps taking bare ids because
+      // `message_citations` stores the chunk reference; the title is derivable from it.
+      const titles = new Map(candidates.map((c) => [c.id, c.documentTitle]))
       return {
         kind: "answered",
         segments: result.answer.segments,
-        citedChunkIds: verdict.citedChunkIds,
+        citations: verdict.citedChunkIds.map((chunkId) => ({
+          chunkId,
+          // A cited id always came from the candidate set — the validator rejects any
+          // that did not — so the fallback is unreachable and exists only to keep the
+          // type honest without an assertion.
+          documentTitle: titles.get(chunkId) ?? "",
+        })),
+        usage,
       }
     }
 

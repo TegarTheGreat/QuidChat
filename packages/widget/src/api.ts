@@ -22,9 +22,18 @@ export type EscalationReason =
   | "handoff_limit"
   | "visitor_request"
 
+/** A source the answer drew on. The title is what a visitor is shown. */
+export type Citation = { chunkId: string; documentTitle: string }
+
+export type TokenUsage = {
+  inputTokens: number
+  outputTokens: number
+  cachedTokens: number | null
+}
+
 export type PipelineResult =
-  | { kind: "answered"; segments: Segment[]; citedChunkIds: string[] }
-  | { kind: "refused"; text: string; reason: EscalationReason }
+  | { kind: "answered"; segments: Segment[]; citations: Citation[]; usage: TokenUsage }
+  | { kind: "refused"; text: string; reason: EscalationReason; usage: TokenUsage }
 
 /** The server always includes `conversationId` alongside the `PipelineResult`
  *  itself, so the widget can send it back on the visitor's next message. */

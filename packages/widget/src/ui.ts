@@ -132,7 +132,11 @@ const STYLE = `
  *  hover or a tooltip, since the whole point is that a visitor can see, without
  *  interacting with anything, that the claim traces back to a real document. A
  *  `general` segment gets none, because it isn't a claim about the business. */
-function appendSegment(bubble: HTMLElement, segment: Segment): void {
+function appendSegment(
+  bubble: HTMLElement,
+  segment: Segment,
+  citationTitles: Map<string, string>,
+): void {
   const doc = bubble.ownerDocument
   const p = doc.createElement("p")
   p.textContent = segment.text
@@ -141,10 +145,21 @@ function appendSegment(bubble: HTMLElement, segment: Segment): void {
   if (segment.kind === "business_claim") {
     const cite = doc.createElement("p")
     cite.className = "citation"
-    // The wire format only carries cited chunk ids, not document titles (see
-    // `packages/core/src/types.ts`), so that's what's shown. Once the server
-    // exposes a title per citation, this line is the only place that needs to change.
-    cite.textContent = `Source: ${segment.citations.join(", ")}`
+    // Document titles, not chunk ids. The whole point of showing a source is that the
+    // visitor recognises it — a UUID satisfies the shape of "you can see where this
+    // came from" without telling them anything.
+    //
+    // A segment carries the chunk ids it cited; the titles arrive separately on the
+    // result, so they are matched up here. Duplicates are collapsed because two chunks
+    // from the same document should read as one source, not the same name twice.
+    const titles = [
+      ...new Set(
+        segment.citations.map(
+          (chunkId) => citationTitles.get(chunkId) ?? chunkId,
+        ),
+      ),
+    ]
+    cite.textContent = `Source: ${titles.join(", ")}`
     bubble.appendChild(cite)
   }
 }
@@ -256,8 +271,13 @@ export function mountWidget(
     }
 
     const bubble = appendBubble("assistant")
+    // Built once per answer rather than per segment: several segments commonly cite the
+    // same document, and a lookup is clearer than searching the array each time.
+    const citationTitles = new Map(
+      result.citations.map((c) => [c.chunkId, c.documentTitle]),
+    )
     for (const segment of result.segments) {
-      appendSegment(bubble, segment)
+      appendSegment(bubble, segment, citationTitles)
     }
   }
 

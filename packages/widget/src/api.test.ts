@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { sendMessage } from "./api.js"
 import type { WidgetConfig } from "./config.js"
 
+/** Token counts are irrelevant to these tests; the shape just has to be present. */
+const ZERO_USAGE = { inputTokens: 0, outputTokens: 0, cachedTokens: null }
+
 const cfg: WidgetConfig = { tenantSlug: "acme", apiBase: "https://api.example.test" }
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -29,7 +32,7 @@ describe("sendMessage", () => {
     stubFetch((url, init) => {
       capturedUrl = url
       capturedBody = JSON.parse(init.body as string)
-      return jsonResponse(200, { conversationId: "c1", kind: "answered", segments: [], citedChunkIds: [] })
+      return jsonResponse(200, { conversationId: "c1", kind: "answered", segments: [], citations: [], usage: ZERO_USAGE })
     })
 
     await sendMessage(cfg, { message: "How long is the warranty?" })
@@ -42,7 +45,7 @@ describe("sendMessage", () => {
     let capturedBody: unknown
     stubFetch((_url, init) => {
       capturedBody = JSON.parse(init.body as string)
-      return jsonResponse(200, { conversationId: "c1", kind: "answered", segments: [], citedChunkIds: [] })
+      return jsonResponse(200, { conversationId: "c1", kind: "answered", segments: [], citations: [], usage: ZERO_USAGE })
     })
 
     await sendMessage(cfg, { conversationId: "c1", message: "And after that?" })
@@ -54,7 +57,7 @@ describe("sendMessage", () => {
     let capturedBody: unknown
     stubFetch((_url, init) => {
       capturedBody = JSON.parse(init.body as string)
-      return jsonResponse(200, { conversationId: "c1", kind: "answered", segments: [], citedChunkIds: [] })
+      return jsonResponse(200, { conversationId: "c1", kind: "answered", segments: [], citations: [], usage: ZERO_USAGE })
     })
 
     await sendMessage(cfg, { message: "Hi" })
@@ -71,7 +74,8 @@ describe("sendMessage", () => {
           { kind: "general", text: "Sure, happy to help." },
           { kind: "business_claim", text: "The warranty lasts 12 months.", citations: ["chunk-42"] },
         ],
-        citedChunkIds: ["chunk-42"],
+        citations: [{ chunkId: "chunk-42", documentTitle: "Warranty Policy" }],
+      usage: ZERO_USAGE,
       }),
     )
 
@@ -84,7 +88,8 @@ describe("sendMessage", () => {
         { kind: "general", text: "Sure, happy to help." },
         { kind: "business_claim", text: "The warranty lasts 12 months.", citations: ["chunk-42"] },
       ],
-      citedChunkIds: ["chunk-42"],
+      citations: [{ chunkId: "chunk-42", documentTitle: "Warranty Policy" }],
+      usage: ZERO_USAGE,
     })
   })
 

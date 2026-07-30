@@ -1,4 +1,5 @@
 import { withTenant, type QuidDb } from "@quidchat/db"
+import type { TokenUsage } from "@quidchat/core"
 import { sql } from "drizzle-orm"
 
 /** Normalizes the `execute()` result, whose shape differs between drivers — see the
@@ -58,18 +59,6 @@ const MODEL_PRICES: Record<string, { inputPerMTokenCents: number; outputPerMToke
 }
 
 /**
- * Rough token estimate from character count (~4 characters per token for English —
- * a common rule of thumb, not a real tokenizer). `answer()`'s `PipelineResult` does
- * not carry the provider's actual `CompleteResult.usage`, and widening that return
- * type is out of scope here, so this is what's available at the server boundary.
- * Good enough to make the budget arithmetic move; not a substitute for real
- * provider-reported usage, which a later task should thread through instead.
- */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4)
-}
-
-/**
  * Cost in cents for a completion. An unknown model records `cost_cents: 0` rather
  * than a guess: a wrong number would silently distort every budget decision built on
  * top of it, while a visible zero is obviously incomplete and gets noticed and fixed.
@@ -88,22 +77,32 @@ export function costCentsFor(model: string, inputTokens: number, outputTokens: n
 }
 
 /**
- * Records one usage event after a successful answer, so `spentThisMonthCents` can
- * ever accumulate to a tenant's budget in the first place. `inputText`/`outputText`
- * are whatever text was sent to and received from the model, used only to produce
- * the token estimate described on `costCentsFor` — see `estimateTokens`.
+ * Records one usage event for a turn, so `spentThisMonthCents` can ever accumulate to a
+ * tenant's budget in the first place.
+ *
+ * Token counts come from the provider, carried out of the pipeline on `PipelineResult`.
+ * An earlier version estimated them from character length because the pipeline did not
+ * report them; that estimate was wrong in both directions and, worse, silently — a
+ * budget built on it would stop a tenant early or late with no way to tell which.
+ *
+ * This is called for refusals too, not only answers. The `ungrounded` path generates
+ * twice and shows the visitor nothing, which makes it the most expensive outcome in the
+ * system; billing only successes would let it run unbounded.
  */
 export async function recordUsage(
   db: QuidDb,
-  args: { tenantId: string; model: string; inputText: string; outputText: string },
+  args: { tenantId: string; model: string; usage: TokenUsage },
 ): Promise<void> {
-  const inputTokens = estimateTokens(args.inputText)
-  const outputTokens = estimateTokens(args.outputText)
+  const { inputTokens, outputTokens, cachedTokens } = args.usage
   const costCents = costCentsFor(args.model, inputTokens, outputTokens)
   await withTenant(db, args.tenantId, async (tx) => {
     await tx.execute(sql`
-      INSERT INTO usage_events (tenant_id, model, input_tokens, output_tokens, cost_cents)
-      VALUES (${args.tenantId}, ${args.model}, ${inputTokens}, ${outputTokens}, ${costCents})
+      INSERT INTO usage_events
+        (tenant_id, model, input_tokens, output_tokens, cached_tokens, cost_cents)
+      VALUES (
+        ${args.tenantId}, ${args.model},
+        ${inputTokens}, ${outputTokens}, ${cachedTokens}, ${costCents}
+      )
     `)
   })
 }

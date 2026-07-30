@@ -41,7 +41,12 @@ describe("answer", () => {
     const res = await answer({ store, provider, ...ctx })
 
     expect(res.kind).toBe("answered")
-    if (res.kind === "answered") expect(res.citedChunkIds).toEqual(["chunk-1"])
+    if (res.kind === "answered") {
+      // The document title travels with the citation. A bare chunk id satisfies the
+      // shape of "you can see where this came from" without satisfying its purpose —
+      // a visitor shown a UUID learns nothing.
+      expect(res.citations).toEqual([{ chunkId: "chunk-1", documentTitle: "Policy" }])
+    }
     expect(store.recordedAnswers).toHaveLength(1)
   })
 
@@ -76,6 +81,41 @@ describe("answer", () => {
     expect(provider.calls).toHaveLength(2)
     expect(res.kind).toBe("refused")
     if (res.kind === "refused") expect(res.reason).toBe("ungrounded")
+  })
+
+  it("reports what an ungrounded refusal cost, summed across both rounds", async () => {
+    // This is the most expensive outcome in the system: two generations, and nothing
+    // reaches the visitor. If a refusal reported no usage, a tenant could produce
+    // ungrounded answers indefinitely and no budget would ever stop it, because the
+    // spend that funded them was never recorded.
+    const store = new MemoryStore([candidate])
+    const provider = new FakeProvider([
+      { segments: [{ kind: "business_claim", text: "x", citations: [] }] },
+      { segments: [{ kind: "business_claim", text: "x", citations: [] }] },
+    ])
+    const res = await answer({ store, provider, ...ctx })
+
+    expect(res.kind).toBe("refused")
+    // FakeProvider reports 10 input and 5 output tokens per call, and there were two.
+    expect(res.usage.inputTokens).toBe(20)
+    expect(res.usage.outputTokens).toBe(10)
+  })
+
+  it("reports zero generation cost when it refuses before generating", async () => {
+    // An empty knowledge base refuses without calling generate at all, so the only cost
+    // is the embedding — which the provider does not bill through `complete`.
+    const store = new MemoryStore([])
+    const provider = new FakeProvider([
+      { segments: [{ kind: "business_claim", text: "x", citations: [] }] },
+    ])
+    const res = await answer({ store, provider, ...ctx })
+
+    expect(res.kind).toBe("refused")
+    expect(res.usage.inputTokens).toBe(0)
+    expect(res.usage.outputTokens).toBe(0)
+    // `null`, not zero: the provider reported nothing, which is different from
+    // reporting that nothing was cached.
+    expect(res.usage.cachedTokens).toBeNull()
   })
 
   it("propagates a getTenantConfig failure, does not turn it into a refusal", async () => {
