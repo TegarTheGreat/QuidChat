@@ -68,9 +68,19 @@ export function createStore(db: QuidDb): Store {
         // RRF tidak peduli skala — hanya urutan — jadi kedua jalur benar-benar berbobot.
         //
         // Efek samping yang penting: CTE `sem` memakai bentuk
-        // `ORDER BY embedding <=> vec LIMIT k`, satu-satunya bentuk yang bisa memakai
+        // `ORDER BY embedding <=> vec LIMIT k`, satu-satunya bentuk yang BISA memakai
         // indeks HNSW. Versi lama yang mengurutkan berdasarkan jumlah dua skor tidak
         // pernah bisa memakainya.
+        //
+        // "Bisa", bukan "pasti", dan bedanya penting. pgvector menerapkan filter
+        // SETELAH penelusuran indeks — jadi `embedding_model` di bawah ini DAN predikat
+        // RLS `tenant_id` keduanya post-scan. Tanpa penanganan, itu berarti kehilangan
+        // recall yang sunyi: indeks memeriksa `ef_search` baris, filternya membuang
+        // sebagian besar, dan hasilnya kurang dari `poolSize` tanpa error apa pun.
+        // Karena itu `withTenant` menyalakan `hnsw.iterative_scan = strict_order` —
+        // lihat alasan lengkapnya di sana. Apakah perencana benar-benar memilih indeks
+        // pada skala produksi belum diukur; test di PGlite bertabel kecil selalu
+        // memilih sequential scan karena memang lebih murah.
         const res = await tx.execute(sql`
           WITH kw AS (
             SELECT c.id,
