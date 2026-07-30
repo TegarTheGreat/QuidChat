@@ -18,7 +18,11 @@
  *
  *   node scripts/smoke.mjs
  *
- * It exits non-zero on the first failure, with the step that failed named.
+ * When a browser is available it also runs the panel and widget checks against the same server,
+ * so one command covers the CLI, the API, the admin panel and the customer's own journey. Both
+ * skip themselves when there is no browser; neither is worth a separate ceremony to remember.
+ *
+ * It reports every failed check and exits non-zero if any failed.
  */
 
 import { spawn } from "node:child_process"
@@ -146,6 +150,25 @@ function runCli(args, env, timeoutMs = 90_000) {
   })
 }
 
+/** Runs another script in this directory and returns its output. */
+function runNode(script, args, timeoutMs = 180_000) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [script, ...args], { stdio: ["ignore", "pipe", "pipe"] })
+    let stdout = ""
+    let stderr = ""
+    child.stdout.on("data", (c) => (stdout += c))
+    child.stderr.on("data", (c) => (stderr += c))
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL")
+      resolve({ code: null, stdout, stderr: `${stderr}\ntimed out` })
+    }, timeoutMs)
+    child.on("close", (code) => {
+      clearTimeout(timer)
+      resolve({ code, stdout, stderr })
+    })
+  })
+}
+
 async function waitForHealth(url, attempts = 60) {
   for (let i = 0; i < attempts; i++) {
     try {
@@ -236,6 +259,30 @@ async function main() {
 
     const unauthorized = await fetch(`${base}/v1/admin/sources?tenantSlug=smoke-shop`)
     check("the admin API refuses a missing token", unauthorized.status === 401)
+
+    // The widget check serves its page from its own port, which is the point — the widget
+    // shipped unable to work cross-origin. The tenant has to allow that origin for the check to
+    // get past the allowlist, so it is added here rather than left as a step to remember.
+    const patched = await fetch(`${base}/v1/admin/settings`, {
+      method: "PATCH",
+      headers: { authorization: "Bearer smoke-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        tenantSlug: "smoke-shop",
+        allowed_origins: [ORIGIN, "http://127.0.0.1:4901"],
+      }),
+    })
+    check("the allowlist can be changed through the admin API", patched.status === 200)
+
+    for (const [label, script, args] of [
+      ["panel", "panel-check.mjs", [base, "smoke-token"]],
+      ["widget", "widget-check.mjs", [base, "smoke-shop"]],
+    ]) {
+      console.log(label)
+      const result = await runNode(new URL(`./${script}`, import.meta.url).pathname, args)
+      // Indented so the sub-check output reads as part of this run rather than as a second one.
+      process.stdout.write(result.stdout.replace(/^/gm, "  "))
+      check(`${label} checks pass`, result.code === 0, result.stderr.trim())
+    }
 
     console.log("shutdown")
     const exited = new Promise((resolve) => server.on("close", (code) => resolve(code)))
