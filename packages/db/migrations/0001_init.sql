@@ -12,12 +12,12 @@ CREATE TABLE tenant_settings (
   chat_model                      text NOT NULL DEFAULT 'claude-opus-5',
   rewrite_model                   text NOT NULL DEFAULT 'claude-opus-5',
   embedding_model                 text NOT NULL DEFAULT 'text-embedding-3-small',
-  refusal_text                    text NOT NULL DEFAULT 'Maaf, saya belum punya informasi itu. Boleh saya hubungkan ke tim kami?',
+  refusal_text                    text NOT NULL DEFAULT 'Sorry, I do not have that information yet. May I connect you with our team?',
   escalation_mode                 text NOT NULL DEFAULT 'collect_contact',
   escalation_target               text,
   monthly_budget_cents            integer NOT NULL DEFAULT 0,
   retention_days                  integer NOT NULL DEFAULT 90,
-  high_risk_topics                text[] NOT NULL DEFAULT ARRAY['harga','diskon','garansi','refund','stok','legal'],
+  high_risk_topics                text[] NOT NULL DEFAULT ARRAY['price','discount','warranty','refund','stock','legal'],
   allowed_origins                 text[] NOT NULL DEFAULT ARRAY[]::text[],
   widget_theme                    jsonb NOT NULL DEFAULT '{}'::jsonb,
   max_handoffs_per_turn           integer NOT NULL DEFAULT 2,
@@ -182,7 +182,7 @@ BEGIN
     EXECUTE 'RESET ROLE';
   EXCEPTION WHEN OTHERS THEN
     RAISE EXCEPTION
-      'peran % tidak bisa SET ROLE quidchat_app. Jalankan sebagai superuser: GRANT quidchat_app TO %',
+      'role % cannot SET ROLE quidchat_app. Run as superuser: GRANT quidchat_app TO %',
       current_user, current_user;
   END;
 END $grant$;
@@ -234,21 +234,21 @@ CREATE POLICY tenant_self ON tenants USING (id = current_tenant_id());
 -- `with_check IS NULL` is legitimate and means Postgres derives it from `qual` —
 -- that's what happens for `tenants`. What is rejected is a `with_check` that IS
 -- present but differs.
-DO $guard_isolasi$
+DO $guard_isolation$
 DECLARE bad text;
 BEGIN
-  SELECT string_agg(format('%s: %s', t.nama, a.alasan), ' | ') INTO bad
+  SELECT string_agg(format('%s: %s', t.name, a.reason), ' | ') INTO bad
   FROM (
-    SELECT c.relname AS nama,
-           n.nspname AS skema,
+    SELECT c.relname AS name,
+           n.nspname AS schema,
            -- This table's tenant key: `tenant_id` if it exists, otherwise `id`.
            -- `tenants` uses `id` because it IS the tenant itself.
            CASE WHEN EXISTS (
              SELECT 1 FROM information_schema.columns col
              WHERE col.table_schema = n.nspname AND col.table_name = c.relname
                AND col.column_name = 'tenant_id'
-           ) THEN 'tenant_id' ELSE 'id' END AS kunci,
-           c.relrowsecurity AS rls_aktif,
+           ) THEN 'tenant_id' ELSE 'id' END AS key,
+           c.relrowsecurity AS rls_enabled,
            c.relforcerowsecurity AS rls_forced
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
@@ -257,42 +257,42 @@ BEGIN
       AND c.relkind IN ('r', 'p')   -- 'p' = partitioned table; its parent is NOT 'r'
   ) t
   CROSS JOIN LATERAL (
-    SELECT format('(%s = current_tenant_id())', t.kunci) AS harapan
+    SELECT format('(%s = current_tenant_id())', t.key) AS expected
   ) h
   CROSS JOIN LATERAL (
     SELECT
       CASE
-        WHEN NOT (t.rls_aktif AND t.rls_forced) THEN 'RLS tidak aktif atau tidak forced'
+        WHEN NOT (t.rls_enabled AND t.rls_forced) THEN 'RLS not enabled or not forced'
         WHEN NOT EXISTS (
           SELECT 1 FROM pg_policies p
-          WHERE p.schemaname = t.skema AND p.tablename = t.nama
-        ) THEN 'tanpa policy'
+          WHERE p.schemaname = t.schema AND p.tablename = t.name
+        ) THEN 'no policy'
         WHEN EXISTS (
           SELECT 1 FROM pg_policies p
-          WHERE p.schemaname = t.skema AND p.tablename = t.nama
+          WHERE p.schemaname = t.schema AND p.tablename = t.name
             AND p.permissive = 'PERMISSIVE'
-            AND p.qual IS NOT NULL AND p.qual <> h.harapan
-        ) THEN format('ada policy permissive dengan qual bukan %s', h.harapan)
+            AND p.qual IS NOT NULL AND p.qual <> h.expected
+        ) THEN format('has a permissive policy with qual other than %s', h.expected)
         WHEN EXISTS (
           SELECT 1 FROM pg_policies p
-          WHERE p.schemaname = t.skema AND p.tablename = t.nama
+          WHERE p.schemaname = t.schema AND p.tablename = t.name
             AND p.permissive = 'PERMISSIVE'
-            AND p.with_check IS NOT NULL AND p.with_check <> h.harapan
-        ) THEN format('ada policy permissive dengan with_check bukan %s', h.harapan)
+            AND p.with_check IS NOT NULL AND p.with_check <> h.expected
+        ) THEN format('has a permissive policy with with_check other than %s', h.expected)
         WHEN NOT EXISTS (
           SELECT 1 FROM pg_policies p
-          WHERE p.schemaname = t.skema AND p.tablename = t.nama
+          WHERE p.schemaname = t.schema AND p.tablename = t.name
             AND p.permissive = 'PERMISSIVE'
-            AND (p.qual = h.harapan OR p.with_check = h.harapan)
-        ) THEN 'tidak ada policy permissive yang men-scope ke tenant'
-      END AS alasan
+            AND (p.qual = h.expected OR p.with_check = h.expected)
+        ) THEN 'no permissive policy scopes to the tenant'
+      END AS reason
   ) a
-  WHERE a.alasan IS NOT NULL;
+  WHERE a.reason IS NOT NULL;
 
   IF bad IS NOT NULL THEN
-    RAISE EXCEPTION 'isolasi tenant tidak lengkap -> %', bad;
+    RAISE EXCEPTION 'tenant isolation incomplete -> %', bad;
   END IF;
-END $guard_isolasi$;
+END $guard_isolation$;
 
 -- Views and matviews do NOT have RLS of their own. A view runs with its OWNER's
 -- privileges unless created `WITH (security_invoker = true)`, and that default is
@@ -314,7 +314,7 @@ BEGIN
        WHERE option_name = 'security_invoker'), false);
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION
-      'view tanpa security_invoker=true tapi bisa dibaca quidchat_app -> %; RLS pemanggil TIDAK berlaku di sana',
+      'view without security_invoker=true but readable by quidchat_app -> %; the caller''s RLS does NOT apply there',
       bad;
   END IF;
 END $guard_view$;
@@ -329,7 +329,7 @@ BEGIN
     AND has_table_privilege('quidchat_app', c.oid, 'SELECT');
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION
-      'materialized view bisa dibaca quidchat_app -> %; matview tidak mendukung security_invoker, jadi hak SELECT-nya harus dicabut',
+      'materialized view readable by quidchat_app -> %; matviews do not support security_invoker, so its SELECT privilege must be revoked',
       bad;
   END IF;
 END $guard_matview$;
@@ -351,7 +351,7 @@ BEGIN
     AND has_function_privilege('quidchat_app', p.oid, 'EXECUTE');
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION
-      'fungsi SECURITY DEFINER bisa dijalankan quidchat_app -> %; fungsi seperti itu menembus RLS',
+      'SECURITY DEFINER function executable by quidchat_app -> %; such functions bypass RLS',
       bad;
   END IF;
 END $guard_secdef$;

@@ -16,13 +16,13 @@ export const tenantSettings = pgTable("tenant_settings", {
   rewriteModel: text("rewrite_model").notNull().default("claude-opus-5"),
   embeddingModel: text("embedding_model").notNull().default("text-embedding-3-small"),
   refusalText: text("refusal_text").notNull()
-    .default("Maaf, saya belum punya informasi itu. Boleh saya hubungkan ke tim kami?"),
+    .default("Sorry, I do not have that information yet. May I connect you with our team?"),
   escalationMode: text("escalation_mode").notNull().default("collect_contact"),
   escalationTarget: text("escalation_target"),
   monthlyBudgetCents: integer("monthly_budget_cents").notNull().default(0),
   retentionDays: integer("retention_days").notNull().default(90),
   highRiskTopics: text("high_risk_topics").array().notNull()
-    .default(["harga", "diskon", "garansi", "refund", "stok", "legal"]),
+    .default(["price", "discount", "warranty", "refund", "stock", "legal"]),
   allowedOrigins: text("allowed_origins").array().notNull().default([]),
   widgetTheme: jsonb("widget_theme").notNull().default({}),
   maxHandoffsPerTurn: integer("max_handoffs_per_turn").notNull().default(2),

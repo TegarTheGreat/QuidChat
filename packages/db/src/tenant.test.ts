@@ -19,13 +19,13 @@ async function seedTenant(db: Awaited<ReturnType<typeof freshPglite>>, slug: str
     .values({ tenantId: t!.id, sourceId: s!.id, title: `${slug} doc` }).returning()
   await db.insert(chunks).values({
     tenantId: t!.id, documentId: d!.id, ordinal: 0,
-    content: `rahasia milik ${slug}`, embeddingModel: "test",
+    content: `secret belonging to ${slug}`, embeddingModel: "test",
   })
   return t!.id
 }
 
-describe("isolasi tenant", () => {
-  it("tenant hanya melihat chunk miliknya sendiri", async () => {
+describe("tenant isolation", () => {
+  it("a tenant only sees its own chunks", async () => {
     const db = await freshPglite()
     const a = await seedTenant(db, "tenant-a")
     const b = await seedTenant(db, "tenant-b")
@@ -43,7 +43,7 @@ describe("isolasi tenant", () => {
   // An unknown tenant id is equivalent to having no context at all under
   // Postgres's NULL semantics: current_tenant_id() equally fails to match any
   // tenant_id, so both end up as zero rows.
-  it("tenant id yang tidak dikenal mengembalikan nol baris, bukan semuanya", async () => {
+  it("an unknown tenant id returns zero rows, not every row", async () => {
     const db = await freshPglite()
     await seedTenant(db, "tenant-a")
     await seedTenant(db, "tenant-b")
@@ -53,7 +53,7 @@ describe("isolasi tenant", () => {
     expect(rows).toHaveLength(0)
   })
 
-  it("handle mentah MELEWATI RLS — inilah alasan withTenant wajib dipakai", async () => {
+  it("the raw handle BYPASSES RLS — this is why withTenant must be used", async () => {
     const db = await freshPglite()
     const a = await seedTenant(db, "tenant-a")
     await seedTenant(db, "tenant-b")
@@ -70,20 +70,20 @@ describe("isolasi tenant", () => {
     expect(scoped).toHaveLength(1)
   })
 
-  it("konteks tenant tidak bertahan setelah transaksi selesai", async () => {
+  it("tenant context does not persist after the transaction ends", async () => {
     const db = await freshPglite()
     const r = await db.execute(sql`INSERT INTO tenants (slug, name) VALUES ('a','A') RETURNING id`)
     const id = rowsOf(r)[0]!.id as string
 
     await withTenant(db, id, async (tx) => {
-      const di = rowsOf(await tx.execute(sql`SELECT current_tenant_id() AS t`))[0]!.t
-      expect(di).toBe(id)
+      const inside = rowsOf(await tx.execute(sql`SELECT current_tenant_id() AS t`))[0]!.t
+      expect(inside).toBe(id)
     })
 
     // OUTSIDE the transaction, the context must be gone. If `set_config` were called with
     // `false`, the value would be session-scoped and persist — and on a pooled connection
     // that would mean the next request inherits the previous request's tenant.
-    const luar = rowsOf(await db.execute(sql`SELECT current_tenant_id() AS t`))[0]!.t
-    expect(luar).toBeNull()
+    const outside = rowsOf(await db.execute(sql`SELECT current_tenant_id() AS t`))[0]!.t
+    expect(outside).toBeNull()
   })
 })

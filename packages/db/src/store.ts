@@ -34,14 +34,14 @@ export function createStore(db: QuidDb): Store {
           FROM tenant_settings
         `)
         const rows = rowsOf(res)
-        if (rows.length === 0) throw new Error(`tenant_settings tidak ditemukan: ${tenantId}`)
+        if (rows.length === 0) throw new Error(`tenant_settings not found: ${tenantId}`)
         // More than one row means RLS is NOT isolating — under a correct policy, a
         // `SELECT` with no `WHERE` inside withTenant() can only ever see one row.
         // Silently taking the first row would mean reading another tenant's settings,
         // and because every tenant's defaults are identical, no test would notice.
         if (rows.length > 1) {
           throw new Error(
-            `isolasi tenant gagal: tenant_settings mengembalikan ${rows.length} baris untuk satu tenant`,
+            `tenant isolation failed: tenant_settings returned ${rows.length} rows for a single tenant`,
           )
         }
         const row = rows[0]!
