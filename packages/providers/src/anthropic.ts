@@ -1,3 +1,4 @@
+import { fetchWithRetry } from "./http.js"
 import { ProviderError, type Capabilities, type CompleteResult, type Provider, type PromptParts } from "@quidchat/core"
 import { asAnswer } from "./openai-compatible.js"
 
@@ -52,7 +53,8 @@ export function anthropic(opts: {
   async function call(path: string, body: unknown): Promise<Record<string, unknown>> {
     let res: Response
     try {
-      res = await f(`${base}${path}`, {
+      // Bounded and retried — see http.ts.
+      res = await fetchWithRetry(f, `${base}${path}`, {
         method: "POST",
         headers: {
           // NOT `Authorization: Bearer` — that's the OpenAI-compatible shape, and

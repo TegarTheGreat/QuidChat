@@ -1,3 +1,4 @@
+import { fetchWithRetry } from "./http.js"
 import { ProviderError, type Answer, type Capabilities, type CompleteResult, type Provider, type PromptParts } from "@quidchat/core"
 
 /** Maps an HTTP status to a failure reason. Not everything is `unavailable`. */
@@ -64,7 +65,9 @@ export function openAiCompatible(opts: {
   async function call(path: string, body: unknown): Promise<Record<string, unknown>> {
     let res: Response
     try {
-      res = await f(`${base}${path}`, {
+      // Bounded and retried — see http.ts. Without a timeout a provider that accepts the
+      // connection and says nothing holds a customer's question open until the socket dies.
+      res = await fetchWithRetry(f, `${base}${path}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${opts.apiKey}`,

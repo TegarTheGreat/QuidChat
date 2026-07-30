@@ -183,6 +183,8 @@ The widget reads those over a public endpoint, so it carries presentation only �
 
 Set one key. QuidChat finds it, tells you what it picked, and refuses to start if nothing usable is configured — rather than failing later on a customer's question.
 
+Every provider call has a deadline and is retried when the provider says "not now". A `429` or a `503` under ordinary load used to become a refusal: the customer's question spent, an escalation recorded that reads as missing content, and the visitor told the assistant could not help — when waiting half a second would have answered them. `Retry-After` is honoured when the provider sends it, capped so nobody is kept waiting on a shop's website for an hour. A bad key, an unknown model or a malformed response is never retried, because it would fail the same way again.
+
 | Provider | Variable | Base URL override |
 |---|---|---|
 | Anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
