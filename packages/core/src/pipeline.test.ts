@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { answer } from "./pipeline.js"
 import { ProviderError, type ProviderErrorKind } from "./provider-error.js"
-import { FakeProvider, MemoryStore } from "./testing/fakes.js"
+import { DEFAULT_CONFIG, FakeProvider, MemoryStore, ThrowingProvider } from "./testing/fakes.js"
 import type { Provider } from "./provider.js"
 import type { Candidate, EscalationReason } from "./types.js"
 
@@ -175,5 +175,72 @@ describe("answer", () => {
       expect(res.kind).toBe("refused")
       if (res.kind === "refused") expect(res.reason).toBe(expected)
     }
+  })
+})
+
+describe("answer — static mode", () => {
+  it("answers from an approved canned answer without touching the provider at all", async () => {
+    // Spec mandatory test #6. A `calls`/`embedCalls` count of zero could pass by
+    // accident if an assertion were mistyped or dropped; a provider that throws on
+    // every method makes an accidental call impossible to miss instead.
+    const store = new MemoryStore(
+      [],
+      { ...DEFAULT_CONFIG, answerMode: "static" },
+      [], [], {},
+      [{ id: "canned-1", question: ctx.question, answer: "Our warranty is 12 months.", status: "approved" }],
+    )
+    const provider = new ThrowingProvider()
+
+    const res = await answer({ store, provider, ...ctx })
+
+    expect(res.kind).toBe("answered")
+    if (res.kind === "answered") {
+      expect(res.segments).toEqual([{ kind: "general", text: "Our warranty is 12 months." }])
+      // Static mode's citations come from human review at approval time, not from the
+      // grounding validator — there is nothing to attach here.
+      expect(res.citations).toEqual([])
+    }
+  })
+
+  it("refuses with no_source on a miss — including when only a DRAFT answer matches — without touching the provider", async () => {
+    // Spec mandatory test #7, exercised at the pipeline level: a draft that matches
+    // perfectly must still be invisible to `static` mode. `MemoryStore.matchCannedAnswer`
+    // mirrors the real store's `status = 'approved'` filter, so this proves the pipeline
+    // correctly treats a draft-only match as no match at all.
+    const store = new MemoryStore(
+      [],
+      { ...DEFAULT_CONFIG, answerMode: "static" },
+      [], [], {},
+      [{ id: "canned-1", question: ctx.question, answer: "Draft text, not yet approved.", status: "draft" }],
+    )
+    const provider = new ThrowingProvider()
+
+    const res = await answer({ store, provider, ...ctx })
+
+    expect(res.kind).toBe("refused")
+    if (res.kind === "refused") expect(res.reason).toBe("no_source")
+    expect(store.recordedEscalations).toEqual(["no_source"])
+  })
+})
+
+describe("answer — thrifty mode", () => {
+  it("answers by quoting the top retrieved chunk verbatim, without ever calling complete", async () => {
+    // Spec mandatory test: thrifty still embeds (there's no free semantic match without
+    // it) but never generates. An empty `answers` list on FakeProvider means a stray
+    // `complete()` call would throw "ran out of answers" instead of silently succeeding.
+    const store = new MemoryStore([candidate], { ...DEFAULT_CONFIG, answerMode: "thrifty" })
+    const provider = new FakeProvider([])
+
+    const res = await answer({ store, provider, ...ctx })
+
+    expect(res.kind).toBe("answered")
+    if (res.kind === "answered") {
+      expect(res.segments).toEqual([
+        { kind: "business_claim", text: candidate.content, citations: [candidate.id] },
+      ])
+      expect(res.citations).toEqual([{ chunkId: candidate.id, documentTitle: candidate.documentTitle }])
+    }
+    expect(provider.calls).toHaveLength(0)
+    expect(provider.embedCalls).toHaveLength(1)
   })
 })

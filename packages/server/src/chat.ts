@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm"
 import { monthlyBudgetCents, recordUsage, spentThisMonthCents } from "./budget.js"
 import { lookupTenantBySlug } from "./tenant-lookup.js"
 import { openEventStream, sendProgress, sendResult, sendStreamError } from "./stream.js"
+import type { ChatRateLimiter } from "./rate-limit.js"
 
 /** Normalizes the `execute()` result, whose shape differs between drivers — see the
  *  identical helper in `tenant-lookup.ts` and `@quidchat/db`'s `store.ts`. */
@@ -35,6 +36,9 @@ export type ChatDeps = {
   store: Store
   provider: Provider
   logError: (message: string, cause: unknown) => void
+  /** Shared across every route so one client cannot get a fresh allowance by switching
+   *  between the streaming and non-streaming endpoints. */
+  rateLimiter: ChatRateLimiter
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -218,8 +222,24 @@ export async function handleChat(
     return
   }
 
+  const visitorId = req.socket.remoteAddress ?? "unknown"
+
+  // After the origin check, because an unauthorized caller has already been refused and
+  // should not be able to consume a legitimate tenant's allowance by being rejected. Before
+  // any write, because the point is to spend nothing on the request — no conversation row,
+  // no history query, and above all no provider call.
+  const decision = deps.rateLimiter.check({ tenantId: identity.tenantId, visitorId })
+  if (!decision.allowed) {
+    res.writeHead(429, {
+      "content-type": "application/json; charset=utf-8",
+      // Standard, and the widget reads it to back off instead of retrying immediately.
+      "retry-after": String(decision.retryAfterSeconds),
+    })
+    res.end(JSON.stringify({ error: "too many requests", retryAfterSeconds: decision.retryAfterSeconds }))
+    return
+  }
+
   try {
-    const visitorId = req.socket.remoteAddress ?? "unknown"
     const conversationId = await ensureConversation(
       deps.db, identity.tenantId, visitorId, chatRequest.conversationId,
     )

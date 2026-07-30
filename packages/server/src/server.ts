@@ -5,6 +5,7 @@ import { handleAdminRequest } from "./admin.js"
 import { handleChannelWebhook } from "./channels.js"
 import { handleChat } from "./chat.js"
 import { handleWidgetAsset } from "./widget-asset.js"
+import { ChatRateLimiter, type RateLimitConfig } from "./rate-limit.js"
 
 export type ServerDeps = {
   db: QuidDb
@@ -20,6 +21,9 @@ export type ServerDeps = {
    *  (unset vs. set, valid vs. invalid) without mutating real process state — see
    *  `admin.ts`'s `checkAdminAuth`. */
   env?: Record<string, string | undefined>
+  /** Overrides the shipped rate limits. A test that wants to observe a 429 sets a capacity
+   *  of one rather than issuing eleven real requests. */
+  rateLimits?: { visitor?: RateLimitConfig; tenant?: RateLimitConfig }
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -51,13 +55,27 @@ export function createServer(deps: ServerDeps): Server {
   const store = deps.store ?? createStore(deps.db)
   const logError = deps.logError ?? ((message: string, cause: unknown) => console.error(message, cause))
   const env = deps.env ?? process.env
+  // One limiter for the whole server, built here rather than per request — a limiter
+  // constructed inside the handler starts full every time and limits nothing at all.
+  const rateLimiter = new ChatRateLimiter(
+    deps.rateLimits?.visitor ?? undefined,
+    deps.rateLimits?.tenant ?? undefined,
+  )
 
   return createHttpServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://localhost")
     const pathname = stripVersionPrefix(url.pathname)
 
+    // A liveness probe. Deliberately touches no database: a health check that fails when
+    // Postgres is briefly unreachable makes an orchestrator kill a process that would have
+    // recovered on its own, turning a blip into an outage.
+    if (pathname === "/health") {
+      sendJson(res, 200, { status: "ok" })
+      return
+    }
+
     if (pathname === "/chat/stream") {
-      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError }, true).catch((e: unknown) => {
+      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError, rateLimiter }, true).catch((e: unknown) => {
         logError("unhandled error in chat stream route", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
       })
@@ -65,7 +83,7 @@ export function createServer(deps: ServerDeps): Server {
     }
 
     if (pathname === "/chat") {
-      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError }).catch((e: unknown) => {
+      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError, rateLimiter }).catch((e: unknown) => {
         logError("unhandled error in chat route", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
       })
@@ -82,7 +100,7 @@ export function createServer(deps: ServerDeps): Server {
 
     if (pathname.startsWith("/channels/")) {
       handleChannelWebhook(req, res, pathname, {
-        db: deps.db, store, provider: deps.provider, env, logError,
+        db: deps.db, store, provider: deps.provider, env, logError, rateLimiter,
       }).catch((e: unknown) => {
         logError("unhandled error in channel webhook", e)
         // Still a 200: every one of these platforms retries a non-2xx webhook, and a

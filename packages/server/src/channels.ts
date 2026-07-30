@@ -13,6 +13,7 @@ import {
 import { sql } from "drizzle-orm"
 import { withTenant, type QuidDb } from "@quidchat/db"
 import { lookupTenantBySlug } from "./tenant-lookup.js"
+import type { ChatRateLimiter } from "./rate-limit.js"
 
 function rowsOf(res: unknown): Record<string, unknown>[] {
   return Array.isArray(res)
@@ -26,6 +27,9 @@ export type ChannelDeps = {
   store: Store
   env: Record<string, string | undefined>
   logError: (message: string, cause: unknown) => void
+  /** The same limiter the web routes use. A customer spamming a Telegram bot spends the
+   *  tenant's budget exactly as fast as one spamming the widget. */
+  rateLimiter: ChatRateLimiter
 }
 
 /**
@@ -234,6 +238,22 @@ export async function handleChannelWebhook(
       headers: req.headers,
       logError: deps.logError,
       answer: async (incoming) => {
+        // Checked here rather than before parsing, because the visitor is only known once
+        // the payload has been verified and parsed — and a per-tenant limit alone would let
+        // one abusive customer refuse every other customer of that business.
+        //
+        // A rate-limited message is answered with the tenant's own refusal text instead of a
+        // non-2xx status: every one of these platforms retries a failed webhook, so an error
+        // here would come straight back and the limit would never actually hold.
+        const decision = deps.rateLimiter.check({
+          tenantId: identity.tenantId,
+          visitorId: incoming.visitorId,
+        })
+        if (!decision.allowed) {
+          const config = await deps.store.getTenantConfig(identity.tenantId)
+          return { kind: "refused", text: config.refusalText, reason: "rate_limited" }
+        }
+
         const conversationId = await conversationFor(
           deps.db,
           identity.tenantId,

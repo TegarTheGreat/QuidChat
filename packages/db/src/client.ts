@@ -1,4 +1,6 @@
+import { mkdir } from "node:fs/promises"
 import { PGlite } from "@electric-sql/pglite"
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm"
 import { vector } from "@electric-sql/pglite-pgvector"
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite"
 import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js"
@@ -39,9 +41,16 @@ export type QuidDb =
  */
 export async function createDb(config: DbConfig): Promise<QuidDb> {
   if (config.kind === "pglite") {
+    if (config.dataDir) {
+      // PGlite creates the leaf directory but not its parents, so the default
+      // `./.quidchat/data` fails with ENOENT on a first run in a fresh project — the very
+      // first command a new user types. `recursive` also makes an existing directory a
+      // no-op, which is what every run after the first one needs.
+      await mkdir(config.dataDir, { recursive: true })
+    }
     const client = config.dataDir
-      ? await PGlite.create(config.dataDir, { extensions: { vector } })
-      : await PGlite.create({ extensions: { vector } })
+      ? await PGlite.create(config.dataDir, { extensions: { vector, pg_trgm } })
+      : await PGlite.create({ extensions: { vector, pg_trgm } })
     return drizzlePglite(client, { schema })
   }
   return drizzlePostgres(postgres(config.url, { max: 10 }), { schema })
