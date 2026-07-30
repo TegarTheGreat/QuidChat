@@ -151,6 +151,20 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO quidchat_
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO quidchat_app;
 
+-- Role yang dipakai aplikasi untuk konek WAJIB jadi anggota `quidchat_app`, kalau tidak
+-- `SET LOCAL ROLE quidchat_app` di withTenant() gagal dengan "permission denied to set
+-- role". `quidchat_app` sendiri NOLOGIN dengan sengaja: ia bukan role untuk konek, ia
+-- role untuk DITURUNI setelah konek. Baris ini memberi keanggotaan itu ke role yang
+-- sedang menjalankan migrasi, yang di tier 1 dan 2 memang role aplikasinya.
+DO $grant$
+BEGIN
+  EXECUTE format('GRANT quidchat_app TO %I', current_user);
+EXCEPTION
+  WHEN duplicate_object THEN NULL;  -- sudah anggota
+  WHEN insufficient_privilege THEN
+    RAISE NOTICE 'tidak bisa GRANT quidchat_app TO %; lakukan manual sebagai superuser', current_user;
+END $grant$;
+
 -- Helper: konteks tenant transaksi saat ini.
 CREATE OR REPLACE FUNCTION current_tenant_id() RETURNS uuid
 LANGUAGE sql STABLE
@@ -182,24 +196,39 @@ CREATE POLICY tenant_self ON tenants USING (id = current_tenant_id());
 -- message_citations dan admin_sessions: composite FK menjamin tenant_id cocok dengan parent.
 -- Kedua referensi parent mereka sekarang composite dan tidak bisa melintasi tenant.
 
--- Penjaga: setiap tabel ber-tenant_id WAJIB punya RLS aktif, dipaksa, dan minimal satu
--- policy. Tanpa penjaga ini, tabel baru mendapat hak CRUD otomatis dari
--- ALTER DEFAULT PRIVILEGES tapi tidak mendapat perlindungan — dan tidak ada yang
--- memberi tahu siapa pun.
-DO $$
-DECLARE missing text;
+-- Guard: setiap tabel ber-`tenant_id` wajib RLS aktif DAN forced, punya policy, DAN
+-- policy itu wajib benar-benar menyebut current_tenant_id(). Pemeriksaan terakhir itu
+-- yang membedakan "ada policy" dari "ada policy yang men-scope": `USING (true)` adalah
+-- policy yang sah dan sama sekali tidak mengisolasi.
+DO $guard$
+DECLARE bad text;
 BEGIN
-  SELECT string_agg(c.relname, ', ') INTO missing
-  FROM pg_class c
-  JOIN pg_namespace n ON n.oid = c.relnamespace
-  WHERE n.nspname = 'public' AND c.relkind = 'r'
-    AND EXISTS (SELECT 1 FROM information_schema.columns col
-                 WHERE col.table_schema = 'public' AND col.table_name = c.relname
-                   AND col.column_name = 'tenant_id')
-    AND NOT (c.relrowsecurity AND c.relforcerowsecurity
-             AND EXISTS (SELECT 1 FROM pg_policies p
-                          WHERE p.schemaname = 'public' AND p.tablename = c.relname));
-  IF missing IS NOT NULL THEN
-    RAISE EXCEPTION 'tabel ber-tenant_id tanpa RLS lengkap: %', missing;
+  SELECT string_agg(format('%s (%s)', t.nama, t.alasan), ', ') INTO bad
+  FROM (
+    SELECT c.relname AS nama,
+           CASE
+             WHEN NOT (c.relrowsecurity AND c.relforcerowsecurity)
+               THEN 'RLS tidak aktif atau tidak forced'
+             WHEN NOT EXISTS (
+               SELECT 1 FROM pg_policies p
+               WHERE p.schemaname = 'public' AND p.tablename = c.relname
+             ) THEN 'tanpa policy'
+             WHEN NOT EXISTS (
+               SELECT 1 FROM pg_policies p
+               WHERE p.schemaname = 'public' AND p.tablename = c.relname
+                 AND p.qual LIKE '%current_tenant_id()%'
+             ) THEN 'policy tidak menyebut current_tenant_id()'
+           END AS alasan
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'r'
+      AND EXISTS (
+        SELECT 1 FROM information_schema.columns col
+        WHERE col.table_schema = 'public' AND col.table_name = c.relname
+          AND col.column_name = 'tenant_id'
+      )
+  ) t
+  WHERE t.alasan IS NOT NULL;
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'RLS tidak lengkap: %', bad;
   END IF;
-END $$;
+END $guard$;

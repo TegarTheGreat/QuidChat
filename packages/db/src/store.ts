@@ -23,9 +23,13 @@ export function createStore(db: QuidDb): Store {
   return {
     async getTenantConfig(tenantId: string): Promise<TenantConfig> {
       return withTenant(db, tenantId, async (tx) => {
+        // TANPA `WHERE tenant_id` — dan itu wajib. RLS yang men-scope. Filter aplikasi
+        // di sini akan mengembalikan baris yang benar bahkan ketika policy-nya sudah
+        // runtuh, sehingga kebocoran isolasi lolos seluruh test dan baru terlihat di
+        // produksi. Terbukti: policy bocor + filter ini = 7/7 test tetap hijau.
         const res = await tx.execute(sql`
           SELECT chat_model, rewrite_model, embedding_model, refusal_text, high_risk_topics
-          FROM tenant_settings WHERE tenant_id = ${tenantId}
+          FROM tenant_settings
         `)
         const row = rowsOf(res)[0]
         if (!row) throw new Error(`tenant_settings tidak ditemukan: ${tenantId}`)

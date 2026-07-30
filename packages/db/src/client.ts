@@ -25,14 +25,15 @@ export type QuidDb =
   | ReturnType<typeof drizzlePostgres<typeof schema>>
 
 /**
- * Membuat handle mentah (lihat catatan pada `QuidDb`). Untuk `kind: "pglite"`
- * koneksinya selalu superuser `postgres`, yang melewati RLS tanpa syarat.
- * Untuk `kind: "postgres"`, `url` WAJIB mengautentikasi sebagai role yang
- * BUKAN superuser dan TIDAK punya atribut `BYPASSRLS` — migrasi menyediakan
- * `quidchat_app` untuk keperluan ini. Kalau `url` menghubungkan sebagai
- * superuser atau role ber-`BYPASSRLS`, perilaku fail-closed (nol baris tanpa
- * konteks tenant) tidak berlaku, dan kebocoran lintas-tenant yang sama seperti
- * PGlite akan terjadi juga di Postgres sungguhan.
+ * `url` untuk tier 3. Role yang dipakai konek WAJIB jadi anggota `quidchat_app` —
+ * migrasi berusaha memberikannya otomatis; kalau environment-mu tidak mengizinkan,
+ * jalankan `GRANT quidchat_app TO <role>` sebagai superuser saat deploy.
+ *
+ * Konek sebagai superuser TIDAK membatalkan isolasi di jalur `withTenant`:
+ * `SET LOCAL ROLE quidchat_app` menurunkan `current_user`, jadi RLS tetap berlaku —
+ * ini dibuktikan test isolasi, yang berjalan di PGlite sebagai superuser `postgres`.
+ * Yang MEMANG melewati RLS hanyalah raw handle (`db` langsung, tanpa `withTenant`),
+ * apa pun role-nya. Itu disengaja untuk migrasi dan onboarding tenant baru.
  */
 export async function createDb(config: DbConfig): Promise<QuidDb> {
   if (config.kind === "pglite") {
