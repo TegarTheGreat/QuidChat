@@ -1015,9 +1015,19 @@ describe("detectHighRisk", () => {
     expect(detectHighRisk("Halo, terima kasih banyak", TOPICS)).toEqual([])
   })
 
-  it("tidak cocok di tengah kata lain", () => {
-    // "legal" tidak boleh terpicu oleh "ilegalitas" atau "legalisir"
+  it("tidak cocok bila topik didahului huruf lain", () => {
+    // "legal" tidak boleh terpicu oleh "dilegalisir" atau "ilegal"
     expect(detectHighRisk("dokumen sudah dilegalisir", TOPICS)).toEqual([])
+    expect(detectHighRisk("proses ilegal itu", TOPICS)).toEqual([])
+    expect(detectHighRisk("saya menghargai bantuannya", TOPICS)).toEqual([])
+  })
+
+  it("TETAP cocok bila topik diberi sufiks — kritis untuk bahasa Indonesia", () => {
+    expect(detectHighRisk("harganya berapa?", TOPICS)).toEqual(["harga"])
+    expect(detectHighRisk("stoknya habis", TOPICS)).toEqual(["stok"])
+    expect(detectHighRisk("garansinya berapa lama", TOPICS)).toEqual(["garansi"])
+    expect(detectHighRisk("refundnya bisa?", TOPICS)).toEqual(["refund"])
+    expect(detectHighRisk("diskonnya ada?", TOPICS)).toEqual(["diskon"])
   })
 
   it("menghormati daftar topik kustom per tenant", () => {
@@ -1026,7 +1036,13 @@ describe("detectHighRisk", () => {
 })
 ```
 
-Kasus terakhir sebelum kustom itu yang paling mudah salah diimplementasikan. Pencocokan substring polos akan menandai "dilegalisir" sebagai klaim legal dan menolak jawaban yang sah — bot jadi menolak hal-hal wajar dan pemilik bisnis kehilangan kepercayaan.
+Dua kelompok kasus itu menarik batas dari arah berlawanan, dan **keduanya wajib lulus bersamaan** — itulah yang menentukan bentuk regex-nya.
+
+Kelompok pertama menuntut penjaga **di depan** topik: pencocokan substring polos akan menandai "dilegalisir" sebagai klaim legal dan menolak jawaban yang sah, sehingga bot menolak hal-hal wajar.
+
+Kelompok kedua melarang penjaga **di belakang**. Dalam bahasa Indonesia sufiks `-nya` menempel langsung ke kata, dan *"harganya berapa?"* kemungkinan cara paling umum pelanggan menanyakan harga. Batas kata di belakang akan melewatkannya — dan konsekuensinya persis kegagalan yang guardrail ini ada untuk mencegah: model menjawab harga dengan label `general`, detektor diam, jawaban tanpa sitasi terkirim ke pelanggan.
+
+Asimetri inilah yang menyelesaikan pilihannya. Untuk sebuah guardrail, **memicu berlebih itu aman** — paling buruk bot meminta sumber untuk kalimat yang tidak memerlukannya. **Kurang memicu tidak aman** — klaim bisnis tanpa sumber lolos ke pelanggan. Jadi ketika ragu, condongkan ke arah mendeteksi.
 
 - [ ] **Step 2: Jalankan test untuk memastikan gagal**
 
@@ -1043,21 +1059,31 @@ function escapeRegex(s: string): string {
 }
 
 /**
- * Mengembalikan topik berisiko tinggi yang muncul di `text` sebagai kata utuh.
- * Pencocokan berbasis batas kata, bukan substring, supaya "dilegalisir" tidak
- * terdeteksi sebagai "legal".
+ * Mengembalikan topik berisiko tinggi yang muncul di `text` sebagai AWAL kata.
+ *
+ * Penjaga hanya dipasang di DEPAN topik, bukan di belakang. Itu disengaja:
+ * - di depan  -> "dilegalisir", "ilegal", "menghargai" TIDAK terdeteksi, karena
+ *                topiknya didahului huruf lain;
+ * - di belakang (tidak ada) -> "harganya", "stoknya", "garansinya" TETAP
+ *                terdeteksi, dan dalam bahasa Indonesia bentuk bersufiks inilah
+ *                yang paling sering dipakai pelanggan.
+ *
+ * Konsekuensinya kata seperti "hargai" ikut terdeteksi. Itu diterima secara
+ * sadar: untuk guardrail, memicu berlebih hanya membuat bot meminta sumber untuk
+ * kalimat yang tak memerlukannya, sedangkan kurang memicu meloloskan klaim bisnis
+ * tanpa sumber ke pelanggan. Ketika ragu, condong ke arah mendeteksi.
  */
 export function detectHighRisk(text: string, topics: string[]): string[] {
   const found: string[] = []
   for (const topic of topics) {
-    const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegex(topic)}(?![\\p{L}\\p{N}])`, "iu")
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegex(topic)}`, "iu")
     if (re.test(text)) found.push(topic)
   }
   return found
 }
 ```
 
-Lookbehind dan lookahead memakai kelas Unicode `\p{L}\p{N}` alih-alih `\b`, karena `\b` di JavaScript berbasis ASCII dan berperilaku salah pada teks Indonesia berimbuhan maupun huruf beraksen.
+Lookbehind memakai kelas Unicode `\p{L}\p{N}` alih-alih `\b`, karena `\b` di JavaScript berbasis ASCII dan berperilaku salah pada huruf beraksen.
 
 - [ ] **Step 4: Jalankan test**
 
