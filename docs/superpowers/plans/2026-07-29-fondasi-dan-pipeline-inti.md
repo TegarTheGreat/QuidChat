@@ -150,12 +150,22 @@ import { defineConfig } from "vitest/config"
 export default defineConfig({
   test: {
     include: ["packages/*/src/**/*.test.ts"],
+    // Membangun Postgres WASM lalu menerapkan migrasi butuh sekitar 7 detik.
     testTimeout: 20_000,
+    // `hookTimeout` TIDAK mewarisi `testTimeout` — defaultnya tetap 10 detik.
+    // Test yang menyiapkan satu database bersama di `beforeAll` melampauinya
+    // (bangun + seed), dan gagalnya muncul sebagai "Hook timed out in 10000ms"
+    // yang tidak menyebut database sama sekali.
+    hookTimeout: 60_000,
   },
 })
 ```
 
-`testTimeout` dinaikkan dari default 5 detik karena test yang menyalakan PGlite perlu memuat WASM pada pemanggilan pertama.
+`testTimeout` dinaikkan dari default 5 detik karena test yang menyalakan PGlite perlu
+memuat WASM pada pemanggilan pertama. `hookTimeout` dinaikkan terpisah karena vitest
+**tidak** menurunkannya dari `testTimeout`: keduanya independen, dan `beforeAll` yang
+membangun database akan kehabisan waktu di 10 detik meski `testTimeout` 20 detik.
+Gejalanya menyesatkan — pesannya hanya "Hook timed out", tanpa menyebut database.
 
 - [ ] **Step 7: Install dan verifikasi**
 
