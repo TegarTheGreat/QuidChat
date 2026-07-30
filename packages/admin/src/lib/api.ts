@@ -74,6 +74,7 @@ export interface Tenant {
 
 export interface Settings {
   tenantSlug: string
+  answer_mode: "static" | "thrifty" | "full"
   chat_model: string
   rewrite_model: string
   embedding_model: string
@@ -170,6 +171,14 @@ export interface RoutingRule {
 
 // ---- Endpoints ------------------------------------------------------------
 
+export interface CannedAnswer {
+  id: string
+  question: string
+  answer: string
+  status: "draft" | "approved"
+  createdAt: string
+}
+
 export const api = {
   listTenants: () => request<Tenant[]>("/v1/admin/tenants"),
 
@@ -248,4 +257,32 @@ export const api = {
     method: "POST",
     body: JSON.stringify(body),
   }),
+
+  listCannedAnswers: (tenantSlug: string) =>
+    request<{ cannedAnswers: CannedAnswer[] }>(`/v1/admin/canned-answers${query({ tenantSlug })}`),
+
+  createCannedAnswer: (body: {
+    tenantSlug: string
+    question: string
+    answer: string
+    /** The panel sends `true`: a person typing the answer here IS the human review the
+     *  draft state exists to require. Other callers leave it off and get a draft. */
+    approved?: boolean
+  }) =>
+    request<{ cannedAnswer: CannedAnswer }>("/v1/admin/canned-answers", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  setCannedAnswerStatus: (body: { tenantSlug: string; id: string; approved: boolean }) =>
+    request<{ cannedAnswer: { id: string; status: string } }>("/v1/admin/canned-answers/status", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  deleteCannedAnswer: (body: { tenantSlug: string; id: string }) =>
+    request<{ ok: true }>("/v1/admin/canned-answers", {
+      method: "DELETE",
+      body: JSON.stringify(body),
+    }),
 }

@@ -182,6 +182,31 @@ export function SettingsDialog({
                   )}
                   {group === "answering" && (
                     <div className="space-y-4">
+                      <Field label="Answer mode">
+                        <select
+                          aria-label="Answer mode"
+                          className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                          value={draft.answer_mode}
+                          // A `<select>` hands back a plain string, and the setting is a
+                          // three-value union. Narrowing here keeps an impossible value from
+                          // reaching the API rather than discovering it as a 400.
+                          onChange={(e) => {
+                            const next = e.target.value
+                            if (next === "static" || next === "thrifty" || next === "full") {
+                              update("answer_mode", next)
+                            }
+                          }}
+                        >
+                          <option value="full">full — generate an answer from your documents</option>
+                          <option value="thrifty">thrifty — quote your documents, no generation</option>
+                          <option value="static">static — approved canned answers only, no model</option>
+                        </select>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          The one setting that changes what running this costs.{" "}
+                          <strong>static</strong> never calls a model, so it is free to run and
+                          can only say what someone approved.
+                        </p>
+                      </Field>
                       <Field label="Refusal text">
                         <Textarea
                           value={draft.refusal_text}

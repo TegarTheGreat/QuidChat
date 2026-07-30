@@ -149,9 +149,22 @@ Nothing reaches your customer unvalidated, which is why answers are not streamed
 ## Cost control
 
 - **A rate limit, not only a budget.** The budget bounds what a tenant spends in total and says nothing about how fast. Two token buckets guard every route — per visitor (10 in a burst, then one every four seconds) and per tenant (60, then two a second) — so a script with a valid slug cannot burn a month of budget in a minute. It is in-memory and therefore per process; the budget guard is the shared backstop, because that one lives in the database.
-- **Answer modes.** `full` generates. `thrifty` retrieves and quotes, without generation. `static` answers only from approved canned text and never calls the model at all.
+- **Answer modes.** `full` generates. `thrifty` retrieves and quotes, without generation. `static` answers only from approved canned text and never calls the model at all. Switch modes in **Settings → Answering**; it takes effect on the next question, with no restart and no redeploy.
 - **Prompt caching.** The prompt is ordered stable-to-volatile so the cacheable prefix stays byte-identical between questions. Retrieved context goes last, never into the system prompt.
 - **A real spend limit.** `monthly_budget_cents` is enforced *before* the provider is called, and every turn's real token usage is recorded — including refusals, which is where the expensive failures hide.
+
+## Running without AI at all
+
+Set the answer mode to `static` and QuidChat stops calling a model. Questions are matched against **canned answers** — exact text a person wrote — using full-text search plus trigram matching, so different wording and typos still match. It costs nothing to run and cannot invent anything, because there is nothing to invent from.
+
+Add them in **Canned answers** in the admin panel. Every row has a state:
+
+- **Draft** is invisible to matching. It is never sent to a customer.
+- **Live** is sent word for word.
+
+The two are separate on purpose. An answer typed into the panel is approved as it is saved, because the person typing it is the review; anything arriving another way — an import, a future AI suggestion — starts as a draft and stays silent until someone approves it. That is what makes `static` safe for price and warranty questions: every answer a customer can receive was read by a person first. Withdrawing is the same one click, because taking a wrong answer down has to be as easy as putting it up.
+
+A `static` tenant with no live answers refuses every question. That is deliberate — the alternative is making one up.
 
 ## Multi-tenant by construction
 
