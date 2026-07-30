@@ -1,7 +1,9 @@
 import type { AddressInfo } from "node:net"
+import type { Store } from "@quidchat/core"
 import { FakeProvider } from "@quidchat/core/testing"
 import {
-  chunks, documents, knowledgeSources, messages, tenants, tenantSettings, type QuidDb,
+  chunks, createStore, documents, escalations, knowledgeSources, messages, tenants,
+  tenantSettings, usageEvents, type QuidDb,
 } from "@quidchat/db"
 import { freshPglite } from "@quidchat/db/testing"
 import { eq } from "drizzle-orm"
@@ -11,15 +13,23 @@ import { createServer, type ServerDeps } from "./server.js"
 const ALLOWED_ORIGIN = "https://widget.example.test"
 const WARRANTY_TEXT = "Our warranty covers manufacturing defects for 12 months from the date of purchase."
 
-/** Seeds one tenant with a document, one chunk, and the given origin allowlist. */
+/** Seeds one tenant with a document, one chunk, and the given origin allowlist.
+ *  `monthlyBudgetCents` defaults to the column's own default (`0`, unlimited) when
+ *  omitted, so existing callers that don't care about the budget are unaffected. */
 async function seedTenant(
   db: QuidDb,
-  args: { slug: string; allowedOrigins: string[]; chunkText?: string },
+  args: {
+    slug: string
+    allowedOrigins: string[]
+    chunkText?: string
+    monthlyBudgetCents?: number
+  },
 ): Promise<string> {
   const [tenant] = await db.insert(tenants).values({ slug: args.slug, name: args.slug }).returning()
   await db.insert(tenantSettings).values({
     tenantId: tenant!.id,
     allowedOrigins: args.allowedOrigins,
+    ...(args.monthlyBudgetCents !== undefined ? { monthlyBudgetCents: args.monthlyBudgetCents } : {}),
   })
   const [source] = await db.insert(knowledgeSources)
     .values({ tenantId: tenant!.id, kind: "text", uri: "policy.txt", status: "ready" })
@@ -182,6 +192,58 @@ describe("chat endpoint", () => {
     expect(res.status).toBe(405)
   })
 
+  it("responds 503 without leaking internals, logs the failure, and records no escalation when the store fails", async () => {
+    // The cleanest way to force a genuine STORE failure: a real store, wired to the
+    // real database, with exactly one method replaced by one that throws. Every other
+    // method — getTenantConfig, recordUserTurn, recordAnswer, recordEscalation — still
+    // works, so nothing besides `searchChunks` is under test here.
+    const brokenStore: Store = {
+      ...createStore(db),
+      searchChunks() {
+        // A realistic internal failure: a connection string, a table name — exactly
+        // what must NEVER reach the visitor. Asserted below.
+        return Promise.reject(
+          new Error("connection to 10.0.4.12:5432 failed: relation \"chunks\" does not exist"),
+        )
+      },
+    }
+    const loggedHere: { message: string; cause: unknown }[] = []
+    const provider = new FakeProvider([{
+      segments: [{ kind: "general", text: "should never be reached" }],
+    }])
+    const server = createServer({
+      db, provider, store: brokenStore,
+      logError: (message, cause) => loggedHere.push({ message, cause }),
+    })
+    await new Promise<void>((resolve) => server.listen(0, resolve))
+    const port = (server.address() as AddressInfo).port
+    const url = `http://127.0.0.1:${port}`
+
+    try {
+      // A delta, not an absolute count: earlier tests in this file legitimately
+      // record `no_source` escalations, so "the table is empty" is the wrong
+      // assertion — "this request added nothing to it" is the right one.
+      const escalationsBefore = await db.select({ id: escalations.id }).from(escalations)
+
+      const res = await postChat(url, { tenantSlug: "shop", message: "warranty" }, {
+        origin: ALLOWED_ORIGIN,
+      })
+
+      expect(res.status).toBe(503)
+      const json = await res.json() as { error: string }
+      // Neutral and visitor-safe: no schema names, no connection strings, no query text.
+      expect(json.error).toBe("temporarily unavailable")
+      expect(json.error).not.toMatch(/10\.0\.4\.12|relation|chunks|connection/i)
+
+      expect(loggedHere.length).toBeGreaterThan(0)
+
+      const escalationsAfter = await db.select({ id: escalations.id }).from(escalations)
+      expect(escalationsAfter.length).toBe(escalationsBefore.length)
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
   it("creates a conversation on the first message and reuses it on the next", async () => {
     const [chunk] = await db.select({ id: chunks.id }).from(chunks)
       .where(eq(chunks.tenantId, shopTenantId))
@@ -225,6 +287,156 @@ describe("chat endpoint", () => {
       expect(transcript.filter((m) => m.role === "assistant").length).toBe(2)
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+})
+
+describe("budget enforcement", () => {
+  let db: QuidDb
+
+  let underTenantId: string
+  let overTenantId: string
+  let unlimitedTenantId: string
+  let accumulateTenantId: string
+
+  beforeAll(async () => {
+    db = await freshPglite()
+    underTenantId = await seedTenant(db, {
+      slug: "budget-under", allowedOrigins: [ALLOWED_ORIGIN], monthlyBudgetCents: 1_000,
+    })
+    overTenantId = await seedTenant(db, {
+      slug: "budget-over", allowedOrigins: [ALLOWED_ORIGIN], monthlyBudgetCents: 100,
+    })
+    unlimitedTenantId = await seedTenant(db, {
+      slug: "budget-unlimited", allowedOrigins: [ALLOWED_ORIGIN], monthlyBudgetCents: 0,
+    })
+    accumulateTenantId = await seedTenant(db, {
+      slug: "budget-accumulate", allowedOrigins: [ALLOWED_ORIGIN], monthlyBudgetCents: 1,
+    })
+
+    // Prior spend is inserted directly here, decoupling these two tenants from
+    // `recordUsage`'s cost estimate — only the pre-flight COMPARISON in chat.ts is
+    // under test for them. The accumulation test below exercises the real write path.
+    await db.insert(usageEvents).values({
+      tenantId: overTenantId, model: "claude-opus-5", inputTokens: 10, outputTokens: 10, costCents: 100,
+    })
+    await db.insert(usageEvents).values({
+      tenantId: unlimitedTenantId, model: "claude-opus-5", inputTokens: 10, outputTokens: 10, costCents: 999_999,
+    })
+  })
+
+  async function chunkIdFor(tenantId: string): Promise<string> {
+    const [chunk] = await db.select({ id: chunks.id }).from(chunks).where(eq(chunks.tenantId, tenantId))
+    return chunk!.id
+  }
+
+  async function startServer(provider: FakeProvider): Promise<{ url: string; close: () => Promise<void> }> {
+    const server = createServer({ db, provider, logError: () => {} })
+    await new Promise<void>((resolve) => server.listen(0, resolve))
+    const port = (server.address() as AddressInfo).port
+    return {
+      url: `http://127.0.0.1:${port}`,
+      close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    }
+  }
+
+  it("answers normally when this month's spend is under a non-zero budget", async () => {
+    const chunkId = await chunkIdFor(underTenantId)
+    const provider = new FakeProvider([{
+      segments: [{ kind: "business_claim", text: "Answered.", citations: [chunkId] }],
+    }])
+    const { url, close } = await startServer(provider)
+    try {
+      const res = await postChat(url, { tenantSlug: "budget-under", message: "warranty" }, {
+        origin: ALLOWED_ORIGIN,
+      })
+      expect(res.status).toBe(200)
+      const json = await res.json() as { kind: string }
+      expect(json.kind).toBe("answered")
+      expect(provider.calls.length).toBe(1)
+    } finally {
+      await close()
+    }
+  })
+
+  it("refuses with budget_exhausted and never calls the provider once spend has reached the budget", async () => {
+    const chunkId = await chunkIdFor(overTenantId)
+    const provider = new FakeProvider([{
+      segments: [{ kind: "business_claim", text: "Should never be produced.", citations: [chunkId] }],
+    }])
+    const { url, close } = await startServer(provider)
+    try {
+      const res = await postChat(url, { tenantSlug: "budget-over", message: "warranty" }, {
+        origin: ALLOWED_ORIGIN,
+      })
+      expect(res.status).toBe(200)
+      const json = await res.json() as { kind: string; reason: string }
+      expect(json.kind).toBe("refused")
+      expect(json.reason).toBe("budget_exhausted")
+      // The whole point: not embed, not complete — no provider call happened at all.
+      expect(provider.calls.length).toBe(0)
+      expect(provider.embedCalls.length).toBe(0)
+    } finally {
+      await close()
+    }
+  })
+
+  it("answers regardless of accumulated spend when the budget is zero (unlimited)", async () => {
+    const chunkId = await chunkIdFor(unlimitedTenantId)
+    const provider = new FakeProvider([{
+      segments: [{ kind: "business_claim", text: "Answered anyway.", citations: [chunkId] }],
+    }])
+    const { url, close } = await startServer(provider)
+    try {
+      const res = await postChat(url, { tenantSlug: "budget-unlimited", message: "warranty" }, {
+        origin: ALLOWED_ORIGIN,
+      })
+      expect(res.status).toBe(200)
+      const json = await res.json() as { kind: string }
+      expect(json.kind).toBe("answered")
+      expect(provider.calls.length).toBe(1)
+    } finally {
+      await close()
+    }
+  })
+
+  it("records usage after a successful answer, so accumulated spend can reach the budget on a later request", async () => {
+    const chunkId = await chunkIdFor(accumulateTenantId)
+    const provider = new FakeProvider([{
+      segments: [{
+        kind: "business_claim",
+        text: "The warranty covers manufacturing defects for 12 months.",
+        citations: [chunkId],
+      }],
+    }])
+    const { url, close } = await startServer(provider)
+    try {
+      const first = await postChat(url, { tenantSlug: "budget-accumulate", message: "warranty" }, {
+        origin: ALLOWED_ORIGIN,
+      })
+      expect(first.status).toBe(200)
+      const firstJson = await first.json() as { kind: string }
+      expect(firstJson.kind).toBe("answered")
+      expect(provider.calls.length).toBe(1)
+
+      const usageRows = await db.select({ costCents: usageEvents.costCents }).from(usageEvents)
+        .where(eq(usageEvents.tenantId, accumulateTenantId))
+      expect(usageRows.length).toBe(1)
+      expect(usageRows[0]!.costCents).toBeGreaterThan(0)
+
+      // The first answer's cost alone reached this tenant's one-cent budget, so a
+      // second request — same tenant, a brand-new conversation — must be refused
+      // without ever reaching the provider a second time.
+      const second = await postChat(url, { tenantSlug: "budget-accumulate", message: "anything else" }, {
+        origin: ALLOWED_ORIGIN,
+      })
+      expect(second.status).toBe(200)
+      const secondJson = await second.json() as { kind: string; reason: string }
+      expect(secondJson.kind).toBe("refused")
+      expect(secondJson.reason).toBe("budget_exhausted")
+      expect(provider.calls.length).toBe(1)
+    } finally {
+      await close()
     }
   })
 })

@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { answer, type Provider, type Store } from "@quidchat/core"
 import { withTenant, type QuidDb } from "@quidchat/db"
 import { sql } from "drizzle-orm"
+import { monthlyBudgetCents, recordUsage, spentThisMonthCents } from "./budget.js"
 import { lookupTenantBySlug } from "./tenant-lookup.js"
 
 /** Normalizes the `execute()` result, whose shape differs between drivers — see the
@@ -152,9 +153,26 @@ async function loadHistory(
  *    the only thing standing between a business's assistant and anyone who copies its
  *    public slug — see `originAllowed`.
  * 5. Create the conversation if `conversationId` is absent, inside `withTenant`.
- * 6. `answer()` with the stored transcript as history.
- * 7. Respond with the `PipelineResult` as JSON, plus the `conversationId` so the widget
+ * 6. The budget guard, BEFORE any provider call — see `budget.ts`. A tenant whose
+ *    spend has reached a non-zero `monthly_budget_cents` is refused right here, with
+ *    a recorded `budget_exhausted` escalation, and `answer()` (hence the provider) is
+ *    never reached. Checking after the call would mean the request that exceeds the
+ *    limit is the one that already paid for itself.
+ * 7. `answer()` with the stored transcript as history.
+ * 8. On a successful answer, record a `usage_events` row so the budget in step 6 can
+ *    ever actually be reached — see `recordUsage`.
+ * 9. Respond with the `PipelineResult` as JSON, plus the `conversationId` so the widget
  *    can send it back on the next turn.
+ *
+ * Everything from step 5 onward runs inside one try/catch. A STORE failure (a bug or
+ * an outage, not a provider failure — `answer()` already turns provider failures into
+ * a recorded refusal) is never allowed to reach the visitor as-is: it's logged to
+ * OPERATIONAL logs, answered with a neutral 503, and — this is the part worth stating
+ * plainly — NEVER recorded as an escalation. `escalations` is the signal a business
+ * owner reads to decide what knowledge to add; an unreachable database is not that
+ * signal, and recording it there would send them off rewriting content that was never
+ * the problem. See the doc comment on `answer()` in `@quidchat/core` for the full
+ * reasoning behind that split.
  */
 export async function handleChat(
   req: IncomingMessage,
@@ -202,6 +220,32 @@ export async function handleChat(
       deps.db, identity.tenantId, visitorId, chatRequest.conversationId,
     )
     const history = await loadHistory(deps.db, identity.tenantId, conversationId)
+
+    // The budget guard. `monthlyBudgetCents === 0` means unlimited — see budget.ts —
+    // so `spentThisMonthCents` is only even queried when there's a real limit to
+    // compare against, and the provider is never touched when the tenant is over it.
+    const budget = await monthlyBudgetCents(deps.db, identity.tenantId)
+    if (budget > 0 && (await spentThisMonthCents(deps.db, identity.tenantId)) >= budget) {
+      const config = await deps.store.getTenantConfig(identity.tenantId)
+      // Recorded the same way `answer()` records any other refusal, so a business
+      // owner reviewing the transcript sees the question that went unanswered,
+      // rather than a silent gap.
+      await deps.store.recordUserTurn({ tenantId: identity.tenantId, conversationId, text: chatRequest.message })
+      await deps.store.recordEscalation({
+        tenantId: identity.tenantId, conversationId, reason: "budget_exhausted",
+      })
+      await deps.store.recordAnswer({
+        tenantId: identity.tenantId,
+        conversationId,
+        segments: [{ kind: "general", text: config.refusalText }],
+        citedChunkIds: [],
+      })
+      sendJson(res, 200, {
+        conversationId, kind: "refused", text: config.refusalText, reason: "budget_exhausted",
+      })
+      return
+    }
+
     const result = await answer({
       store: deps.store,
       provider: deps.provider,
@@ -210,6 +254,16 @@ export async function handleChat(
       history,
       question: chatRequest.message,
     })
+
+    if (result.kind === "answered") {
+      const config = await deps.store.getTenantConfig(identity.tenantId)
+      const inputText = [...history.map((h) => h.content), chatRequest.message].join(" ")
+      const outputText = result.segments.map((s) => s.text).join(" ")
+      await recordUsage(deps.db, {
+        tenantId: identity.tenantId, model: config.chatModel, inputText, outputText,
+      })
+    }
+
     sendJson(res, 200, { conversationId, ...result })
   } catch (e) {
     // A STORE failure, not a provider failure — `answer()` already caught and
