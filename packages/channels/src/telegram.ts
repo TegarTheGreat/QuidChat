@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto"
 import { renderForChannel, type ChannelAdapter, type IncomingMessage } from "./types.js"
 
 /**
@@ -79,7 +80,15 @@ export function telegramAdapter(opts: {
       if (!opts.secretToken) return true
       const header = headers["x-telegram-bot-api-secret-token"]
       const value = Array.isArray(header) ? header[0] : header
-      return value === opts.secretToken
+      if (typeof value !== "string") return false
+      // Constant time, like the WhatsApp and Discord adapters. `===` on strings stops at the
+      // first differing byte, which makes the time it takes a function of how much of the secret
+      // the caller already has — and this secret is all that stands between a stranger and a
+      // business's conversation history.
+      const presented = Buffer.from(value)
+      const expected = Buffer.from(opts.secretToken)
+      if (presented.length !== expected.length) return false
+      return timingSafeEqual(presented, expected)
     },
   }
 }
