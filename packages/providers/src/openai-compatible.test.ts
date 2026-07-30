@@ -20,16 +20,16 @@ function fakeFetch(reply: { status?: number; json?: unknown; body?: string }) {
 }
 
 const prompt = {
-  system: "kamu asisten",
-  history: [{ role: "user" as const, content: "halo" }],
-  currentTurn: "<konteks>[k1] isi</konteks>\nPertanyaan pelanggan: garansi?",
+  system: "you are an assistant",
+  history: [{ role: "user" as const, content: "hello" }],
+  currentTurn: "<context>[k1] content</context>\nCustomer question: warranty?",
 }
 
 const validAnswer = {
   choices: [{
     message: {
       content: JSON.stringify({
-        segments: [{ text: "Garansi 12 bulan.", kind: "business_claim", citations: ["k1"] }],
+        segments: [{ text: "Warranty is 12 months.", kind: "business_claim", citations: ["k1"] }],
       }),
     },
   }],
@@ -37,7 +37,7 @@ const validAnswer = {
 }
 
 describe("openAiCompatible", () => {
-  it("mengirim system, history, dan turn sekarang dalam urutan itu", async () => {
+  it("sends system, history and the current turn in that order", async () => {
     const { impl, records } = fakeFetch({ json: validAnswer })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
     await p.complete({ model: "m", prompt })
@@ -49,12 +49,12 @@ describe("openAiCompatible", () => {
     // the cache on every message with no error at all — exactly the regression that
     // mandatory test #3 in packages/core guards against.
     expect(messages.map((m) => m.role)).toEqual(["system", "user", "user"])
-    expect(messages[0]!.content).toBe("kamu asisten")
-    expect(messages[1]!.content).toBe("halo")
-    expect(messages[2]!.content).toContain("Pertanyaan pelanggan: garansi?")
+    expect(messages[0]!.content).toBe("you are an assistant")
+    expect(messages[1]!.content).toBe("hello")
+    expect(messages[2]!.content).toContain("Customer question: warranty?")
   })
 
-  it("mengurai jawaban terstruktur dan melaporkan pemakaian token", async () => {
+  it("parses the structured answer and reports token usage", async () => {
     const { impl } = fakeFetch({ json: validAnswer })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
     const result = await p.complete({ model: "m", prompt })
@@ -63,14 +63,14 @@ describe("openAiCompatible", () => {
     expect(result.usage.outputTokens).toBe(20)
   })
 
-  it("membawa kunci di header Authorization", async () => {
+  it("carries the key in the Authorization header", async () => {
     const { impl, records } = fakeFetch({ json: validAnswer })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "secret", fetchImpl: impl })
     await p.complete({ model: "m", prompt })
     expect(records[0]!.headers.Authorization).toBe("Bearer secret")
   })
 
-  it("memetakan status HTTP ke sebab ProviderError yang benar", async () => {
+  it("maps HTTP status to the right ProviderError cause", async () => {
     const cases: [number, string][] = [
       [401, "auth"], [403, "auth"], [404, "unknown_model"],
       [429, "rate_limit"], [500, "unavailable"], [503, "unavailable"],
@@ -85,7 +85,7 @@ describe("openAiCompatible", () => {
     }
   })
 
-  it("balasan yang bukan JSON menjadi sebab `schema`, bukan `unavailable`", async () => {
+  it("a non-JSON response becomes cause `schema`, not `unavailable`", async () => {
     // The distinction matters: `schema` records `schema_invalid` in escalations, and
     // that IS the correct signal that the model failed to comply with the format.
     // `unavailable` records something else.
@@ -96,7 +96,7 @@ describe("openAiCompatible", () => {
     })
   })
 
-  it("menolak JSON yang bentuknya bukan Answer", async () => {
+  it("rejects JSON whose shape is not an Answer", async () => {
     const { impl } = fakeFetch({
       json: { choices: [{ message: { content: JSON.stringify({ not: "segments" }) } }] },
     })
@@ -106,22 +106,22 @@ describe("openAiCompatible", () => {
     })
   })
 
-  it("embed mengembalikan vektor dari endpoint embeddings", async () => {
+  it("embed returns a vector from the embeddings endpoint", async () => {
     const { impl, records } = fakeFetch({ json: { data: [{ embedding: [0.1, 0.2, 0.3] }] } })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
-    const v = await p.embed({ model: "e", text: "halo" })
+    const v = await p.embed({ model: "e", text: "hello" })
     expect(v).toEqual([0.1, 0.2, 0.3])
     expect(records[0]!.url).toBe("https://example.test/v1/embeddings")
   })
 
-  it("generateText mengembalikan teks apa adanya, tanpa mengurai JSON", async () => {
-    const { impl } = fakeFetch({ json: { choices: [{ message: { content: "garansi berapa bulan" } }] } })
+  it("generateText returns the text verbatim, without parsing JSON", async () => {
+    const { impl } = fakeFetch({ json: { choices: [{ message: { content: "how many months is the warranty" } }] } })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
-    const t = await p.generateText({ model: "m", system: "tulis ulang", user: "garansi?" })
-    expect(t).toBe("garansi berapa bulan")
+    const t = await p.generateText({ model: "m", system: "rewrite", user: "warranty?" })
+    expect(t).toBe("how many months is the warranty")
   })
 
-  it("baseUrl bergaris miring di ujung tidak menghasilkan URL berganda", async () => {
+  it("a trailing slash on baseUrl does not produce a doubled URL", async () => {
     const { impl, records } = fakeFetch({ json: validAnswer })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1/", apiKey: "k", fetchImpl: impl })
     await p.complete({ model: "m", prompt })

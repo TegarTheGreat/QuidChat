@@ -65,7 +65,7 @@ export function anthropic(opts: {
       })
     } catch (cause) {
       // Dead network, DNS failure, timeout. Not the model's fault.
-      throw new ProviderError("unavailable", `tidak bisa menghubungi ${id}`, { cause })
+      throw new ProviderError("unavailable", `could not reach ${id}`, { cause })
     }
     if (!res.ok) {
       throw new ProviderError(
@@ -96,13 +96,13 @@ export function anthropic(opts: {
       const content = j.content as { type?: string; text?: unknown }[] | undefined
       const text = content?.[0]?.text
       if (typeof text !== "string") {
-        throw new ProviderError("schema", "balasan tanpa teks di content[0].text")
+        throw new ProviderError("schema", "response has no text at content[0].text")
       }
       let parsed: unknown
       try {
         parsed = JSON.parse(text)
       } catch (cause) {
-        throw new ProviderError("schema", "balasan model bukan JSON yang sah", { cause })
+        throw new ProviderError("schema", "the model's response is not valid JSON", { cause })
       }
       const usage = (j.usage ?? {}) as Record<string, number | undefined>
       return {
@@ -125,7 +125,7 @@ export function anthropic(opts: {
       const content = j.content as { type?: string; text?: unknown }[] | undefined
       const text = content?.[0]?.text
       if (typeof text !== "string") {
-        throw new ProviderError("schema", "balasan tanpa teks di content[0].text")
+        throw new ProviderError("schema", "response has no text at content[0].text")
       }
       return text
     },
@@ -135,7 +135,7 @@ export function anthropic(opts: {
       // pair this provider with another one's embeddings via composite().
       throw new ProviderError(
         "unknown_model",
-        "Anthropic tidak punya endpoint embeddings; pasangkan dengan embeddings provider lain lewat composite()",
+        "Anthropic has no embeddings endpoint; pair it with another provider's embeddings using composite()",
       )
     },
 

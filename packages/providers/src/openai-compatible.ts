@@ -28,14 +28,14 @@ function messagesFrom(prompt: PromptParts) {
 export function asAnswer(value: unknown): Answer {
   const o = value as { segments?: unknown }
   if (!Array.isArray(o.segments)) {
-    throw new ProviderError("schema", "balasan tidak punya array `segments`")
+    throw new ProviderError("schema", "response has no `segments` array")
   }
   for (const s of o.segments as { kind?: unknown; text?: unknown; citations?: unknown }[]) {
     if (typeof s.text !== "string") {
-      throw new ProviderError("schema", "sebuah segmen tidak punya `text` bertipe string")
+      throw new ProviderError("schema", "a segment has no `text` of type string")
     }
     if (s.kind !== "general" && s.kind !== "business_claim") {
-      throw new ProviderError("schema", `kind segmen tidak dikenal: ${String(s.kind)}`)
+      throw new ProviderError("schema", `unknown segment kind: ${String(s.kind)}`)
     }
     if (s.kind === "business_claim" && !Array.isArray(s.citations)) {
       throw new ProviderError("schema", "business_claim tanpa array `citations`")
@@ -74,7 +74,7 @@ export function openAiCompatible(opts: {
       })
     } catch (cause) {
       // Dead network, DNS failure, timeout. Not the model's fault.
-      throw new ProviderError("unavailable", `tidak bisa menghubungi ${opts.id}`, { cause })
+      throw new ProviderError("unavailable", `could not reach ${opts.id}`, { cause })
     }
     if (!res.ok) {
       throw new ProviderError(
@@ -98,13 +98,13 @@ export function openAiCompatible(opts: {
       const choice = (j.choices as { message?: { content?: unknown } }[] | undefined)?.[0]
       const text = choice?.message?.content
       if (typeof text !== "string") {
-        throw new ProviderError("schema", "balasan tanpa teks di choices[0].message.content")
+        throw new ProviderError("schema", "response has no text at choices[0].message.content")
       }
       let parsed: unknown
       try {
         parsed = JSON.parse(text)
       } catch (cause) {
-        throw new ProviderError("schema", "balasan model bukan JSON yang sah", { cause })
+        throw new ProviderError("schema", "the model's response is not valid JSON", { cause })
       }
       const usage = (j.usage ?? {}) as Record<string, number | undefined>
       return {
@@ -130,7 +130,7 @@ export function openAiCompatible(opts: {
       const choice = (j.choices as { message?: { content?: unknown } }[] | undefined)?.[0]
       const text = choice?.message?.content
       if (typeof text !== "string") {
-        throw new ProviderError("schema", "balasan tanpa teks")
+        throw new ProviderError("schema", "response has no text")
       }
       return text
     },
@@ -139,7 +139,7 @@ export function openAiCompatible(opts: {
       const j = await call("/embeddings", { model, input: text })
       const data = (j.data as { embedding?: unknown }[] | undefined)?.[0]
       if (!Array.isArray(data?.embedding)) {
-        throw new ProviderError("schema", "balasan embeddings tanpa array `embedding`")
+        throw new ProviderError("schema", "embeddings response has no `embedding` array")
       }
       return data.embedding as number[]
     },
