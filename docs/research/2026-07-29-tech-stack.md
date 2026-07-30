@@ -1,90 +1,90 @@
-# Riset Tech Stack QuidChat
+# QuidChat Tech Stack Research
 
-**Tanggal:** 2026-07-29
-**Status:** Riset selesai — menunggu keputusan arsitektur
-**Target pengguna:** beginner → enthusiast → perusahaan. Wajib solid untuk produksi, mudah dipakai, universal.
-
----
-
-## 1. Metodologi
-
-Semua angka bintang, bahasa, dan lisensi diambil langsung dari **GitHub API** (`api.github.com/repos/...`), bukan dari artikel blog. Tech stack diverifikasi dari `package.json` / `pyproject.toml` asli di branch default masing-masing repo. Beberapa hasil pencarian awal berisi halaman SEO buatan AI dengan klaim yang tidak akurat — semua klaim di dokumen ini punya sumber primer.
-
-Yang **tidak** diverifikasi langsung dan ditandai sebagai perkiraan: performa vector database (dari benchmark pihak ketiga) dan tren adopsi bahasa.
+**Date:** 2026-07-29
+**Status:** Research complete — awaiting architecture decisions
+**Target users:** beginner → enthusiast → enterprise. Must be solid for production, easy to use, and universal.
 
 ---
 
-## 2. Lanskap proyek pembanding
+## 1. Methodology
 
-| Proyek | Bahasa | Bintang | Lisensi | Dibuat | Kategori |
+Every star count, language, and license is pulled directly from the **GitHub API** (`api.github.com/repos/...`), not from blog posts. The tech stack is verified from the actual `package.json` / `pyproject.toml` on each repo's default branch. Some early search results turned up AI-generated SEO pages with inaccurate claims — every claim in this document has a primary source.
+
+**Not** verified directly, and flagged as estimates: vector database performance (from third-party benchmarks) and language adoption trends.
+
+---
+
+## 2. Landscape of comparison projects
+
+| Project | Language | Stars | License | Created | Category |
 |---|---|---:|---|---|---|
-| [openclaw/openclaw](https://github.com/openclaw/openclaw) | TypeScript | 384.486 | MIT | 2025-11 | Personal AI assistant / multi-channel gateway |
-| [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) | Python | 222.299 | MIT | 2025-07 | Self-improving agent, persistent memory |
-| [paperclipai/paperclip](https://github.com/paperclipai/paperclip) | TypeScript | 75.090 | MIT | 2026-03 | Orkestrator tim agent |
-| [666ghj/MiroFish](https://github.com/666ghj/MiroFish) | Python | 69.680 | **AGPL-3.0** | 2025-11 | Swarm simulation / prediction engine |
+| [openclaw/openclaw](https://github.com/openclaw/openclaw) | TypeScript | 384,486 | MIT | 2025-11 | Personal AI assistant / multi-channel gateway |
+| [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) | Python | 222,299 | MIT | 2025-07 | Self-improving agent, persistent memory |
+| [paperclipai/paperclip](https://github.com/paperclipai/paperclip) | TypeScript | 75,090 | MIT | 2026-03 | Agent team orchestrator |
+| [666ghj/MiroFish](https://github.com/666ghj/MiroFish) | Python | 69,680 | **AGPL-3.0** | 2025-11 | Swarm simulation / prediction engine |
 | [opencode](https://opencode.ai) (`sst/opencode`) | TypeScript | — | MIT | 2025 | Coding agent (TUI + desktop) |
-| [camel-ai/oasis](https://github.com/camel-ai/oasis) | Python | 4.972 | Apache-2.0 | 2024-11 | Engine simulasi di bawah MiroFish |
-| 9Router | JavaScript | ~24rb | — | 2026 | LLM router, OpenAI-compatible API |
+| [camel-ai/oasis](https://github.com/camel-ai/oasis) | Python | 4,972 | Apache-2.0 | 2024-11 | Simulation engine underneath MiroFish |
+| 9Router | JavaScript | ~24k | — | 2026 | LLM router, OpenAI-compatible API |
 
-**Catatan penting soal `opencode`:** ada dua repo dengan nama sama. `opencode-ai/opencode` (Go, 13.591 bintang) **sudah tidak aktif** — commit terakhir 2025-09-18. Yang aktif adalah `sst/opencode` (TypeScript), yang URL API-nya sudah dipindah. Jangan sampai salah rujukan.
+**Important note on `opencode`:** there are two repos with the same name. `opencode-ai/opencode` (Go, 13,591 stars) is **no longer active** — last commit 2025-09-18. The active one is `sst/opencode` (TypeScript), whose API URL has already moved. Don't cite the wrong one.
 
-**Catatan lisensi:**
-- OpenClaw terbaca `NOASSERTION` di GitHub API, tapi file `LICENSE`-nya **MIT** (© OpenClaw Foundation) dan `package.json` menyatakan `"license": "MIT"`. Kemungkinan ada `THIRD_PARTY_NOTICES.md` yang membuat detektor lisensi GitHub ragu.
-- **MiroFish AGPL-3.0** — ini viral license. Kalau QuidChat mengambil kode dari MiroFish, QuidChat wajib AGPL juga. QuidChat sudah MIT, jadi **MiroFish hanya boleh jadi referensi ide, bukan sumber kode**.
+**License notes:**
+- OpenClaw shows as `NOASSERTION` in the GitHub API, but its `LICENSE` file is **MIT** (© OpenClaw Foundation) and `package.json` states `"license": "MIT"`. There's likely a `THIRD_PARTY_NOTICES.md` that confuses GitHub's license detector.
+- **MiroFish is AGPL-3.0** — this is a viral license. If QuidChat took code from MiroFish, QuidChat would have to become AGPL too. QuidChat is already MIT, so **MiroFish can only be a source of ideas to reference, never a source of code.**
 
 ---
 
-## 3. Tech stack yang terverifikasi
+## 3. Verified tech stacks
 
-### 3.1 OpenClaw — pembanding paling relevan (TypeScript, 384rb bintang)
+### 3.1 OpenClaw — the most relevant comparison (TypeScript, 384k stars)
 
-Dari `package.json` (versi `2026.7.2`, versioning berbasis tanggal):
+From `package.json` (version `2026.7.2`, date-based versioning):
 
-| Lapisan | Pilihan |
+| Layer | Choice |
 |---|---|
-| Runtime | Node.js `>=22.22.3` (juga menerima 24.x / 25.x) |
+| Runtime | Node.js `>=22.22.3` (also accepts 24.x / 25.x) |
 | Package manager | **pnpm 11** (workspace / monorepo) |
-| Query builder | **kysely** `0.29.4` — bukan ORM penuh |
-| Vector store | **`sqlite-vec` 0.1.9 (optionalDependency)** — tertanam, bukan server |
-| Protokol tool | `@modelcontextprotocol/sdk` (MCP) `1.30.0` |
-| Protokol klien | `@agentclientprotocol/sdk` (ACP) `1.3.0` |
-| LLM providers | SDK langsung per provider: `@anthropic-ai/sdk`, `openai`, `@google/genai`, `@mistralai/mistralai` |
+| Query builder | **kysely** `0.29.4` — not a full ORM |
+| Vector store | **`sqlite-vec` 0.1.9 (optionalDependency)** — embedded, not a server |
+| Tool protocol | `@modelcontextprotocol/sdk` (MCP) `1.30.0` |
+| Client protocol | `@agentclientprotocol/sdk` (ACP) `1.3.0` |
+| LLM providers | Direct per-provider SDKs: `@anthropic-ai/sdk`, `openai`, `@google/genai`, `@mistralai/mistralai` |
 | HTTP server | `express` 5.2.1 |
 | Channel | `grammy` (Telegram) + `@grammyjs/runner`, `@grammyjs/transformer-throttler` |
 | Scheduler | `croner` 10.0.1 |
-| Proses | `execa` 10, `@lydell/node-pty` |
-| UI | **Lit 3** (web components) + `vite` 8 + `shiki` (syntax highlight) |
-| Lint/format | **`oxlint` + `oxfmt`** (berbasis Rust, sangat cepat) |
+| Process | `execa` 10, `@lydell/node-pty` |
+| UI | **Lit 3** (web components) + `vite` 8 + `shiki` (syntax highlighting) |
+| Lint/format | **`oxlint` + `oxfmt`** (Rust-based, very fast) |
 | Test | `vitest` 4 + `playwright` |
 | Build | `tsdown`, `esbuild` |
-| Supply chain | **`sigstore` 5.0.0** (signing artifact rilis) |
+| Supply chain | **`sigstore` 5.0.0** (release artifact signing) |
 
-Arsitekturnya **plugin-first**: ada `plugin-sdk` dengan ratusan file `.d.ts` ter-ekspor, plus `schemaVersions: { state: 6, agent: 16 }` di `package.json` — artinya state dan konfigurasi agent punya **migrasi berversi**. Ini pola yang matang; framework yang menyimpan state agent tanpa versioning akan rusak saat upgrade.
+Its architecture is **plugin-first**: there's a `plugin-sdk` exporting hundreds of `.d.ts` files, plus `schemaVersions: { state: 6, agent: 16 }` in `package.json` — meaning agent state and config have **versioned migrations**. This is a mature pattern; a framework that stores agent state with no versioning will break on upgrade.
 
-### 3.2 Hermes Agent — pembanding Python (222rb bintang)
+### 3.2 Hermes Agent — the Python comparison (222k stars)
 
-Dari `pyproject.toml` (versi `0.19.0`):
+From `pyproject.toml` (version `0.19.0`):
 
-| Lapisan | Pilihan |
+| Layer | Choice |
 |---|---|
-| Runtime | Python `>=3.11,<3.14` (batas atas *load-bearing*, bukan kosmetik) |
-| Package manager | **`uv`** (Astral, berbasis Rust) |
-| Klien LLM inti | **`openai==2.24.0`** — dipakai sebagai klien universal |
-| Provider spesifik | `anthropic`, `firecrawl-py`, `exa-py`, `fal-client` → **extras, lazy-install** via `tools/lazy_deps.py` |
-| Validasi | `pydantic==2.13.4` |
+| Runtime | Python `>=3.11,<3.14` (the upper bound is *load-bearing*, not cosmetic) |
+| Package manager | **`uv`** (Astral, Rust-based) |
+| Core LLM client | **`openai==2.24.0`** — used as a universal client |
+| Provider-specific | `anthropic`, `firecrawl-py`, `exa-py`, `fal-client` → **extras, lazy-installed** via `tools/lazy_deps.py` |
+| Validation | `pydantic==2.13.4` |
 | HTTP | `httpx[socks]==0.28.1` |
 | CLI | `fire`, `rich`, `prompt_toolkit` |
 | Scheduler | `croniter==6.0.0` |
-| Storage | **SQLite + FTS5** (full-text search lintas sesi) |
-| Memory | integrasi **Honcho** (dialectic user modeling) |
+| Storage | **SQLite + FTS5** (cross-session full-text search) |
+| Memory | **Honcho** integration (dialectic user modeling) |
 
-**Dua pelajaran besar dari Hermes:**
+**Two big lessons from Hermes:**
 
-1. **Semua dependency di-pin persis (`==X.Y.Z`), tidak ada range.** Komentar di `pyproject.toml` menjelaskan alasannya: pada 2026-05-12 worm *Mini Shai-Hulud* menyerang `mistralai 2.4.6` di PyPI. Kalau versinya ditulis `mistralai>=2.3.0,<3`, setiap instalasi di jam-jam sebelum karantina akan menarik paket terinfeksi. Ini bukan paranoia teoretis — ini insiden nyata.
+1. **Every dependency is pinned to an exact version (`==X.Y.Z`), no ranges.** A comment in `pyproject.toml` explains why: on 2026-05-12 the *Mini Shai-Hulud* worm hit `mistralai 2.4.6` on PyPI. If the version had been written as `mistralai>=2.3.0,<3`, every install in the hours before quarantine would have pulled the infected package. This isn't theoretical paranoia — it's a real incident.
 
-2. **Aturan cakupan dependency:** *"hanya paket yang dipakai SETIAP sesi masuk `dependencies`."* Sisanya jadi extras yang di-install saat pengguna memilih backend itu. Dependency inti lebih kecil = *blast radius* lebih kecil saat serangan supply chain berikutnya.
+2. **Dependency-scoping rule:** *"only packages used in EVERY session go in `dependencies`."* Everything else becomes an extra installed only when the user selects that backend. A smaller core dependency set means a smaller blast radius for the next supply-chain attack.
 
-### 3.3 Paperclip — kunci jawaban untuk "beginner sampai perusahaan"
+### 3.3 Paperclip — the answer key for "beginner to enterprise"
 
 `packages/db/package.json`:
 
@@ -96,124 +96,124 @@ Dari `pyproject.toml` (versi `0.19.0`):
 }
 ```
 
-Ini pola yang menjawab persyaratan QuidChat secara langsung: **Postgres tertanam untuk pemula, Postgres asli untuk perusahaan, satu dialek dan satu skema untuk keduanya.** Pemula `npm install` lalu jalan — tanpa memasang server database. Perusahaan mengarahkan `DATABASE_URL` ke cluster Postgres mereka. Kode aplikasi tidak berubah sedikit pun.
+This pattern answers QuidChat's requirement directly: **embedded Postgres for beginners, real Postgres for enterprises, one dialect and one schema for both.** A beginner runs `npm install` and it just works — no database server to install. An enterprise points `DATABASE_URL` at their own Postgres cluster. The application code doesn't change at all.
 
-Paperclip juga punya `check:migrations` yang menjalankan `check-migration-numbering.ts` dan `check-migration-safety.ts` di setiap build — migrasi divalidasi otomatis, bukan diperiksa manual.
+Paperclip also has `check:migrations`, which runs `check-migration-numbering.ts` and `check-migration-safety.ts` on every build — migrations are validated automatically, not checked by hand.
 
-Sisanya: pnpm monorepo (`@paperclipai/server`, `/ui`, `/db`, `/plugin-sdk`, `/shared`), `tsx`, `vitest` 4, Playwright e2e, Storybook + visual regression, dan **`promptfoo`** untuk LLM eval.
+The rest: a pnpm monorepo (`@paperclipai/server`, `/ui`, `/db`, `/plugin-sdk`, `/shared`), `tsx`, `vitest` 4, Playwright e2e, Storybook + visual regression, and **`promptfoo`** for LLM evaluation.
 
-Yang paling menarik: `package.json` Paperclip punya script `smoke:openclaw-join`, `smoke:openclaw-docker-ui`, `smoke:hermes-gateway-e2e`. **Paperclip melakukan smoke test terhadap OpenClaw dan Hermes.** Artinya ekosistem 2026 sudah saling terhubung — Paperclip sebagai orkestrator, OpenClaw dan Hermes sebagai runtime, dengan MCP dan ACP sebagai protokol perantara.
-
----
-
-## 4. Pola yang konvergen
-
-Empat pola yang muncul di semua proyek besar, terlepas dari bahasa:
-
-1. **Loop agent ditulis sendiri, bukan pakai LangChain.** Tidak satu pun dari empat proyek terbesar memakai LangChain/LlamaIndex sebagai inti. OpenClaw bahkan memasarkan diri dengan *"No Python, no chains, no graphs."* Abstraksi framework generik terbukti jadi beban, bukan bantuan, untuk runtime chat.
-
-2. **Storage tertanam dulu, server kemudian.** OpenClaw: SQLite + `sqlite-vec`. Hermes: SQLite + FTS5. Paperclip: embedded Postgres → Postgres asli. Tidak ada yang mewajibkan pengguna memasang server database untuk mencoba.
-
-3. **Provider-agnostic dengan adapter, bukan lock-in.** Baik lewat SDK per provider (OpenClaw) maupun satu klien universal + lazy extras (Hermes).
-
-4. **MCP + ACP sebagai standar interop.** OpenClaw menyertakan keduanya sebagai dependency inti. Framework baru yang tidak bicara MCP akan terisolasi dari ekosistem tool yang sudah ada.
+The most interesting bit: Paperclip's `package.json` has scripts named `smoke:openclaw-join`, `smoke:openclaw-docker-ui`, `smoke:hermes-gateway-e2e`. **Paperclip runs smoke tests against OpenClaw and Hermes.** This means the 2026 ecosystem is already interconnected — Paperclip as the orchestrator, OpenClaw and Hermes as runtimes, with MCP and ACP as the protocols in between.
 
 ---
 
-## 5. Rekomendasi stack QuidChat
+## 4. Convergent patterns
 
-### 5.1 Bahasa: TypeScript (Node 22+, kompatibel Bun)
+Four patterns show up across all the major projects, regardless of language:
 
-**Alasan:**
+1. **The agent loop is hand-written, not built on LangChain.** None of the four biggest projects uses LangChain/LlamaIndex as its core. OpenClaw even markets itself with *"No Python, no chains, no graphs."* Generic framework abstractions turn out to be a burden, not a help, for a chat runtime.
 
-- Tiga proyek paling diadopsi di kategori persis ini (chat agent runtime) semuanya TypeScript: OpenClaw 384rb, Paperclip 75rb, opencode.
-- **Satu bahasa untuk semua permukaan** — runtime agent, CLI, web UI, dan browser. Ini yang bikin "universal" jadi nyata, bukan slogan. PGlite bahkan bisa jalan di browser, jadi demo QuidChat bisa hidup tanpa backend sama sekali.
-- **Jalur instalasi paling ramah pemula:** `npm i -g quidchat`. Python butuh urusan venv/uv/PATH yang sering menjatuhkan pemula di langkah pertama.
-- Tooling matang dan cepat: oxlint/oxfmt (Rust), vitest, tsdown.
+2. **Embedded storage first, a server later.** OpenClaw: SQLite + `sqlite-vec`. Hermes: SQLite + FTS5. Paperclip: embedded Postgres → real Postgres. None of them require the user to install a database server just to try the product.
 
-**Trade-off yang jujur:** Python punya ekosistem ML jauh lebih dalam, dan Hermes membuktikan Python sangat viable di kategori ini (222rb bintang). Tapi framework chat **tidak melatih model** — ia memanggil API embedding dan API LLM. Kalau nanti butuh kerja ML berat (fine-tuning reranker, embedding lokal), pola yang benar adalah **sidecar Python** yang dipanggil lewat HTTP, bukan menulis ulang seluruh runtime dalam Python.
+3. **Provider-agnostic via adapters, not lock-in.** Either through per-provider SDKs (OpenClaw) or a single universal client + lazy extras (Hermes).
 
-### 5.2 Penyimpanan: Postgres di semua tingkat
+4. **MCP + ACP as the interop standard.** OpenClaw includes both as core dependencies. A new framework that doesn't speak MCP will be isolated from the existing tool ecosystem.
 
-Ini keputusan paling penting di dokumen ini. **Satu skema, satu dialek, tiga tingkat deployment.**
+---
 
-| Tier | Target | Storage | Instalasi |
+## 5. QuidChat stack recommendation
+
+### 5.1 Language: TypeScript (Node 22+, Bun-compatible)
+
+**Reasons:**
+
+- The three most-adopted projects in exactly this category (chat agent runtime) are all TypeScript: OpenClaw 384k, Paperclip 75k, opencode.
+- **One language across every surface** — agent runtime, CLI, web UI, and browser. This is what makes "universal" real rather than a slogan. PGlite can even run in the browser, so a QuidChat demo can live with no backend at all.
+- **The friendliest install path for beginners:** `npm i -g quidchat`. Python's venv/uv/PATH concerns often trip up beginners at the very first step.
+- Mature, fast tooling: oxlint/oxfmt (Rust), vitest, tsdown.
+
+**Trade-off, stated honestly:** Python has a much deeper ML ecosystem, and Hermes proves Python is very viable in this category (222k stars). But a chat framework **doesn't train models** — it calls embedding APIs and LLM APIs. If heavy ML work is ever needed (fine-tuning a reranker, local embeddings), the right pattern is a **Python sidecar** called over HTTP, not rewriting the entire runtime in Python.
+
+### 5.2 Storage: Postgres at every tier
+
+This is the single most important decision in this document. **One schema, one dialect, three deployment tiers.**
+
+| Tier | Target | Storage | Install |
 |---|---|---|---|
-| **1 — Beginner** | Coba-coba, demo, browser | **PGlite** (`@electric-sql/pglite`) — Postgres WASM, <3MB gzip | `npm install`, nol konfigurasi |
-| **2 — Enthusiast** | Dev lokal serius, self-host kecil | **`embedded-postgres`** — binary Postgres asli, dikelola proses QuidChat | Otomatis saat pertama jalan |
-| **3 — Perusahaan** | Produksi, multi-tenant | Postgres apa pun (RDS / Neon / Supabase / self-host) + pgvector + AGE | `DATABASE_URL` |
+| **1 — Beginner** | Trying it out, demos, browser | **PGlite** (`@electric-sql/pglite`) — Postgres compiled to WASM, <3MB gzipped | `npm install`, zero configuration |
+| **2 — Enthusiast** | Serious local dev, small self-hosting | **`embedded-postgres`** — real Postgres binary, managed by the QuidChat process | Automatic on first run |
+| **3 — Enterprise** | Production, multi-tenant | Any Postgres (RDS / Neon / Supabase / self-hosted) + pgvector + AGE | `DATABASE_URL` |
 
-Semuanya bicara protokol wire Postgres yang sama. **Satu skema Drizzle, satu set migrasi, nol cabang kode per tier.**
+All three speak the same Postgres wire protocol. **One Drizzle schema, one migration set, zero code branches per tier.**
 
-**Yang membuat ini bekerja:** PGlite mendukung ekstensi yang kita butuhkan (terverifikasi dari [pglite.dev/extensions](https://pglite.dev/extensions/)):
+**What makes this work:** PGlite supports the extensions we need (verified from [pglite.dev/extensions](https://pglite.dev/extensions/)):
 
-| Ekstensi | Paket | Ukuran | Fungsi di QuidChat |
+| Extension | Package | Size | Role in QuidChat |
 |---|---|---|---|
-| pgvector | `@electric-sql/pglite-pgvector` | 42,9 KB | RAG — vector similarity search |
-| Apache AGE | `@electric-sql/pglite-age` | 138,2 KB | Graph — openCypher di atas Postgres |
+| pgvector | `@electric-sql/pglite-pgvector` | 42.9 KB | RAG — vector similarity search |
+| Apache AGE | `@electric-sql/pglite-age` | 138.2 KB | Graph — openCypher on top of Postgres |
 
-Jadi **satu database menampung empat lapisan sekaligus**: state percakapan (tabel biasa), RAG (pgvector), graph memory (AGE), dan pencarian keyword (Postgres FTS untuk hybrid search).
+So **a single database holds four layers at once**: conversation state (plain tables), RAG (pgvector), graph memory (AGE), and keyword search (Postgres FTS for hybrid search).
 
-**ORM: Drizzle** (`drizzle-orm` + `drizzle-kit`) — sama seperti Paperclip. TypeScript-native, migrasi berupa file SQL yang masuk repo (bisa direview di PR), tidak ada codegen ajaib. Alternatifnya Kysely (dipakai OpenClaw), tapi Drizzle menang karena migrasinya lebih rapi untuk proyek yang akan menerima kontribusi eksternal.
+**ORM: Drizzle** (`drizzle-orm` + `drizzle-kit`) — same as Paperclip. TypeScript-native, migrations are SQL files that land in the repo (reviewable in a PR), no magic codegen. The alternative is Kysely (used by OpenClaw), but Drizzle wins because its migrations are cleaner for a project that will take external contributions.
 
-**Batasan PGlite yang harus jujur disampaikan:** PGlite adalah *library*, bukan server — **satu koneksi, satu proses**. Cocok untuk single-user lokal, **tidak untuk produksi multi-user**. Ini justru alasan mengapa tiering-nya perlu ada, bukan cacat desain. Dokumentasi QuidChat harus menyatakan ini eksplisit supaya tidak ada yang mendeploy Tier 1 ke produksi.
+**PGlite's limits, stated honestly:** PGlite is a *library*, not a server — **one connection, one process.** Fine for single-user local use, **not for multi-user production.** This is exactly why the tiering needs to exist, not a design flaw. QuidChat's documentation must state this explicitly so no one deploys Tier 1 to production.
 
 ### 5.3 RAG: pgvector + Postgres FTS (hybrid)
 
-- **Index:** HNSW. Gunakan `halfvec` kalau dimensi embedding besar (menghemat ~50% storage).
-- **Hybrid search:** gabungkan pgvector (semantik) dengan Postgres full-text search (keyword) lalu rerank. Ini konsisten mengalahkan vector-only di praktik.
-- **Kapan pgvector cukup:** riset pihak ketiga konsisten menyebut pgvector adalah pilihan terbaik **di bawah ~5 juta vektor** dengan kebutuhan ACID; dengan HNSW dan tuning yang benar masih sanggup sampai puluhan juta vektor dengan P95 sub-100ms.
-- **Kapan tidak cukup:** filtering metadata yang kompleks dan berat. Benchmark pihak ketiga (EC2 g4dn.xlarge, 5 juta vektor 768-dim) menunjukkan Qdrant ~12ms p99 untuk filtered ANN vs pgvector ~34ms. **Angka ini dari blog, belum saya verifikasi ulang** — anggap sebagai indikasi arah, bukan fakta final.
+- **Index:** HNSW. Use `halfvec` when embedding dimensions are large (saves ~50% storage).
+- **Hybrid search:** combine pgvector (semantic) with Postgres full-text search (keyword), then rerank. This consistently beats vector-only in practice.
+- **When pgvector is enough:** third-party research consistently rates pgvector the best choice **under ~5 million vectors** with ACID requirements; with HNSW and proper tuning it still handles tens of millions of vectors at sub-100ms P95.
+- **When it isn't enough:** heavy, complex metadata filtering. A third-party benchmark (EC2 g4dn.xlarge, 5 million 768-dim vectors) shows Qdrant at ~12ms p99 for filtered ANN vs pgvector at ~34ms. **This number is from a blog and I haven't re-verified it** — treat it as directional, not final fact.
 
-**Konsekuensi desain:** bikin **`VectorStore` sebagai interface** dengan pgvector sebagai implementasi default, plus adapter Qdrant untuk yang butuh skala/filtering berat. Batas abstraksinya cukup tipis: `upsert`, `query`, `delete`, `createIndex`.
+**Design consequence:** build **`VectorStore` as an interface** with pgvector as the default implementation, plus a Qdrant adapter for anyone who needs heavier scale/filtering. The abstraction boundary is thin: `upsert`, `query`, `delete`, `createIndex`.
 
-Satu catatan penting dari riset: *"pilihan vector database jauh lebih tidak menentukan daripada yang orang kira — strategi chunking dan pipeline retrieval jauh lebih berpengaruh."* Jangan habiskan waktu berdebat vector DB; habiskan waktu pada chunking dan reranking.
+One important note from the research: *"vector database choice matters far less than people think — chunking strategy and the retrieval pipeline matter far more."* Don't spend time arguing about the vector DB; spend it on chunking and reranking.
 
-### 5.4 Graph: Apache AGE — lapisan paling berisiko
+### 5.4 Graph: Apache AGE — the riskiest layer
 
-**Rekomendasi: Apache AGE di Postgres yang sama, di belakang adapter.**
+**Recommendation: Apache AGE in the same Postgres instance, behind an adapter.**
 
-Keuntungannya besar: graph dan vector di satu transaksi, satu backup, satu koneksi. Tidak ada Neo4j terpisah untuk dioperasikan pemula.
+The upside is big: graph and vector in one transaction, one backup, one connection. No separate Neo4j for a beginner to run.
 
-**Tapi ini bagian dengan risiko tertinggi di seluruh stack, dan saya perlu menyatakannya terang-terangan:**
+**But this is the highest-risk part of the whole stack, and I need to say so plainly:**
 
-- Dukungan AGE terhadap versi Postgres secara historis **tertinggal** dari rilis Postgres. Ini berarti QuidChat bisa terkunci pada versi Postgres tertentu.
-- Build WASM AGE di PGlite relatif muda dibanding pgvector.
-- Kalau AGE bermasalah, alternatifnya: Neo4j (paling matang, tapi JVM — latency baseline lebih tinggi dan operasional lebih berat), atau Kuzu (embedded, cepat, tapi ekosistem lebih kecil).
+- AGE's support for Postgres versions has historically **lagged** behind Postgres releases. This means QuidChat could get locked to a specific Postgres version.
+- The WASM build of AGE for PGlite is relatively young compared to pgvector.
+- If AGE turns out to be a problem, the alternatives are: Neo4j (most mature, but JVM — higher baseline latency and heavier operationally), or Kuzu (embedded, fast, but a smaller ecosystem).
 
-**Karena itu: `GraphStore` wajib jadi interface dari hari pertama.** Ini satu-satunya lapisan di mana saya menyarankan abstraksi *sebelum* ada kebutuhan kedua, justru karena kemungkinan harus ditukar cukup nyata.
+**Because of this: `GraphStore` must be an interface from day one.** This is the only layer where I'm recommending abstraction *before* there's a second need for it, precisely because the odds of having to swap it out are genuinely real.
 
-**Klarifikasi yang harus diputuskan sebelum menulis kode:** "graph" punya dua arti yang sangat berbeda dan sering dicampur.
+**A clarification that must be settled before writing code:** "graph" has two very different meanings that often get conflated.
 
-| | Graph sebagai **orkestrator** | Graph sebagai **memory** |
+| | Graph as **orchestrator** | Graph as **memory** |
 |---|---|---|
-| Contoh | LangGraph | GraphRAG, Graphiti, Zep |
-| Isinya | node = langkah eksekusi | node = entitas, edge = relasi |
-| Butuh | state machine + persistence | database graph (AGE / Neo4j) |
-| Rekomendasi | **Kode TypeScript biasa + state machine.** Tidak perlu graph DB. | **AGE.** Di sinilah graph DB benar-benar diperlukan. |
+| Example | LangGraph | GraphRAG, Graphiti, Zep |
+| Contents | node = execution step | node = entity, edge = relationship |
+| Needs | state machine + persistence | a graph database (AGE / Neo4j) |
+| Recommendation | **Plain TypeScript code + a state machine.** No graph DB needed. | **AGE.** This is where a graph DB is genuinely needed. |
 
-Untuk orkestrasi, OpenClaw dan Paperclip sama-sama tidak memakai graph DB — cukup kode dan state berversi. Menaruh eksekusi loop di dalam graph DB menambah kompleksitas tanpa imbalan.
+For orchestration, both OpenClaw and Paperclip skip a graph DB entirely — plain code and versioned state is enough. Putting loop execution inside a graph DB adds complexity with no payoff.
 
-### 5.5 Lapisan LLM: merangkul semua provider, setup nol konfigurasi
+### 5.5 LLM layer: embrace every provider, zero-configuration setup
 
-**Target:** pengguna menjalankan `quidchat`, dan QuidChat langsung menemukan sendiri model apa saja yang tersedia di mesin itu — tanpa satu pun pertanyaan konfigurasi. Yang terasa "magic" bukan sihir, tapi **auto-deteksi kredensial + registry provider yang digerakkan data.**
+**Target:** the user runs `quidchat`, and QuidChat immediately discovers on its own which models are available on that machine — with zero configuration questions asked. What feels "magic" isn't sorcery, it's **credential auto-detection + a data-driven provider registry.**
 
-#### 5.5.1 Prinsip: dua adapter, bukan dua puluh
+#### 5.5.1 Principle: two adapters, not twenty
 
-Hampir seluruh ekosistem 2026 bicara **API yang OpenAI-compatible** — termasuk 9Router, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp, Groq, Together, DeepSeek, Cerebras, xAI, Fireworks. Jadi cakupan maksimum dicapai dengan **satu** adapter, bukan satu adapter per vendor.
+Almost the entire 2026 ecosystem speaks an **OpenAI-compatible API** — including 9Router, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp, Groq, Together, DeepSeek, Cerebras, xAI, Fireworks. So maximum coverage comes from **one** adapter, not one adapter per vendor.
 
-| Adapter | Cakupan | Implementasi |
+| Adapter | Coverage | Implementation |
 |---|---|---|
-| **`openai-compatible`** | ~90% ekosistem: semua router, semua server lokal, sebagian besar cloud | Satu klien HTTP + registry `baseURL` |
-| **`anthropic`** | Claude — fitur yang tidak ada padanannya di format OpenAI | `@anthropic-ai/sdk` |
+| **`openai-compatible`** | ~90% of the ecosystem: every router, every local server, most cloud providers | One HTTP client + a `baseURL` registry |
+| **`anthropic`** | Claude — features with no equivalent in the OpenAI format | `@anthropic-ai/sdk` |
 
-Anthropic dapat adapter sendiri karena beberapa fiturnya **tidak bisa diekspresikan** lewat shim OpenAI-compatible, dan justru fitur-fitur itu yang paling menentukan biaya dan kualitas loop agent: `thinking: {type: "adaptive"}`, `output_config.effort`, prompt caching dengan `cache_control` breakpoint, dan `task_budget`. Memaksakannya lewat shim akan kehilangan semuanya.
+Anthropic gets its own adapter because some of its features **can't be expressed** through an OpenAI-compatible shim, and those features are exactly the ones that most determine agent-loop cost and quality: `thinking: {type: "adaptive"}`, `output_config.effort`, prompt caching with `cache_control` breakpoints, and `task_budget`. Forcing them through a shim would lose all of it.
 
-> Provider lain yang punya fitur unik (Google `@google/genai`, Mistral) jadi **paket opsional** yang di-install saat dipilih — mengikuti aturan cakupan dependency Hermes. Dependency inti tetap kecil.
+> Other providers with unique features (Google `@google/genai`, Mistral) become **optional packages** installed only when selected — following Hermes's dependency-scoping rule. Core dependencies stay small.
 
-#### 5.5.2 Registry provider berbasis data, bukan kode
+#### 5.5.2 A data-driven provider registry, not code
 
-Jangan menulis satu file TypeScript per provider. Buat **registry deklaratif** — provider baru cukup satu entri data, tanpa menyentuh kode:
+Don't write one TypeScript file per provider. Build a **declarative registry** — a new provider is just one data entry, no code touched:
 
 ```jsonc
 {
@@ -222,64 +222,64 @@ Jangan menulis satu file TypeScript per provider. Buat **registry deklaratif** �
   "adapter": "openai-compatible",
   "baseURL": "https://api.9router.com/v1",
   "envKeys": ["NINEROUTER_API_KEY", "NINE_ROUTER_API_KEY"],
-  "modelsEndpoint": "/models",   // enumerasi model otomatis
+  "modelsEndpoint": "/models",   // automatic model enumeration
   "isRouter": true
 }
 ```
 
-`opencode` memakai pendekatan serupa (registry model eksternal), dan itulah kenapa ia bisa mendukung banyak provider tanpa membengkak. Registry ini bisa **di-bundle sebagai default + di-override oleh pengguna**, sehingga provider baru tidak perlu menunggu rilis QuidChat.
+`opencode` uses a similar approach (an external model registry), and that's exactly how it supports so many providers without bloating. This registry can be **bundled as a default and overridden by the user**, so new providers don't have to wait for a QuidChat release.
 
-#### 5.5.3 Tangga auto-deteksi kredensial
+#### 5.5.3 The credential auto-detection ladder
 
-Dijalankan sekali saat startup, berhenti di kecocokan pertama per provider:
+Run once at startup, stopping at the first match per provider:
 
-**Tingkat 1 — Environment variable.** Untuk setiap entri registry, cek `envKeys`-nya: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `NINEROUTER_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `DEEPSEEK_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`, `TOGETHER_API_KEY`, `CEREBRAS_API_KEY`, `OLLAMA_HOST`, dan seterusnya.
+**Tier 1 — Environment variable.** For every registry entry, check its `envKeys`: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `NINEROUTER_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `DEEPSEEK_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`, `TOGETHER_API_KEY`, `CEREBRAS_API_KEY`, `OLLAMA_HOST`, and so on.
 
-**Tingkat 2 — Sesi OAuth yang sudah ada.** Ini bagian yang paling terasa magic dan paling sering dilewatkan. Untuk Anthropic, urutan resolusi kredensial resmi adalah:
+**Tier 2 — Existing OAuth session.** This is the part that feels the most magic, and the one most often skipped. For Anthropic, the official credential resolution order is:
 
 ```
-ANTHROPIC_API_KEY → ANTHROPIC_AUTH_TOKEN → profil OAuth aktif (ant auth login)
-  → Workload Identity Federation → profil default di disk
+ANTHROPIC_API_KEY → ANTHROPIC_AUTH_TOKEN → active OAuth profile (ant auth login)
+  → Workload Identity Federation → default profile on disk
 ```
 
-Artinya: **pengguna yang sudah menjalankan `ant auth login` tidak perlu API key sama sekali.** Konstruktor `new Anthropic()` tanpa argumen otomatis membaca profil di `~/.config/anthropic/`. QuidChat cukup memanggil `ant auth status` untuk mendeteksi profil aktif, lalu diam dan bekerja.
+In other words: **a user who's already run `ant auth login` doesn't need an API key at all.** The `new Anthropic()` constructor with no arguments automatically reads the profile at `~/.config/anthropic/`. QuidChat just calls `ant auth status` to detect the active profile, then stays quiet and works.
 
-Jebakan yang wajib ditangani: **`ANTHROPIC_API_KEY` yang ter-export tapi basi akan menimpa setiap profil OAuth** — bahkan `ANTHROPIC_API_KEY=""` kosong masih menang di urutan prioritasnya. Kalau QuidChat mendeteksi keduanya ada, ia harus memperingatkan pengguna, bukan gagal misterius.
+Trap that must be handled: **a stale exported `ANTHROPIC_API_KEY` overrides every OAuth profile** — even an empty `ANTHROPIC_API_KEY=""` still wins in the priority order. If QuidChat detects both, it must warn the user, not fail mysteriously.
 
-**Tingkat 3 — Probe server lokal.** Cek port yang umum secara paralel dengan timeout pendek (~300ms):
+**Tier 3 — Local server probe.** Check common ports in parallel with a short timeout (~300ms):
 
-| Layanan | Port | Endpoint probe |
+| Service | Port | Probe endpoint |
 |---|---:|---|
 | Ollama | 11434 | `/api/tags` |
 | LM Studio | 1234 | `/v1/models` |
 | vLLM | 8000 | `/v1/models` |
 | llama.cpp server | 8080 | `/v1/models` |
-| Jan / lainnya | 1337 | `/v1/models` |
+| Jan / others | 1337 | `/v1/models` |
 
-Yang menjawab langsung tersedia — **tanpa API key, tanpa konfigurasi, tanpa biaya.** Ini jalur terbaik untuk tier beginner: seseorang dengan Ollama terpasang bisa memakai QuidChat gratis dalam hitungan detik.
+Whatever responds is immediately usable — **no API key, no configuration, no cost.** This is the best path for the beginner tier: someone with Ollama installed can use QuidChat for free within seconds.
 
-**Tingkat 4 — Impor dari konfigurasi tool lain.** Kalau pengguna sudah memakai OpenClaw, opencode, Hermes, atau Claude Code, kredensial dan preferensi model mereka sudah ada di disk. QuidChat **membaca (read-only) dan menawarkan impor**:
+**Tier 4 — Import from other tools' configuration.** If the user already uses OpenClaw, opencode, Hermes, or Claude Code, their credentials and model preferences already exist on disk. QuidChat **reads (read-only) and offers to import**:
 
 ```
 $ quidchat
-✓ Ollama terdeteksi di localhost:11434 (3 model)
-✓ Profil OAuth Anthropic aktif (ant auth login)
-✓ OpenClaw terdeteksi — impor 2 provider? [Y/n]
-✓ 9Router API key ditemukan di environment
+✓ Ollama detected at localhost:11434 (3 models)
+✓ Anthropic OAuth profile active (ant auth login)
+✓ OpenClaw detected — import 2 providers? [Y/n]
+✓ 9Router API key found in environment
 
-Siap. 4 provider, 47 model. Model default: claude-opus-5
+Ready. 4 providers, 47 models. Default model: claude-opus-5
 ```
 
-**Aturan keras untuk Tingkat 4:** baca saja, **jangan pernah menulis** ke konfigurasi tool lain, dan **jangan pernah menyalin secret ke konfigurasi QuidChat**. Simpan *rujukan* ke sumbernya (mis. "ambil dari env `OPENROUTER_API_KEY`"), bukan nilainya. Konfigurasi QuidChat harus aman kalau tidak sengaja ter-commit — dan `.gitignore` tetap melindunginya sebagai lapisan kedua.
+**Hard rule for Tier 4:** read only, **never write** to another tool's configuration, and **never copy secrets** into QuidChat's own configuration. Store a *reference* to the source (e.g. "read from env `OPENROUTER_API_KEY`"), not the value. QuidChat's configuration must be safe even if accidentally committed — and `.gitignore` still protects it as a second layer.
 
-#### 5.5.4 Kapabilitas ditanya, bukan ditebak
+#### 5.5.4 Capabilities are asked for, not guessed
 
-Jangan hardcode context window, harga, atau dukungan fitur — semuanya berubah tiap beberapa bulan dan hardcode akan basi secara senyap.
+Don't hardcode context window, pricing, or feature support — all of it changes every few months and hardcoding it goes stale silently.
 
-- **Anthropic:** panggil Models API (`client.models.retrieve(id)`) yang mengembalikan `max_input_tokens`, `max_tokens`, dan pohon `capabilities` dengan `supported: true/false` di setiap daun (thinking, effort, vision, structured outputs, dsb).
-- **OpenAI-compatible:** panggil `GET /v1/models` untuk enumerasi; kapabilitas di luar itu dideteksi lewat *probe* atau di-deklarasikan di registry.
+- **Anthropic:** call the Models API (`client.models.retrieve(id)`), which returns `max_input_tokens`, `max_tokens`, and a `capabilities` tree with `supported: true/false` at every leaf (thinking, effort, vision, structured outputs, etc.).
+- **OpenAI-compatible:** call `GET /v1/models` for enumeration; capabilities beyond that are detected via *probing* or declared in the registry.
 
-Interface `Provider` melaporkan hasilnya ke atas:
+The `Provider` interface reports the result upward:
 
 ```ts
 interface Provider {
@@ -297,134 +297,134 @@ interface Provider {
 }
 ```
 
-`minPrefixTokens` **wajib** datang dari sini, bukan konstanta: minimum prefix yang bisa di-cache **tidak monoton antar generasi model** — 512 token di Opus 5, 1024 di Opus 4.8/Sonnet 5, 4096 di Opus 4.6/Haiku 4.5. Prompt di bawah minimum **gagal di-cache tanpa error apa pun**; satu-satunya gejalanya adalah `cache_creation_input_tokens: 0`.
+`minPrefixTokens` **must** come from here, not a constant: the minimum cacheable prefix is **not monotonic across model generations** — 512 tokens on Opus 5, 1024 on Opus 4.8/Sonnet 5, 4096 on Opus 4.6/Haiku 4.5. A prompt below the minimum **fails to cache with no error at all**; the only symptom is `cache_creation_input_tokens: 0`.
 
-#### 5.5.5 Jangan bangun ulang routing — router adalah provider
+#### 5.5.5 Don't rebuild routing — a router is a provider
 
-9Router dan OpenRouter sudah menyelesaikan masalah routing lintas provider: auto-retry, fallback, dashboard biaya, satu API untuk ratusan model. **QuidChat tidak boleh menyainginya.** Perlakukan router sebagai provider biasa dengan flag `isRouter: true`, lalu QuidChat menambahkan lapisan yang tidak bisa dilakukan router:
+9Router and OpenRouter have already solved cross-provider routing: auto-retry, fallback, cost dashboards, one API for hundreds of models. **QuidChat must not compete with that.** Treat a router as an ordinary provider with an `isRouter: true` flag, then QuidChat adds the layer a router can't:
 
-| Lapisan | Pemilik |
+| Layer | Owner |
 |---|---|
-| Routing lintas provider, retry, dashboard biaya | **Router** (9Router / OpenRouter) |
-| Failover *lintas router* (kalau router itu sendiri mati) | **QuidChat** |
-| Degradasi ke model lokal saat offline | **QuidChat** |
-| Pemilihan model per-peran (chat / ringkasan / embed) | **QuidChat** |
-| Prompt caching yang benar per-provider | **QuidChat** |
+| Cross-provider routing, retry, cost dashboard | **Router** (9Router / OpenRouter) |
+| Failover *across routers* (if the router itself goes down) | **QuidChat** |
+| Degrading to a local model when offline | **QuidChat** |
+| Per-role model selection (chat / summarization / embed) | **QuidChat** |
+| Correct per-provider prompt caching | **QuidChat** |
 
-Failover ke model lokal saat offline adalah nilai jual nyata: QuidChat tetap hidup di pesawat atau saat API down.
+Failing over to a local model when offline is a genuine selling point: QuidChat stays alive on a plane or when an API is down.
 
 #### 5.5.6 Default model
 
-Default ke model terbaik yang tersedia, bukan yang termurah — hemat biaya adalah keputusan pengguna, bukan keputusan framework. Kalau kredensial Anthropic terdeteksi, default `claude-opus-5` (1M context, $5/$25 per MTok, 128K max output) dengan `thinking: {type: "adaptive"}` dan streaming untuk `max_tokens` besar.
+Default to the best model available, not the cheapest — saving money is the user's decision, not the framework's. If Anthropic credentials are detected, default to `claude-opus-5` (1M context, $5/$25 per MTok, 128K max output) with `thinking: {type: "adaptive"}` and streaming for large `max_tokens`.
 
-Satu jebakan spesifik Opus 5 yang harus ditangani di adapter: **thinking aktif secara default**, dan `max_tokens` membatasi *thinking + teks jawaban sekaligus*. Rute yang sebelumnya tidak pernah mengaktifkan thinking dan mengetatkan `max_tokens` akan terpotong di tengah jawaban. Jangan pernah lowball `max_tokens` — default ~16K untuk non-streaming, ~64K untuk streaming.
+One Opus-5-specific trap the adapter must handle: **thinking is on by default**, and `max_tokens` caps *thinking + answer text combined*. A route that previously never enabled thinking and set a tight `max_tokens` will get cut off mid-answer. Never lowball `max_tokens` — default ~16K for non-streaming, ~64K for streaming.
 
-### 5.6 Prompt caching — batasan yang harus membentuk arsitektur, bukan ditambal kemudian
+### 5.6 Prompt caching — a constraint that must shape the architecture, not get patched in later
 
-Ini temuan yang paling berdampak pada desain internal QuidChat, dan paling sering diabaikan framework agentic.
+This is the finding with the biggest impact on QuidChat's internal design, and the one most agentic frameworks overlook.
 
-Prompt cache adalah **prefix match**. Urutan render: `tools` → `system` → `messages`. **Satu byte berubah di posisi N membatalkan cache untuk semua yang setelah N.** Ekonominya: cache read ~0,1× harga input, cache write 1,25× (TTL 5 menit). Untuk loop agent yang mengirim ulang seluruh riwayat setiap iterasi, ini bukan optimasi kecil — ini perbedaan antara framework yang murah dan yang membakar uang.
+The prompt cache is a **prefix match**. Render order: `tools` → `system` → `messages`. **One byte changing at position N invalidates the cache for everything after N.** The economics: cache reads cost ~0.1× the input price, cache writes cost 1.25× (5-minute TTL). For an agent loop that resends the entire history every iteration, this isn't a minor optimization — it's the difference between a framework that's cheap and one that burns money.
 
-Aturan yang harus ditegakkan di lapisan prompt-builder QuidChat:
+Rules that must be enforced in QuidChat's prompt-builder layer:
 
-| Aturan | Kenapa |
+| Rule | Why |
 |---|---|
-| **System prompt harus beku** | Menyisipkan `new Date()` atau nama user ke system prompt membatalkan seluruh cache di belakangnya, setiap request |
-| **Tool set tidak boleh berubah di tengah percakapan** | `tools` dirender di posisi 0 — menambah/menghapus/mengurutkan ulang satu tool membatalkan *seluruh* cache |
-| **Serialisasi harus deterministik** | `JSON.stringify` atas objek dengan urutan key tidak stabil, atau iterasi `Set`, menghasilkan byte berbeda → cache miss senyap |
-| **Konteks dinamis masuk ke `messages`, bukan `system`** | Pesan di turn ke-5 tidak membatalkan apa pun sebelum turn ke-5 |
-| **Maksimal 4 breakpoint per request** | Batas API |
-| **Lookback hanya 20 content block** | **Ini jebakan spesifik loop agent:** satu turn dengan banyak pasangan `tool_use`/`tool_result` mudah melewati 20 block, lalu breakpoint berikutnya gagal menemukan cache sebelumnya dan miss secara senyap. Solusi: sisipkan breakpoint tiap ~15 block pada turn yang panjang. |
+| **The system prompt must be frozen** | Inserting `new Date()` or a user's name into the system prompt invalidates the entire cache behind it, on every request |
+| **The tool set must not change mid-conversation** | `tools` renders at position 0 — adding, removing, or reordering a single tool invalidates the *entire* cache |
+| **Serialization must be deterministic** | `JSON.stringify` over an object with unstable key order, or iterating a `Set`, produces different bytes → a silent cache miss |
+| **Dynamic context goes into `messages`, not `system`** | A message at turn 5 doesn't invalidate anything before turn 5 |
+| **Maximum 4 breakpoints per request** | API limit |
+| **Lookback is only 20 content blocks** | **This is a trap specific to agent loops:** one turn with many `tool_use`/`tool_result` pairs can easily exceed 20 blocks, so the next breakpoint fails to find the earlier cache and misses silently. Fix: insert a breakpoint roughly every ~15 blocks on long turns. |
 
-**Verifikasi wajib:** ekspos `usage.cache_read_input_tokens` di telemetri QuidChat. Kalau nilainya nol pada request berulang dengan prefix identik, ada *silent invalidator* — dan tanpa metrik ini tidak ada yang akan menyadarinya.
+**Mandatory verification:** expose `usage.cache_read_input_tokens` in QuidChat's telemetry. If it's zero on a repeated request with an identical prefix, there's a *silent invalidator* — and without this metric, no one will ever notice.
 
-Minimum prefix yang bisa di-cache **tidak monoton antar generasi model**: 512 token di Opus 5, 1024 di Opus 4.8/Sonnet 5, 4096 di Opus 4.6/Haiku 4.5. Jadi `capabilities()` di interface Provider perlu melaporkan angka ini, bukan di-hardcode.
+The minimum cacheable prefix is **not monotonic across model generations**: 512 tokens on Opus 5, 1024 on Opus 4.8/Sonnet 5, 4096 on Opus 4.6/Haiku 4.5. So the `Provider` interface's `capabilities()` needs to report this number, never hardcode it.
 
-### 5.7 Interop: MCP + ACP sejak awal
+### 5.7 Interop: MCP + ACP from the start
 
-- **MCP** (`@modelcontextprotocol/sdk`) — protokol tool. Ini yang memberi QuidChat akses ke ratusan tool yang sudah ada tanpa menulis satu integrasi pun. Non-negotiable.
-- **ACP** (`@agentclientprotocol/sdk`) — protokol klien. Memungkinkan QuidChat dipakai dari editor/klien lain. OpenClaw menyertakannya; Paperclip melakukan smoke test terhadapnya. Ini arah ekosistem.
+- **MCP** (`@modelcontextprotocol/sdk`) — the tool protocol. This is what gives QuidChat access to hundreds of existing tools without writing a single integration. Non-negotiable.
+- **ACP** (`@agentclientprotocol/sdk`) — the client protocol. Lets QuidChat be used from other editors/clients. OpenClaw includes it; Paperclip smoke-tests against it. This is the direction the ecosystem is heading.
 
-### 5.8 Dataset & evaluasi
+### 5.8 Dataset & evaluation
 
-"Dataset" untuk framework chat berarti **eval set**, bukan data training:
+"Dataset" for a chat framework means an **eval set**, not training data:
 
-- **`promptfoo`** — dipakai Paperclip (`evals:smoke`). Deklaratif, jalan di CI.
-- **Golden conversation set** — kumpulan percakapan berlabel di repo, jadi perubahan prompt bisa diukur, bukan dirasakan.
-- **Eval RAG terpisah**: recall@k dan MRR untuk retrieval, dinilai lepas dari kualitas generasi. Kalau dicampur, regresi retrieval akan tersembunyi di balik LLM yang menutupinya.
+- **`promptfoo`** — used by Paperclip (`evals:smoke`). Declarative, runs in CI.
+- **Golden conversation set** — a set of labeled conversations in the repo, so prompt changes can be measured rather than felt.
+- **Separate RAG eval**: recall@k and MRR for retrieval, scored apart from generation quality. If mixed together, a retrieval regression gets hidden behind an LLM that papers over it.
 
-### 5.9 Tooling & rilis
+### 5.9 Tooling & release
 
-| Kebutuhan | Pilihan | Sumber |
+| Need | Choice | Source |
 |---|---|---|
 | Monorepo | **pnpm workspaces** | OpenClaw + Paperclip |
-| Test | **vitest 4** | keduanya |
-| E2E | **Playwright** | keduanya |
-| Lint/format | **oxlint + oxfmt** | OpenClaw — berbasis Rust, jauh lebih cepat dari ESLint |
+| Test | **vitest 4** | both |
+| E2E | **Playwright** | both |
+| Lint/format | **oxlint + oxfmt** | OpenClaw — Rust-based, much faster than ESLint |
 | Build | **tsdown** | OpenClaw |
 | Dev runner | **tsx** | Paperclip |
-| Signing rilis | **sigstore** | OpenClaw |
-| Versioning | Pertimbangkan berbasis tanggal (`2026.7.2`) | OpenClaw |
+| Release signing | **sigstore** | OpenClaw |
+| Versioning | Consider date-based (`2026.7.2`) | OpenClaw |
 
-### 5.10 Keamanan supply chain — pelajaran mahal yang bisa dipinjam gratis
+### 5.10 Supply chain security — an expensive lesson available for free
 
-Dari komentar `pyproject.toml` Hermes, yang ditulis setelah insiden nyata:
+From Hermes's `pyproject.toml` comments, written after a real incident:
 
-1. **Pin dependency langsung ke versi persis.** Range membiarkan registry mengirim versi transitif baru tanpa review dari sisi kita.
-2. **Kecilkan dependency inti.** Apa pun yang spesifik per-provider jadi optional, di-install saat dipilih.
-3. **Commit lockfile** (`pnpm-lock.yaml`) dan gunakan `--frozen-lockfile` di CI.
-4. **Sign artifact rilis** dengan sigstore.
-5. **Aktifkan Dependabot/Renovate** dengan review manual — bukan auto-merge.
+1. **Pin dependencies to exact versions.** Ranges let the registry ship a new transitive version with no review on our side.
+2. **Keep core dependencies small.** Anything provider-specific becomes optional, installed only when selected.
+3. **Commit the lockfile** (`pnpm-lock.yaml`) and use `--frozen-lockfile` in CI.
+4. **Sign release artifacts** with sigstore.
+5. **Enable Dependabot/Renovate** with manual review — not auto-merge.
 
-Untuk framework opensource yang akan di-`npm install` oleh ribuan orang, ini bukan opsional. QuidChat adalah rantai pasok bagi penggunanya.
+For an open-source framework that thousands of people will `npm install`, this isn't optional. QuidChat is a supply chain for its users.
 
 ---
 
-## 6. Ringkasan rekomendasi
+## 6. Recommendation summary
 
-| Lapisan | Pilihan | Keyakinan |
+| Layer | Choice | Confidence |
 |---|---|---|
-| Bahasa | TypeScript, Node 22+ | **Tinggi** — 3 proyek terbesar di kategori ini semuanya TS |
-| Monorepo | pnpm workspaces | **Tinggi** — OpenClaw + Paperclip |
-| Database | Postgres di semua tier (PGlite → embedded-postgres → managed) | **Tinggi** — pola Paperclip, terbukti |
-| ORM | Drizzle | **Tinggi** |
-| RAG | pgvector + Postgres FTS, di belakang interface `VectorStore` | **Tinggi** |
-| Graph | Apache AGE, **wajib** di belakang interface `GraphStore` | **Sedang** — lapisan paling berisiko |
-| Loop agent | Kode sendiri, bukan LangChain | **Tinggi** — tidak ada proyek besar yang pakai |
-| LLM | 2 adapter (`openai-compatible` + `anthropic`) + registry provider deklaratif | **Tinggi** |
-| Setup provider | Auto-deteksi 4 tingkat: env → OAuth → probe lokal → impor konfigurasi tool lain | **Tinggi** |
-| Routing | Perlakukan 9Router/OpenRouter sebagai provider; QuidChat hanya tambah failover lintas router + fallback lokal | **Tinggi** |
-| Interop | MCP + ACP | **Tinggi** |
-| Eval | promptfoo + golden set | **Sedang** |
+| Language | TypeScript, Node 22+ | **High** — the 3 biggest projects in this category are all TS |
+| Monorepo | pnpm workspaces | **High** — OpenClaw + Paperclip |
+| Database | Postgres at every tier (PGlite → embedded-postgres → managed) | **High** — Paperclip's pattern, proven |
+| ORM | Drizzle | **High** |
+| RAG | pgvector + Postgres FTS, behind a `VectorStore` interface | **High** |
+| Graph | Apache AGE, **mandatory** behind a `GraphStore` interface | **Medium** — the riskiest layer |
+| Agent loop | Hand-written code, not LangChain | **High** — no major project uses it |
+| LLM | 2 adapters (`openai-compatible` + `anthropic`) + a declarative provider registry | **High** |
+| Provider setup | 4-tier auto-detection: env → OAuth → local probe → import from other tools' config | **High** |
+| Routing | Treat 9Router/OpenRouter as providers; QuidChat only adds cross-router failover + local fallback | **High** |
+| Interop | MCP + ACP | **High** |
+| Eval | promptfoo + golden set | **Medium** |
 
 ---
 
-## 7. Yang masih harus diputuskan (bukan hasil riset — butuh keputusan)
+## 7. What's still to be decided (not a research finding — needs a decision)
 
-1. **Graph: orkestrator atau memory?** Kalau keduanya, harus jadi dua subsistem terpisah dengan nama berbeda. Mencampurnya adalah kesalahan desain paling umum di framework agentic.
-2. **Siapa yang memegang state percakapan?** Menentukan apakah QuidChat bisa *resume*, *replay*, dan *observable*. OpenClaw memilih state berversi dengan migrasi (`schemaVersions`) — pola yang layak ditiru.
-3. **Bagaimana loop berhenti?** Batas iterasi, deteksi state tidak berubah, dan *token budget*. Ini yang membedakan framework produksi dari yang membakar token tanpa batas.
-4. **Bentuk plugin API.** OpenClaw meng-ekspor `plugin-sdk` besar; Paperclip punya `@paperclipai/plugin-sdk`. Permukaan API plugin adalah komitmen kompatibilitas jangka panjang — sekali dirilis, sulit diubah.
-5. **Channel mana yang didukung di v1?** OpenClaw mendukung Telegram/Discord/WhatsApp lewat `grammy` dkk. Menambah channel itu mudah; mendukung semuanya sejak awal itu jebakan cakupan.
+1. **Graph: orchestrator or memory?** If both, they need to be two separate subsystems with different names. Conflating them is the most common design mistake in agentic frameworks.
+2. **Who holds conversation state?** This determines whether QuidChat can *resume*, *replay*, and be *observable*. OpenClaw chose versioned state with migrations (`schemaVersions`) — a pattern worth copying.
+3. **How does the loop stop?** Iteration limits, unchanged-state detection, and *token budgets*. This is what separates a production framework from one that burns tokens without bound.
+4. **Shape of the plugin API.** OpenClaw exports a large `plugin-sdk`; Paperclip has `@paperclipai/plugin-sdk`. A plugin API surface is a long-term compatibility commitment — hard to change once released.
+5. **Which channels ship in v1?** OpenClaw supports Telegram/Discord/WhatsApp via `grammy` and friends. Adding one channel is easy; supporting all of them from day one is a scope trap.
 
 ---
 
-## 8. Sumber
+## 8. Sources
 
-Repositori (data via GitHub API, `package.json`/`pyproject.toml` via raw.githubusercontent.com):
+Repositories (data via GitHub API, `package.json`/`pyproject.toml` via raw.githubusercontent.com):
 - https://github.com/openclaw/openclaw
 - https://github.com/NousResearch/hermes-agent
 - https://github.com/paperclipai/paperclip
 - https://github.com/666ghj/MiroFish
 - https://github.com/camel-ai/oasis
-- https://github.com/opencode-ai/opencode (tidak aktif) · https://opencode.ai
+- https://github.com/opencode-ai/opencode (inactive) · https://opencode.ai
 
-Dokumentasi:
+Documentation:
 - https://pglite.dev/docs/about · https://pglite.dev/extensions/
 - https://github.com/pgvector/pgvector
 - https://github.com/electric-sql/pglite
 
-Perbandingan pihak ketiga (belum diverifikasi ulang — perlakukan sebagai indikasi):
+Third-party comparisons (not re-verified — treat as indicative):
 - https://4xxi.com/articles/vector-database-comparison/
 - https://callsphere.ai/blog/vector-database-benchmarks-2026-pgvector-qdrant-weaviate-milvus-lancedb
 - https://www.firecrawl.dev/blog/best-vector-databases
