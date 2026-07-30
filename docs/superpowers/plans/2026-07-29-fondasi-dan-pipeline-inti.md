@@ -1989,6 +1989,29 @@ describe("answer", () => {
     if (res.kind === "refused") expect(res.reason).toBe("ungrounded")
   })
 
+  it("meneruskan kegagalan getTenantConfig, tidak mengubahnya jadi penolakan", async () => {
+    const store = new MemoryStore([])
+    store.getTenantConfig = async () => {
+      throw new Error("settings tidak terbaca")
+    }
+    const provider = new FakeProvider([])
+    await expect(answer({ store, provider, ...ctx })).rejects.toThrow("settings tidak terbaca")
+    // Tidak ada eskalasi yang tercatat: kegagalan infrastruktur bukan sinyal bisnis.
+    expect(store.recordedEscalations).toEqual([])
+  })
+
+  it("meneruskan kegagalan searchChunks, tidak mengubahnya jadi penolakan", async () => {
+    const store = new MemoryStore([candidate])
+    store.searchChunks = async () => {
+      throw new Error("database tidak terjangkau")
+    }
+    const provider = new FakeProvider([])
+    await expect(answer({ store, provider, ...ctx })).rejects.toThrow("database tidak terjangkau")
+    expect(store.recordedEscalations).toEqual([])
+    // Embedding sudah terjadi sebelum store gagal — dinyatakan supaya batasnya jelas.
+    expect(provider.embedCalls).toHaveLength(1)
+  })
+
   it("menolak dengan schema_invalid saat provider melempar", async () => {
     const store = new MemoryStore([candidate])
     const provider: Provider = {
@@ -2032,6 +2055,29 @@ import type { EscalationReason, PipelineResult } from "./types.js"
 const MAX_ROUNDS = 2
 const CANDIDATE_LIMIT = 8
 
+/**
+ * Menjawab satu pertanyaan pelanggan, atau menolak.
+ *
+ * **Kontrak kegagalan — disengaja dan asimetris.**
+ *
+ * Kegagalan PROVIDER ditangkap dan menjadi penolakan yang tercatat. Alasannya:
+ * outage provider bersifat per-pesan, store-nya masih hidup jadi eskalasinya benar
+ * tersimpan, dan "kami kehilangan N percakapan karena provider down" memang informasi
+ * yang ingin dilihat pemilik bisnis.
+ *
+ * Kegagalan STORE TIDAK ditangkap — ia dilempar ke pemanggil. Tiga alasan:
+ *   1. Nilai `EscalationReason` adalah SINYAL BISNIS yang ditinjau tenant untuk
+ *      memperbaiki basis pengetahuannya. Database yang tidak terjangkau bukan sinyal
+ *      itu, dan mencatatnya akan mencemari metrik yang justru jadi dasar keputusan.
+ *   2. `recordEscalation` sendiri lewat store. Kalau store mati, pencatatan eskalasi
+ *      juga gagal — menelan error hanya mengubah satu kegagalan menjadi dua kegagalan
+ *      yang sunyi.
+ *   3. Lapisan server tetap WAJIB punya penangkap menyeluruh untuk bug dan OOM, jadi
+ *      di sinilah tempatnya, bukan di sini.
+ *
+ * Yang harus dilakukan lapisan server: tangkap, catat ke log operasional (bukan ke
+ * `escalations`), balas pengunjung dengan pesan sopan, dan kembalikan 503.
+ */
 export async function answer(args: {
   store: Store
   provider: Provider
@@ -2111,7 +2157,7 @@ export * from "./prompt/builder.js"
 - [ ] **Step 6: Jalankan seluruh test**
 
 Run: `pnpm test`
-Expected: PASS semua — **6 berkas test, 32 test** hijau (`tenant` 3, `high-risk` 7, `validator` 7, `builder` 6, `store` 4, `pipeline` 5). Jumlah ini dihitung dari berkas yang sudah ada, bukan diperkirakan; kalau totalmu berbeda, cari tahu berkas mana yang menyimpang sebelum melanjutkan.
+Expected: PASS semua — **6 berkas test, 34 test** hijau (`tenant` 3, `high-risk` 7, `validator` 7, `builder` 6, `store` 4, `pipeline` 7). Jumlah ini dihitung dari berkas yang sudah ada, bukan diperkirakan; kalau totalmu berbeda, cari tahu berkas mana yang menyimpang sebelum melanjutkan.
 
 - [ ] **Step 7: Verifikasi batas arsitektur ditegakkan**
 
