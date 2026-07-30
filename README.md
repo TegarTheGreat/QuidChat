@@ -195,6 +195,10 @@ Set one key. QuidChat finds it, tells you what it picked, and refuses to start i
 | LM Studio | — | `LMSTUDIO_BASE_URL` |
 | llama.cpp | — | `LLAMACPP_BASE_URL` |
 
+Each service is asked for a model it actually has — `llama-3.3-70b-versatile` on Groq, `deepseek-chat` on DeepSeek, `gpt-4o-mini` on OpenAI — written onto a tenant when it is created and changeable in the panel afterwards. Before this every tenant asked every provider for a Claude model, so most of the services listed above answered `unknown_model` to every question.
+
+When several keys are present the search order above decides, and `QUIDCHAT_CHAT_PROVIDER` / `QUIDCHAT_EMBED_PROVIDER` override it. That matters more than it sounds: Groq and DeepSeek have no embeddings endpoint, so using either means also configuring OpenAI — and OpenAI outranks them, so without an override it would win chat too and the service you chose would never answer anything.
+
 Anthropic has no embeddings endpoint, and retrieval needs one. Set `ANTHROPIC_API_KEY` **and** `OPENAI_API_KEY` and you get chat from Anthropic with embeddings from OpenAI — the pairing most people actually want. QuidChat says so on start-up rather than leaving you to discover it.
 
 ## Configuration
@@ -206,6 +210,8 @@ Anthropic has no embeddings endpoint, and retrieval needs one. Set `ANTHROPIC_AP
 | `QUIDCHAT_DATA_DIR` | `./.quidchat/data` | Where PGlite stores data. `memory` for ephemeral |
 | `QUIDCHAT_ADMIN_TOKEN` | — | Required by the admin API; unset means admin routes refuse. Compared in constant time, and wrong guesses are rate limited per source |
 | `QUIDCHAT_SECRET_KEY` | — | 32 bytes, base64 or hex. Encrypts channel credentials saved in the panel |
+| `QUIDCHAT_CHAT_PROVIDER` | — | Which configured service answers. Overrides the search order |
+| `QUIDCHAT_EMBED_PROVIDER` | — | Which configured service embeds. Overrides the search order |
 | `QUIDCHAT_LOG` | `text` | One line per request. `json` for anything that parses logs, `off` for none |
 
 The panel is served at `/panel` by the same process that serves the API, so an install has an interface without a second deployment. The API keeps `/admin/*`: one namespace for pages and endpoints would make every new route a question about which it is, and the first wrong guess would shadow a working endpoint with an HTML page.

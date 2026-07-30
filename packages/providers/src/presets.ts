@@ -21,6 +21,22 @@ export type Preset = {
   hasEmbeddings: boolean
   apiKeyOptional?: true
   baseUrlVar?: string
+  /**
+   * What to ask this service for when nobody has said otherwise.
+   *
+   * Every tenant used to be created asking for `claude-opus-5` no matter which provider was
+   * configured, so choosing Groq, DeepSeek, Together, Fireworks, OpenRouter or any local runner
+   * produced `unknown_model` on every question — the product did not work at all for most of the
+   * services it claims to support.
+   *
+   * These are starting points, not truths: model catalogues change, and a name correct today is
+   * wrong next year. `listModels` asks the service what it actually offers, and the setup screen
+   * reports a configured model the provider does not have, so a stale default here is a message
+   * an owner can act on rather than a failure they cannot explain.
+   */
+  defaultChatModel: string
+  /** Omitted where the service has no embeddings endpoint. */
+  defaultEmbeddingModel?: string
 }
 
 /**
@@ -52,6 +68,7 @@ export const presets: readonly Preset[] = [
     // Anthropic has no embeddings endpoint. This is load-bearing: it is what
     // forces the resolver to refuse handing back Anthropic alone.
     hasEmbeddings: false,
+    defaultChatModel: "claude-opus-5",
   },
   {
     id: "openai",
@@ -63,6 +80,8 @@ export const presets: readonly Preset[] = [
     // key, so setting only a base URL cannot make this preset look configured.
     baseUrlVar: "OPENAI_BASE_URL",
     hasEmbeddings: true,
+    defaultChatModel: "gpt-4o-mini",
+    defaultEmbeddingModel: "text-embedding-3-small",
   },
   {
     id: "openrouter",
@@ -74,6 +93,8 @@ export const presets: readonly Preset[] = [
     // key, so setting only a base URL cannot make this preset look configured.
     baseUrlVar: "OPENROUTER_BASE_URL",
     hasEmbeddings: true,
+    defaultChatModel: "openai/gpt-4o-mini",
+    defaultEmbeddingModel: "openai/text-embedding-3-small",
   },
   {
     id: "groq",
@@ -85,6 +106,7 @@ export const presets: readonly Preset[] = [
     // key, so setting only a base URL cannot make this preset look configured.
     baseUrlVar: "GROQ_BASE_URL",
     hasEmbeddings: false,
+    defaultChatModel: "llama-3.3-70b-versatile",
   },
   {
     id: "together",
@@ -96,6 +118,8 @@ export const presets: readonly Preset[] = [
     // key, so setting only a base URL cannot make this preset look configured.
     baseUrlVar: "TOGETHER_BASE_URL",
     hasEmbeddings: true,
+    defaultChatModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    defaultEmbeddingModel: "BAAI/bge-base-en-v1.5",
   },
   {
     id: "deepseek",
@@ -107,6 +131,7 @@ export const presets: readonly Preset[] = [
     // key, so setting only a base URL cannot make this preset look configured.
     baseUrlVar: "DEEPSEEK_BASE_URL",
     hasEmbeddings: false,
+    defaultChatModel: "deepseek-chat",
   },
   {
     id: "fireworks",
@@ -118,6 +143,8 @@ export const presets: readonly Preset[] = [
     // key, so setting only a base URL cannot make this preset look configured.
     baseUrlVar: "FIREWORKS_BASE_URL",
     hasEmbeddings: true,
+    defaultChatModel: "accounts/fireworks/models/llama-v3p3-70b-instruct",
+    defaultEmbeddingModel: "nomic-ai/nomic-embed-text-v1.5",
   },
   {
     id: "ollama",
@@ -127,6 +154,8 @@ export const presets: readonly Preset[] = [
     hasEmbeddings: true,
     apiKeyOptional: true,
     baseUrlVar: "OLLAMA_BASE_URL",
+    defaultChatModel: "llama3.1",
+    defaultEmbeddingModel: "nomic-embed-text",
   },
   {
     id: "vllm",
@@ -136,6 +165,8 @@ export const presets: readonly Preset[] = [
     hasEmbeddings: true,
     apiKeyOptional: true,
     baseUrlVar: "VLLM_BASE_URL",
+    defaultChatModel: "local-model",
+    defaultEmbeddingModel: "local-model",
   },
   {
     id: "lmstudio",
@@ -145,6 +176,8 @@ export const presets: readonly Preset[] = [
     hasEmbeddings: true,
     apiKeyOptional: true,
     baseUrlVar: "LMSTUDIO_BASE_URL",
+    defaultChatModel: "local-model",
+    defaultEmbeddingModel: "text-embedding-nomic-embed-text-v1.5",
   },
   {
     id: "llamacpp",
@@ -154,5 +187,7 @@ export const presets: readonly Preset[] = [
     hasEmbeddings: true,
     apiKeyOptional: true,
     baseUrlVar: "LLAMACPP_BASE_URL",
+    defaultChatModel: "local-model",
+    defaultEmbeddingModel: "local-model",
   },
 ]

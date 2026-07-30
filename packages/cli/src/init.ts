@@ -1,4 +1,5 @@
 import { applyMigrations, createDb, type QuidDb } from "@quidchat/db"
+import { resolveProviders } from "@quidchat/providers"
 import { sql } from "drizzle-orm"
 import { readServeConfig } from "./config.js"
 
@@ -8,7 +9,14 @@ function rowsOf(res: unknown): Record<string, unknown>[] {
     : ((res as { rows?: Record<string, unknown>[] }).rows ?? [])
 }
 
-export type InitResult = { tenantId: string; slug: string; created: boolean }
+export type InitResult = {
+  tenantId: string
+  slug: string
+  created: boolean
+  /** What the new tenant was set up to ask for, so the caller can report it. Null on an update,
+   *  where the models already chosen are the operator's to keep. */
+  models: { chat: string | null; embed: string | null }
+}
 
 /**
  * Renders a JS string array as a Postgres array literal.
@@ -40,6 +48,9 @@ export async function initTenant(args: {
   slug: string
   name: string
   origins: string[]
+  /** The environment the provider was resolved from. When given, the new tenant is created
+   *  asking for models that provider actually has — see the note on the INSERT below. */
+  env?: Record<string, string | undefined>
 }): Promise<InitResult> {
   const { db, slug, name, origins } = args
 
@@ -52,7 +63,7 @@ export async function initTenant(args: {
     await db.execute(sql`
       UPDATE tenant_settings SET allowed_origins = ${pgTextArray(origins)}::text[] WHERE tenant_id = ${tenantId}
     `)
-    return { tenantId, slug, created: false }
+    return { tenantId, slug, created: false, models: { chat: null, embed: null } }
   }
 
   const inserted = rowsOf(
@@ -65,12 +76,30 @@ export async function initTenant(args: {
   // Every other column has a default, so the settings row exists purely to make the
   // tenant configurable. Creating it here means the admin panel never has to handle a
   // tenant with no settings, which would otherwise be a state it could observe.
+  // The column defaults name a Claude model, which is right only when Anthropic is the
+  // provider. A tenant created against Groq, DeepSeek, Together, Fireworks, OpenRouter or a
+  // local runner used to ask that service for `claude-opus-5` and get `unknown_model` on every
+  // question a customer asked — the product did not work at all for most of the services it
+  // claims to support. The resolver knows what each service should be asked for; the tenant is
+  // created with those, and an owner can change them in the panel.
+  const models = args.env ? resolveProviders(args.env).models : { chat: null, embed: null }
   await db.execute(sql`
     INSERT INTO tenant_settings (tenant_id, allowed_origins)
     VALUES (${tenantId}, ${pgTextArray(origins)}::text[])
   `)
+  if (models.chat) {
+    await db.execute(sql`
+      UPDATE tenant_settings SET chat_model = ${models.chat}, rewrite_model = ${models.chat}
+      WHERE tenant_id = ${tenantId}
+    `)
+  }
+  if (models.embed) {
+    await db.execute(sql`
+      UPDATE tenant_settings SET embedding_model = ${models.embed} WHERE tenant_id = ${tenantId}
+    `)
+  }
 
-  return { tenantId, slug, created: true }
+  return { tenantId, slug, created: true, models }
 }
 
 /** Opens the configured database, applies migrations, and runs `initTenant`. */
@@ -104,6 +133,11 @@ export async function runInit(args: {
       ? `created tenant "${result.slug}" (${result.tenantId})`
       : `updated tenant "${result.slug}" (${result.tenantId})`,
   )
+  if (result.created && result.models.chat) {
+    // Printed because it is a decision made on the operator's behalf, and the one most likely to
+    // need changing: these are sensible starting points, not the only model that will work.
+    log(`models: ${result.models.chat} for answers, ${result.models.embed ?? "none"} for search`)
+  }
   log(`allowed origins: ${args.origins.join(", ")}`)
   log("")
   log("Paste this into the site you just allowed:")

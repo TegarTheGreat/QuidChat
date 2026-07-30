@@ -13,10 +13,35 @@ export type ResolveResult = {
   /** What was picked for chat and for embedding, so a caller can report it
    *  instead of silently depending on it. */
   chosen: { chat: string | null; embed: string | null }
+  /**
+   * The model each chosen service should be asked for by default.
+   *
+   * Without this a tenant was created asking every provider for `claude-opus-5`, so anything but
+   * Anthropic answered `unknown_model` on every question. The caller writes these onto a new
+   * tenant; an owner can change them in the panel afterwards.
+   */
+  models: { chat: string | null; embed: string | null }
   /** Every preset that was checked, and whether it was found present. This is
    *  what makes the "zero configuration" magic accountable: a caller can see
    *  WHY something was, or was not, picked. */
   trace: { preset: string; envVar: string; present: boolean }[]
+}
+
+/**
+ * The preset an operator named, when they named one that is actually configured.
+ *
+ * A name that matches nothing, or names a service whose key is absent, is IGNORED rather than
+ * treated as an error: the resolver's job is to assemble what it can and report what it did, and
+ * the trace plus the start-up line already show which service was picked. Refusing to start over a
+ * typo in an optional preference would be the less useful failure.
+ */
+function pickRequested(
+  requested: string | undefined,
+  env: Record<string, string | undefined>,
+): Preset | null {
+  if (!requested) return null
+  const preset = presets.find((p) => p.id === requested.trim().toLowerCase())
+  return preset && isPresent(preset, env) ? preset : null
 }
 
 /** Whether a preset's key (or, for local runners, its base-url override) is set in `env`. */
@@ -75,27 +100,42 @@ export function resolveProviders(
     present: isPresent(preset, env),
   }))
 
-  const chatPreset = presets.find((preset) => isPresent(preset, env)) ?? null
+  // An explicit choice beats the search order, and without one there are combinations the order
+  // cannot express. Groq, DeepSeek and Anthropic have no embeddings endpoint, so using any of
+  // them means also configuring OpenAI — and OpenAI sits ahead of Groq and DeepSeek, so it would
+  // win chat as well and the operator's chosen service would never answer anything. Anthropic
+  // escapes that only because it is listed first, which is a privilege the others should not need.
+  const requestedChat = pickRequested(env.QUIDCHAT_CHAT_PROVIDER, env)
+  const requestedEmbed = pickRequested(env.QUIDCHAT_EMBED_PROVIDER, env)
+
+  const chatPreset = requestedChat ?? presets.find((preset) => isPresent(preset, env)) ?? null
   // Among present presets, the first one that actually has an embeddings
   // endpoint wins for embed. A present-but-embeddings-less preset (Anthropic,
   // Groq, DeepSeek) never qualifies here, no matter how early it sits in the
   // search order.
-  const embedPreset = presets.find((preset) => preset.hasEmbeddings && isPresent(preset, env)) ?? null
+  const embedPreset =
+    requestedEmbed ?? presets.find((preset) => preset.hasEmbeddings && isPresent(preset, env)) ?? null
 
   const chosen = { chat: chatPreset?.id ?? null, embed: embedPreset?.id ?? null }
+  const models = {
+    chat: chatPreset?.defaultChatModel ?? null,
+    // The EMBEDDING preset's own default, not the chat one's: with Anthropic for chat and OpenAI
+    // for embeddings — the pairing this resolver exists to produce — they are different services.
+    embed: embedPreset?.defaultEmbeddingModel ?? null,
+  }
 
   // Refuse to hand back a provider that cannot embed. Doing otherwise would
   // push the failure downstream to the first retrieval call, far from its
   // actual cause (a missing key for anything with an embeddings endpoint).
   if (!chatPreset || !embedPreset) {
-    return { provider: null, chosen, trace }
+    return { provider: null, chosen, models, trace }
   }
 
   if (chatPreset.id === embedPreset.id) {
-    return { provider: build(chatPreset, env, fetchImpl), chosen, trace }
+    return { provider: build(chatPreset, env, fetchImpl), chosen, models, trace }
   }
 
   const chat = build(chatPreset, env, fetchImpl)
   const embed = build(embedPreset, env, fetchImpl)
-  return { provider: composite({ chat, embed }), chosen, trace }
+  return { provider: composite({ chat, embed }), chosen, models, trace }
 }
