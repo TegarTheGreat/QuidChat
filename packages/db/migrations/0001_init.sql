@@ -32,13 +32,16 @@ CREATE TABLE admin_users (
   role           text NOT NULL DEFAULT 'owner',
   oauth_provider text,
   oauth_subject  text,
-  UNIQUE (tenant_id, email)
+  UNIQUE (tenant_id, email),
+  UNIQUE (tenant_id, id)
 );
 
 CREATE TABLE admin_sessions (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  admin_user_id uuid NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
-  expires_at    timestamptz NOT NULL
+  tenant_id     uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  admin_user_id uuid NOT NULL,
+  expires_at    timestamptz NOT NULL,
+  FOREIGN KEY (tenant_id, admin_user_id) REFERENCES admin_users(tenant_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE knowledge_sources (
@@ -49,26 +52,31 @@ CREATE TABLE knowledge_sources (
   status          text NOT NULL DEFAULT 'pending'
                   CHECK (status IN ('pending','indexing','ready','error')),
   last_indexed_at timestamptz,
-  error           text
+  error           text,
+  UNIQUE (tenant_id, id)
 );
 
 CREATE TABLE documents (
   id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  source_id uuid NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+  source_id uuid NOT NULL,
   title     text NOT NULL,
-  url       text
+  url       text,
+  FOREIGN KEY (tenant_id, source_id) REFERENCES knowledge_sources(tenant_id, id) ON DELETE CASCADE,
+  UNIQUE (tenant_id, id)
 );
 
 CREATE TABLE chunks (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id       uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  document_id     uuid NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  document_id     uuid NOT NULL,
   ordinal         integer NOT NULL,
   content         text NOT NULL,
   embedding       vector(1536),
   embedding_model text NOT NULL,
-  tsv             tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED
+  tsv             tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED,
+  FOREIGN KEY (tenant_id, document_id) REFERENCES documents(tenant_id, id) ON DELETE CASCADE,
+  UNIQUE (tenant_id, id)
 );
 
 CREATE INDEX chunks_tenant_idx ON chunks (tenant_id);
@@ -83,33 +91,40 @@ CREATE TABLE conversations (
   handoff_count integer NOT NULL DEFAULT 0,
   status        text NOT NULL DEFAULT 'active'
                 CHECK (status IN ('active','idle','escalated','closed')),
-  created_at    timestamptz NOT NULL DEFAULT now()
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id, id)
 );
 
 CREATE TABLE messages (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id       uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  conversation_id uuid NOT NULL,
   role            text NOT NULL CHECK (role IN ('user','assistant')),
   content         text NOT NULL,
-  created_at      timestamptz NOT NULL DEFAULT now()
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (tenant_id, conversation_id) REFERENCES conversations(tenant_id, id) ON DELETE CASCADE,
+  UNIQUE (tenant_id, id)
 );
 
 CREATE TABLE message_citations (
-  message_id uuid NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
-  chunk_id   uuid NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
-  PRIMARY KEY (message_id, chunk_id)
+  tenant_id  uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  message_id uuid NOT NULL,
+  chunk_id   uuid NOT NULL,
+  PRIMARY KEY (message_id, chunk_id),
+  FOREIGN KEY (tenant_id, message_id) REFERENCES messages(tenant_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_id, chunk_id) REFERENCES chunks(tenant_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE escalations (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id       uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  conversation_id uuid NOT NULL,
   reason          text NOT NULL CHECK (reason IN (
                     'no_source','ungrounded','budget_exhausted',
                     'provider_unavailable','schema_invalid',
                     'handoff_limit','visitor_request')),
-  resolved_at     timestamptz
+  resolved_at     timestamptz,
+  FOREIGN KEY (tenant_id, conversation_id) REFERENCES conversations(tenant_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE usage_events (
@@ -138,7 +153,9 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 
 -- Helper: konteks tenant transaksi saat ini.
 CREATE OR REPLACE FUNCTION current_tenant_id() RETURNS uuid
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE
+SET search_path = pg_catalog, public
+AS $$
   SELECT NULLIF(current_setting('quidchat.tenant_id', true), '')::uuid
 $$;
 
@@ -147,7 +164,7 @@ DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
     'tenant_settings','admin_users','knowledge_sources','documents','chunks',
-    'conversations','messages','escalations','usage_events'
+    'conversations','messages','message_citations','escalations','admin_sessions','usage_events'
   ] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
@@ -162,22 +179,27 @@ ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenants FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_self ON tenants USING (id = current_tenant_id());
 
--- message_citations tidak punya tenant_id; ikut induknya.
-ALTER TABLE message_citations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE message_citations FORCE ROW LEVEL SECURITY;
-CREATE POLICY citations_via_message ON message_citations
-  USING (EXISTS (
-    SELECT 1 FROM messages m
-    WHERE m.id = message_citations.message_id
-      AND m.tenant_id = current_tenant_id()
-  ));
+-- message_citations dan admin_sessions: composite FK menjamin tenant_id cocok dengan parent.
+-- Kedua referensi parent mereka sekarang composite dan tidak bisa melintasi tenant.
 
--- admin_sessions juga ikut induknya.
-ALTER TABLE admin_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE admin_sessions FORCE ROW LEVEL SECURITY;
-CREATE POLICY sessions_via_user ON admin_sessions
-  USING (EXISTS (
-    SELECT 1 FROM admin_users u
-    WHERE u.id = admin_sessions.admin_user_id
-      AND u.tenant_id = current_tenant_id()
-  ));
+-- Penjaga: setiap tabel ber-tenant_id WAJIB punya RLS aktif, dipaksa, dan minimal satu
+-- policy. Tanpa penjaga ini, tabel baru mendapat hak CRUD otomatis dari
+-- ALTER DEFAULT PRIVILEGES tapi tidak mendapat perlindungan — dan tidak ada yang
+-- memberi tahu siapa pun.
+DO $$
+DECLARE missing text;
+BEGIN
+  SELECT string_agg(c.relname, ', ') INTO missing
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND c.relkind = 'r'
+    AND EXISTS (SELECT 1 FROM information_schema.columns col
+                 WHERE col.table_schema = 'public' AND col.table_name = c.relname
+                   AND col.column_name = 'tenant_id')
+    AND NOT (c.relrowsecurity AND c.relforcerowsecurity
+             AND EXISTS (SELECT 1 FROM pg_policies p
+                          WHERE p.schemaname = 'public' AND p.tablename = c.relname));
+  IF missing IS NOT NULL THEN
+    RAISE EXCEPTION 'tabel ber-tenant_id tanpa RLS lengkap: %', missing;
+  END IF;
+END $$;

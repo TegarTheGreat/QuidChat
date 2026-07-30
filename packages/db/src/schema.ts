@@ -85,6 +85,7 @@ export const messages = pgTable("messages", {
 })
 
 export const messageCitations = pgTable("message_citations", {
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   messageId: uuid("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
   chunkId: uuid("chunk_id").notNull().references(() => chunks.id, { onDelete: "cascade" }),
 }, (t) => [primaryKey({ columns: [t.messageId, t.chunkId] })])
@@ -123,6 +124,7 @@ export const adminUsers = pgTable("admin_users", {
 
 export const adminSessions = pgTable("admin_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   adminUserId: uuid("admin_user_id").notNull().references(() => adminUsers.id, { onDelete: "cascade" }),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 })
