@@ -30,7 +30,8 @@ export function createStore(db: QuidDb): Store {
         // become visible in production. Proven: a leaky policy plus this filter left
         // 7/7 tests green.
         const res = await tx.execute(sql`
-          SELECT chat_model, rewrite_model, embedding_model, refusal_text, high_risk_topics, answer_mode
+          SELECT chat_model, rewrite_model, embedding_model, refusal_text, high_risk_topics, answer_mode,
+                 max_handoffs_per_turn, max_handoffs_per_conversation
           FROM tenant_settings
         `)
         const rows = rowsOf(res)
@@ -52,6 +53,8 @@ export function createStore(db: QuidDb): Store {
           refusalText: row.refusal_text as string,
           highRiskTopics: row.high_risk_topics as string[],
           answerMode: row.answer_mode as TenantConfig["answerMode"],
+          maxHandoffsPerTurn: Number(row.max_handoffs_per_turn),
+          maxHandoffsPerConversation: Number(row.max_handoffs_per_conversation),
         }
       })
     },

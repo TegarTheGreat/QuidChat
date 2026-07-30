@@ -1,4 +1,7 @@
 import { validateGrounding } from "./grounding/validator.js"
+import { effectiveMode, type AnswerMode } from "./modes.js"
+import { canHandoff } from "./routing/handoff.js"
+import { route, type Skill } from "./routing/router.js"
 import { buildPrompt } from "./prompt/builder.js"
 import { ProviderError } from "./provider-error.js"
 import type { Provider } from "./provider.js"
@@ -117,11 +120,41 @@ export async function answer(args: {
     return { kind: "answered", segments, citations: [], usage }
   }
 
+  // --- Routing -------------------------------------------------------------------
+  //
+  // The skill decides three things: which answer mode applies, which sources may be
+  // retrieved from, and what system prompt is used. Routing therefore has to happen
+  // BEFORE the mode branch below — a skill in static mode inside a tenant set to full
+  // must still cost nothing, and that is only true if the skill is known first.
+  //
+  // A tenant with no skills configured routes to null and behaves exactly as before, so
+  // this is additive: nobody has to define a skill to get an answer.
+  const skills = await store.listSkills(tenantId)
+  const rules = await store.listRoutingRules(tenantId)
+  let skill: Skill | null = skills.length > 0 ? route({ rules, skills, message: question }) : null
+
+  // Handoff: when the routed skill has nothing to answer from, responsibility passes to
+  // the fallback skill — once, and only within the configured limits. Without a cap two
+  // skills pointing at each other loop forever, billing every turn, which is why
+  // `handoff_limit` exists as an escalation reason at all.
+  const fallbackSkill = skills.find((s) => s.isFallback && s.enabled) ?? null
+  let handoffsThisTurn = 0
+
+  const sourceIdsFor = async (s: Skill | null): Promise<string[] | null> => {
+    if (!s) return null
+    const ids = await store.sourceIdsForSkill({ tenantId, skillId: s.id })
+    // A skill with no sources linked would otherwise scope retrieval to nothing and
+    // refuse every question — worse than the tenant-wide default, and silently so.
+    return ids.length > 0 ? ids : null
+  }
+
+  const mode = effectiveMode({ tenantMode: config.answerMode, skillMode: (skill?.answerMode ?? null) as AnswerMode | null })
+
   // `static`: zero cost, by construction. The provider is not touched AT ALL — not
   // `embed`, not `complete` — because the entire point of this mode is that no runtime
   // AI call exists to fail, rate-limit, or bill. A miss escalates rather than falling
   // through to retrieval; `fallback_to_full` (per-skill) is out of scope here.
-  if (config.answerMode === "static") {
+  if (mode === "static") {
     const canned = await store.matchCannedAnswer({ tenantId, question })
     return canned ? respondWithCanned(canned) : refuse("no_source")
   }
@@ -135,11 +168,40 @@ export async function answer(args: {
     return refuse(escalationReasonFor(e))
   }
 
-  const candidates = await store.searchChunks({
-    tenantId, query: question, embedding,
-    embeddingModel: config.embeddingModel,
-    limit: CANDIDATE_LIMIT,
-  })
+  const retrieve = async (s: Skill | null) => {
+    const sourceIds = await sourceIdsFor(s)
+    return store.searchChunks({
+      tenantId, query: question, embedding,
+      embeddingModel: config.embeddingModel,
+      limit: CANDIDATE_LIMIT,
+      ...(sourceIds ? { sourceIds } : {}),
+    })
+  }
+
+  let candidates = await retrieve(skill)
+
+  // The routed skill found nothing in its own sources. Hand off to the fallback skill,
+  // which is scoped differently and may well have the answer — this is the whole point of
+  // letting skills pass responsibility to each other.
+  if (candidates.length === 0 && skill && fallbackSkill && fallbackSkill.id !== skill.id) {
+    const conversationHandoffs = await store.incrementHandoffCount({ tenantId, conversationId })
+    if (
+      canHandoff({
+        turnCount: handoffsThisTurn,
+        conversationCount: conversationHandoffs - 1,
+        maxPerTurn: config.maxHandoffsPerTurn,
+        maxPerConversation: config.maxHandoffsPerConversation,
+      })
+    ) {
+      handoffsThisTurn += 1
+      skill = fallbackSkill
+      candidates = await retrieve(fallbackSkill)
+    } else {
+      // Two skills that keep passing a question between them would loop and bill every
+      // turn. Stopping at the limit is what makes a configurable flow safe to configure.
+      return refuse("handoff_limit")
+    }
+  }
 
   // Without candidates, there's nothing to cite. Refusing here saves one LLM
   // call that's guaranteed to fail validation.
@@ -148,7 +210,7 @@ export async function answer(args: {
   // `thrifty`: still no generation. The best retrieved chunk is quoted VERBATIM as a
   // `business_claim` citing itself — never composed by a model, so there is nothing to
   // hallucinate. `provider.complete` is never called in this branch.
-  if (config.answerMode === "thrifty") {
+  if (mode === "thrifty") {
     const top = candidates[0]!
     const segments: Segment[] = [
       { kind: "business_claim", text: top.content, citations: [top.id] },
@@ -164,7 +226,14 @@ export async function answer(args: {
 
   let feedback: string | undefined
   for (let round = 1; round <= MAX_ROUNDS; round++) {
-    const prompt = buildPrompt({ config, history, candidates, question, ...(feedback ? { feedback } : {}) })
+    // A skill's own instructions are appended to the grounding rules, never in place of
+    // them — that is how one business gives Sales and Support different voices over the
+    // same documents without either being able to switch citations off.
+    const prompt = buildPrompt({
+      config, history, candidates, question,
+      ...(feedback ? { feedback } : {}),
+      ...(skill?.systemPrompt ? { skillPrompt: skill.systemPrompt } : {}),
+    })
 
     progress("generating")
 

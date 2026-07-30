@@ -20,8 +20,19 @@ export function buildPrompt(args: {
    * stable part would invalidate the prefix cache for every message.
    */
   feedback?: string
+  /**
+   * A skill's own instructions, appended AFTER the grounding rules.
+   *
+   * After, deliberately: the rules encode the product's guarantee, and a skill able to
+   * override "only state what the context supports" would be a supported way to switch
+   * that guarantee off. A skill sets voice and scope, not whether citations are required.
+   *
+   * It lands in `system`, which is part of the cacheable prefix — so each skill gets its
+   * own cache rather than repeatedly invalidating a shared one.
+   */
+  skillPrompt?: string
 }): PromptParts {
-  const { config, history, candidates, question, feedback } = args
+  const { config, history, candidates, question, feedback, skillPrompt } = args
 
   const system = [
     "You are a customer service assistant for a business.",
@@ -36,6 +47,9 @@ export function buildPrompt(args: {
     "",
     `Topics that are always treated as business statements: ${config.highRiskTopics.join(", ")}.`,
     "",
+    ...(skillPrompt && skillPrompt.trim().length > 0
+      ? ["Additional instructions for this topic:", skillPrompt.trim(), ""]
+      : []),
     "Reply as JSON with the shape:",
     '{"segments":[{"text":"...","kind":"general"},',
     ' {"text":"...","kind":"business_claim","citations":["<id>"]}]}',

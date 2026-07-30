@@ -9,6 +9,8 @@ const config: TenantConfig = {
   refusalText: "Sorry, I don't have that information yet.",
   highRiskTopics: ["price", "warranty"],
   answerMode: "full",
+  maxHandoffsPerTurn: 2,
+  maxHandoffsPerConversation: 5,
 }
 
 const history = [

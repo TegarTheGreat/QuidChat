@@ -10,6 +10,8 @@ export const DEFAULT_CONFIG: TenantConfig = {
   refusalText: "Sorry, I don't have that information yet.",
   highRiskTopics: ["price", "discount", "warranty", "refund", "stock", "legal"],
   answerMode: "full",
+  maxHandoffsPerTurn: 2,
+  maxHandoffsPerConversation: 5,
 }
 
 /** A `canned_answers` row, shaped for the in-memory fake's matcher. */

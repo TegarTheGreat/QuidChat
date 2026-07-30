@@ -25,6 +25,14 @@ export type TenantConfig = {
   highRiskTopics: string[]
   /** The tenant's default answer mode — see `modes.ts` for how a skill may override it. */
   answerMode: AnswerMode
+  /**
+   * Handoff caps. Both columns have existed since the first migration; this type simply
+   * never exposed them, so the pipeline had no way to enforce a limit the schema already
+   * recorded. Two skills passing a question between them would otherwise loop and bill
+   * every turn.
+   */
+  maxHandoffsPerTurn: number
+  maxHandoffsPerConversation: number
 }
 
 export type EscalationReason =
