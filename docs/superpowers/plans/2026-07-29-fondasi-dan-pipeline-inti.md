@@ -1708,7 +1708,10 @@ export class MemoryStore implements Store {
 /** Provider yang mengembalikan jawaban dari daftar yang disiapkan, satu per panggilan. */
 export class FakeProvider implements Provider {
   readonly id = "fake"
+  /** Panggilan generate. Dipisah dari `embedCalls` supaya test bisa menyatakan
+   *  dengan tepat biaya mana yang terjadi dan mana yang tidak. */
   calls: PromptParts[] = []
+  embedCalls: string[] = []
 
   constructor(private answers: Answer[]) {}
 
@@ -1722,7 +1725,8 @@ export class FakeProvider implements Provider {
     }
   }
 
-  async embed(): Promise<number[]> {
+  async embed(args: { model: string; text: string }): Promise<number[]> {
+    this.embedCalls.push(args.text)
     return Array.from({ length: 1536 }, () => 0)
   }
 
@@ -1763,8 +1767,12 @@ describe("answer", () => {
     expect(res.kind).toBe("refused")
     if (res.kind === "refused") expect(res.reason).toBe("no_source")
     expect(store.recordedEscalations).toEqual(["no_source"])
-    // Tidak boleh memanggil LLM sama sekali kalau tidak ada kandidat.
+    // Generate TIDAK BOLEH dipanggil: tanpa kandidat, apa pun yang dihasilkan
+    // model pasti gagal validasi, jadi memanggilnya hanya membuang biaya.
     expect(provider.calls).toHaveLength(0)
+    // Embedding memang terjadi — retrieval membutuhkannya untuk mengetahui
+    // bahwa hasilnya kosong. Dinyatakan eksplisit supaya batas klaim ini jelas.
+    expect(provider.embedCalls).toHaveLength(1)
   })
 
   it("menjawab dengan sitasi saat sumbernya ada", async () => {
@@ -1824,7 +1832,11 @@ describe("answer", () => {
 })
 ```
 
-Test pertama itu **test wajib #2** dari spec §9.1. Assertion `provider.calls).toHaveLength(0)` bukan tambahan: ia memastikan KB kosong tidak menghasilkan biaya LLM sama sekali.
+Test pertama itu **test wajib #2** dari spec §9.1, dan yang dijaganya adalah regresi paling berbahaya di seluruh pipeline: implementasi yang "berbaik hati" menjawab dari pengetahuan umum model saat basis pengetahuan tidak punya jawabannya.
+
+Dua assertion terakhirnya menarik batas klaim dengan presisi, dan itu disengaja. **Generate tidak boleh dipanggil** — tanpa kandidat, apa pun yang model hasilkan pasti gagal validasi grounding, jadi memanggilnya hanya membuang uang. **Tapi embedding tetap terjadi**, karena retrieval memerlukannya justru untuk mengetahui bahwa hasilnya kosong. Menyatakan keduanya membuat test ini membuktikan apa yang benar-benar bisa dibuktikannya, alih-alih menyiratkan "nol biaya" yang tidak akurat.
+
+Biaya satu embedding hanya muncul saat tenant belum punya konten terindeks — kondisi sementara di masa setup. Menghindarinya butuh query pengecekan tambahan di setiap pesan, dan itu tidak sebanding.
 
 - [ ] **Step 3: Jalankan test untuk memastikan gagal**
 
