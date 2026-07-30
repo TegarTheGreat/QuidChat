@@ -13,6 +13,12 @@ export type Candidate = {
 export type TenantConfig = {
   chatModel: string
   rewriteModel: string
+  /**
+   * Model embedding. TERPISAH dari `chatModel` — meng-embed dengan id model chat
+   * akan ditolak oleh provider sungguhan. Kolomnya sudah ada di `tenant_settings`
+   * sejak migrasi pertama; tipe ini yang tadinya tidak mengeksposnya.
+   */
+  embeddingModel: string
   refusalText: string
   highRiskTopics: string[]
 }
