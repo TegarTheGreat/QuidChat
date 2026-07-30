@@ -110,14 +110,37 @@ function originAllowed(origin: string | undefined, allowedOrigins: string[]): bo
   return origin !== undefined && allowedOrigins.length > 0 && allowedOrigins.includes(origin)
 }
 
+/**
+ * Resolves the conversation to append to, continuing the visitor's own or starting a new one.
+ *
+ * A supplied `conversationId` used to be taken on trust, which made it a capability: anyone who
+ * learned an id could post into that conversation, and their words then sat in the history the
+ * model reads for that visitor's next answer. Ids are unguessable, so this was never an open
+ * door — but one that only stays shut because nobody finds the handle is not shut.
+ *
+ * So the id must belong to this tenant AND to this visitor. A mismatch quietly starts a fresh
+ * conversation rather than refusing: the honest reason for one is a visitor whose address
+ * changed — moving from wifi to a mobile network mid-conversation — and answering their question
+ * in a new thread is a far better outcome than an error they cannot act on.
+ */
 async function ensureConversation(
   db: QuidDb,
   tenantId: string,
   visitorId: string,
   conversationId: string | undefined,
 ): Promise<string> {
-  if (conversationId) return conversationId
   return withTenant(db, tenantId, async (tx) => {
+    if (conversationId) {
+      // Scoped by row-level security to this tenant already; `visitor_id` is what makes it this
+      // visitor's rather than merely this business's.
+      const owned = rowsOf(
+        await tx.execute(sql`
+          SELECT id FROM conversations
+          WHERE id = ${conversationId} AND visitor_id = ${visitorId}
+        `),
+      )[0]
+      if (owned) return owned.id as string
+    }
     const res = await tx.execute(sql`
       INSERT INTO conversations (tenant_id, channel, visitor_id)
       VALUES (${tenantId}, 'web', ${visitorId})

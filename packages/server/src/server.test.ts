@@ -2,8 +2,8 @@ import type { AddressInfo } from "node:net"
 import type { Store } from "@quidchat/core"
 import { FakeProvider } from "@quidchat/core/testing"
 import {
-  chunks, createStore, documents, escalations, knowledgeSources, messages, tenants,
-  tenantSettings, usageEvents, type QuidDb,
+  chunks, conversations, createStore, documents, escalations, knowledgeSources, messages,
+  tenants, tenantSettings, usageEvents, type QuidDb,
 } from "@quidchat/db"
 import { freshPglite } from "@quidchat/db/testing"
 import { eq } from "drizzle-orm"
@@ -295,6 +295,52 @@ describe("chat endpoint", () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
+  })
+
+  describe("conversation ownership", () => {
+    it("will not let one visitor write into another's conversation", async () => {
+      const provider = new FakeProvider([
+        { segments: [{ kind: "general", text: "Sure." }] },
+        { segments: [{ kind: "general", text: "Sure." }] },
+      ])
+      const server = createServer({ db, provider, logError: () => {} })
+      await new Promise<void>((resolve) => server.listen(0, resolve))
+      const port = (server.address() as AddressInfo).port
+      const url = `http://127.0.0.1:${port}`
+
+      const ask = (body: Record<string, unknown>) =>
+        fetch(`${url}/v1/chat`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: ALLOWED_ORIGIN },
+          body: JSON.stringify({ tenantSlug: "shop", ...body }),
+        }).then((r) => r.json() as Promise<{ conversationId: string }>)
+
+      try {
+        const first = await ask({ message: "hello" })
+        // The same socket means the same visitor, so their own id continues their own thread.
+        const continued = await ask({ message: "again", conversationId: first.conversationId })
+        expect(continued.conversationId).toBe(first.conversationId)
+
+        // A conversation id from a tenant's own database, offered by someone who is not its
+        // visitor. It used to be taken on trust, which made the id a capability: whatever was
+        // posted landed in the history the model reads for that visitor's next answer.
+        const stranger = await db
+          .insert(conversations)
+          .values({ tenantId: shopTenantId, channel: "web", visitorId: "10.9.9.9" })
+          .returning()
+        const hijacked = await ask({ message: "injected", conversationId: stranger[0]!.id })
+        expect(hijacked.conversationId).not.toBe(stranger[0]!.id)
+
+        // And nothing was written into it.
+        const theirs = await db
+          .select()
+          .from(messages)
+          .where(eq(messages.conversationId, stranger[0]!.id))
+        expect(theirs).toHaveLength(0)
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      }
+    })
   })
 })
 
