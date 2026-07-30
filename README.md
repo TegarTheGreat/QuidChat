@@ -159,6 +159,8 @@ Anything saved in the panel is encrypted with `QUIDCHAT_SECRET_KEY` (`openssl ra
 | WhatsApp Cloud | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET` |
 | WAHA (self-hosted WhatsApp) | `WAHA_BASE_URL`, `WAHA_SESSION`, `WAHA_API_KEY` |
 | Discord | `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY` |
+| Slack | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET` |
+| LINE | `LINE_ACCESS_TOKEN`, `LINE_CHANNEL_SECRET` |
 
 **Self-hosted WhatsApp** goes through WAHA, which runs Baileys as its engine and exposes it over HTTP. QuidChat talks to that HTTP API rather than embedding the library: a Baileys session is a long-lived socket with its own pairing, reconnection and auth state, and putting one per tenant inside the process that answers customers makes an outage in an unofficial protocol into an outage of everything. Running it beside QuidChat keeps each failure where it belongs.
 

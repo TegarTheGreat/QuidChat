@@ -5,6 +5,9 @@ import {
   discordAdapter,
   handleChannelMessage,
   isDiscordPing,
+  lineAdapter,
+  slackAdapter,
+  slackChallenge,
   telegramAdapter,
   wahaAdapter,
   whatsappCloudAdapter,
@@ -91,6 +94,24 @@ function adapterFor(
         tenantSlug,
         botToken,
         ...(env.DISCORD_PUBLIC_KEY ? { publicKey: env.DISCORD_PUBLIC_KEY } : {}),
+      })
+    }
+    case "slack": {
+      const botToken = env.SLACK_BOT_TOKEN
+      if (!botToken) return null
+      return slackAdapter({
+        tenantSlug,
+        botToken,
+        ...(env.SLACK_SIGNING_SECRET ? { signingSecret: env.SLACK_SIGNING_SECRET } : {}),
+      })
+    }
+    case "line": {
+      const accessToken = env.LINE_ACCESS_TOKEN
+      if (!accessToken) return null
+      return lineAdapter({
+        tenantSlug,
+        accessToken,
+        ...(env.LINE_CHANNEL_SECRET ? { channelSecret: env.LINE_CHANNEL_SECRET } : {}),
       })
     }
     default:
@@ -186,6 +207,22 @@ function adapterFromSecrets(
         tenantSlug,
         botToken: secrets.botToken,
         ...(secrets.publicKey ? { publicKey: secrets.publicKey } : {}),
+      })
+    }
+    case "slack": {
+      if (!secrets.botToken) return null
+      return slackAdapter({
+        tenantSlug,
+        botToken: secrets.botToken,
+        ...(secrets.signingSecret ? { signingSecret: secrets.signingSecret } : {}),
+      })
+    }
+    case "line": {
+      if (!secrets.accessToken) return null
+      return lineAdapter({
+        tenantSlug,
+        accessToken: secrets.accessToken,
+        ...(secrets.channelSecret ? { channelSecret: secrets.channelSecret } : {}),
       })
     }
     default:
@@ -329,6 +366,26 @@ export async function handleChannelWebhook(
     res.writeHead(404, { "content-type": "application/json" })
     res.end(JSON.stringify({ error: `channel "${channel}" is not configured` }))
     return
+  }
+
+  // Slack disables an endpoint that does not echo its challenge, exactly as Discord does with
+  // its PING. Answered before the tenant matters, and only once the signature checks out — an
+  // unverified handshake is still an unverified request.
+  if (channel === "slack") {
+    try {
+      const challenge = slackChallenge(JSON.parse(rawBody))
+      if (challenge !== null) {
+        if (adapter.verify && !adapter.verify({ body: rawBody, headers: req.headers })) {
+          res.writeHead(401).end()
+          return
+        }
+        res.writeHead(200, { "content-type": "text/plain" })
+        res.end(challenge)
+        return
+      }
+    } catch {
+      // Not JSON — the shared handler rejects it.
+    }
   }
 
   // Discord disables an endpoint that does not answer its PING with type 1, and the ping

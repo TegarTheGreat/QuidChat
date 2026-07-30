@@ -25,6 +25,8 @@ export const CHANNEL_FIELDS: Record<string, { required: string[]; optional: stri
   whatsapp: { required: ["phoneNumberId", "accessToken"], optional: ["appSecret"] },
   waha: { required: ["baseUrl"], optional: ["session", "apiKey"] },
   discord: { required: ["botToken"], optional: ["publicKey"] },
+  slack: { required: ["botToken"], optional: ["signingSecret"] },
+  line: { required: ["accessToken"], optional: ["channelSecret"] },
 }
 
 /**

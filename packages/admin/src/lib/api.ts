@@ -219,7 +219,7 @@ export interface CannedAnswer {
   createdAt: string
 }
 
-export type ChannelId = "telegram" | "whatsapp" | "waha" | "discord"
+export type ChannelId = "telegram" | "whatsapp" | "waha" | "discord" | "slack" | "line"
 
 export interface ChannelStatus {
   channel: ChannelId

@@ -17,6 +17,8 @@ const CHANNELS: { id: ChannelId; title: string; hint: string }[] = [
   { id: "whatsapp", title: "WhatsApp (Cloud API)", hint: "From Meta's WhatsApp Business setup: the phone number id and a permanent access token." },
   { id: "waha", title: "WhatsApp (self-hosted WAHA)", hint: "The address of your own WAHA server." },
   { id: "discord", title: "Discord", hint: "From your Discord application: the bot token and its public key." },
+  { id: "slack", title: "Slack", hint: "From your Slack app: the bot token (xoxb-…) and the signing secret. Subscribe it to message events and point them at the URL below." },
+  { id: "line", title: "LINE", hint: "From the LINE Developers console: the channel access token and the channel secret." },
 ]
 
 /** Human labels for credential fields, so a form does not read like a database. */
@@ -30,6 +32,8 @@ const FIELD_LABELS: Record<string, string> = {
   session: "Session name",
   apiKey: "API key",
   publicKey: "Public key",
+  signingSecret: "Signing secret",
+  channelSecret: "Channel secret",
 }
 
 /**
