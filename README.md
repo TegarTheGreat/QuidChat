@@ -265,6 +265,10 @@ pnpm lint
 pnpm build
 ```
 
+`pnpm smoke` runs the built binary the way a person does: it creates a tenant, indexes a document, starts the server, asks a question and checks the answer cites the document by name, then shuts it down with `SIGTERM`. It talks to a local OpenAI-compatible stub, so it needs no key and no network — and it exercises `OPENAI_BASE_URL` along the way. Run it after `pnpm build`.
+
+Every defect it checks for was invisible to the unit suite and obvious within a minute of using the thing: a `bin` pointing at a TypeScript file, migrations resolved relative to a module that no longer existed once bundled, a data directory whose parent was never created, and `add-text` printing its success line and then never exiting. Behaviour is what the suite covers; this covers the artifact.
+
 After changing anything under `packages/db/migrations/`, run `pnpm generate:migrations`. The SQL is embedded in a module so applying migrations never depends on a filesystem path — a path relative to the module works only from the source tree, and a bundled binary dies on start instead. A test fails if the two copies drift.
 
 ## Licence
