@@ -12,6 +12,7 @@
   "dependencies": {
     "@electric-sql/pglite": "0.5.4",
     "@electric-sql/pglite-pgvector": "0.0.5",
+    "@quidchat/core": "workspace:*",
     "drizzle-orm": "0.45.2",
     "postgres": "3.4.9"
   },

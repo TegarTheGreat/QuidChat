@@ -37,6 +37,9 @@ importers:
       '@electric-sql/pglite-pgvector':
         specifier: 0.0.5
         version: 0.0.5(@electric-sql/pglite@0.5.4)
+      '@quidchat/core':
+        specifier: workspace:*
+        version: link:../core
       drizzle-orm:
         specifier: 0.45.2
         version: 0.45.2(@electric-sql/pglite@0.5.4)(postgres@3.4.9)
