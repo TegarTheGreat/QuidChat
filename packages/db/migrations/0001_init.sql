@@ -226,19 +226,38 @@ BEGIN
   END IF;
 END $guard1$;
 
--- Guard bagian 2: SETIAP policy permissive pada tabel ber-`tenant_id` wajib menyebut
--- current_tenant_id(). Memeriksa "ada satu policy yang men-scope" TIDAK CUKUP: Postgres
--- menggabungkan policy permissive dengan OR, jadi satu `USING (true)` yang ditambahkan
--- di samping policy yang benar meruntuhkan isolasi sementara policy yang benar tetap ada.
--- Diukur di PGlite: serangan itu mengubah 1 baris menjadi 2, dan versi guard yang hanya
--- memeriksa keberadaan tetap lolos.
+-- Guard bagian 2: SETIAP policy permissive pada tabel ber-`tenant_id` wajib ber-ekspresi
+-- TEPAT `(tenant_id = current_tenant_id())`. Bukan "mengandung", bukan "menyebut" —
+-- tepat itu.
+--
+-- Dua versi sebelumnya kalah, dan keduanya kalah karena mencoba menyimpulkan makna dari
+-- teks:
+--   1. "ada satu policy yang menyebut current_tenant_id()" -> dikalahkan dengan menambah
+--      `USING (true)` DI SAMPING policy yang benar. Postgres menggabungkan policy
+--      permissive dengan OR, jadi isolasinya runtuh sementara policy yang benar tetap ada
+--      dan pemeriksaan keberadaan tetap terpenuhi.
+--   2. "setiap policy permissive MENGANDUNG current_tenant_id()" -> dikalahkan dengan
+--      `USING (current_tenant_id() IS NOT NULL)`. Menyebut fungsinya tanpa membatasi
+--      satu baris pun. Diukur di PGlite: `conversations` bocor dari 1 baris menjadi 2,
+--      mengembalikan visitor_id tenant lain, dan guard-nya diam.
+--
+-- Pemeriksaan substring TIDAK AKAN PERNAH bisa membuktikan sebuah policy MEMBATASI.
+-- Karena seluruh tabel ber-tenant_id di skema ini memang memakai satu ekspresi yang
+-- sama, keseragaman itu dijadikan aturan: apa pun selain ekspresi persis itu ditolak.
+-- Kalau suatu saat ada tabel yang sah membutuhkan predikat lain, guard ini HARUS
+-- diubah secara sadar — dan itu justru yang diinginkan.
+--
+-- Ini pun bukan pertahanan tunggal. `isolation-guard.test.ts` menguji PERILAKUNYA:
+-- untuk setiap tabel ber-tenant_id, apa yang dilihat satu tenant wajib sama dengan
+-- baris miliknya sendiri. Analisis teks menjaga bentuk; test perilaku menjaga akibat.
 DO $guard2$
 DECLARE bad text;
 BEGIN
-  SELECT string_agg(format('%s.%s', p.tablename, p.policyname), ', ') INTO bad
+  SELECT string_agg(
+           format('%s.%s = %s', p.tablename, p.policyname, coalesce(p.qual, 'NULL')),
+           ' | '
+         ) INTO bad
   FROM pg_policies p
-  JOIN pg_class c ON c.relname = p.tablename
-  JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
   WHERE p.schemaname = 'public'
     AND p.permissive = 'PERMISSIVE'
     AND EXISTS (
@@ -246,8 +265,10 @@ BEGIN
       WHERE col.table_schema = 'public' AND col.table_name = p.tablename
         AND col.column_name = 'tenant_id'
     )
-    AND (p.qual IS NULL OR p.qual NOT LIKE '%current_tenant_id()%');
+    AND coalesce(p.qual, '') <> '(tenant_id = current_tenant_id())';
   IF bad IS NOT NULL THEN
-    RAISE EXCEPTION 'policy permissive tanpa current_tenant_id(): %', bad;
+    RAISE EXCEPTION
+      'policy pada tabel ber-tenant_id wajib TEPAT (tenant_id = current_tenant_id()); ditemukan: %',
+      bad;
   END IF;
 END $guard2$;
