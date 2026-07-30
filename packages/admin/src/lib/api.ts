@@ -215,6 +215,15 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /** Removes a source and, by cascade, its documents and chunks. `chunksRemoved` is what
+   *  actually disappeared — the count is taken before the delete, since a cascade cannot
+   *  report what it took. */
+  deleteSource: (body: { tenantSlug: string; id: string }) =>
+    request<{ ok: true; chunksRemoved: number }>("/v1/admin/sources", {
+      method: "DELETE",
+      body: JSON.stringify(body),
+    }),
+
   listConversations: (tenantSlug: string) =>
     request<Conversation[]>(`/v1/admin/conversations${query({ tenantSlug })}`),
 

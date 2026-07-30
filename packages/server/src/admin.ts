@@ -522,6 +522,67 @@ async function createUrlSource(
   }
 }
 
+/**
+ * `DELETE /admin/sources` — remove a knowledge source and everything derived from it.
+ *
+ * Knowledge could be added and never removed, which for this product is not a missing
+ * convenience: the assistant answers strictly from its sources, so a price list that is out of
+ * date or a page indexed by mistake becomes wrong answers with a citation attached, and
+ * confidently wrong is the one failure mode QuidChat exists to prevent.
+ *
+ * The documents and chunks follow by cascade. So do the citation rows on past messages, since
+ * `message_citations` references `chunks` — the answer text a customer received stays in the
+ * transcript, but it stops claiming to be backed by a chunk that no longer exists. That is
+ * the honest outcome: keeping the link would point at nothing.
+ */
+async function deleteSource(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const body = {
+    tenantSlug: typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
+    id: typeof raw.id === "string" ? raw.id : "",
+  }
+
+  const tenantId = await resolveTenantOr404(res, deps.db, body.tenantSlug)
+  if (tenantId === null) return
+  if (!body.id) {
+    sendJson(res, 400, { error: "id is required" })
+    return
+  }
+
+  const removed = await withTenant(deps.db, tenantId, async (tx) => {
+    // Counted before the delete, because RETURNING on the source row cannot report what the
+    // cascade took with it — and how much knowledge just disappeared is the one number the
+    // person clicking the button wants confirmed.
+    const chunkCount = Number(
+      rowsOf(
+        await tx.execute(sql`
+          SELECT count(*)::int AS n
+          FROM chunks c JOIN documents d ON d.id = c.document_id
+          WHERE d.source_id = ${body.id}
+        `),
+      )[0]!.n,
+    )
+    const deleted = rowsOf(
+      await tx.execute(sql`DELETE FROM knowledge_sources WHERE id = ${body.id} RETURNING id`),
+    )[0]
+    return deleted ? { chunkCount } : null
+  })
+
+  // Another tenant's id is invisible under RLS, so it arrives here as "not found" — the same
+  // answer an id that never existed gets, which is also the only answer that does not confirm
+  // to a caller that someone else's source exists.
+  if (!removed) {
+    sendJson(res, 404, { error: "source not found" })
+    return
+  }
+  sendJson(res, 200, { ok: true, chunksRemoved: removed.chunkCount })
+}
+
 async function listConversations(
   res: ServerResponse,
   deps: AdminDeps,
@@ -1039,6 +1100,7 @@ export async function handleAdminRequest(
   if (method === "GET" && sub === "/sources") return listSources(res, deps, searchParams)
   if (method === "POST" && sub === "/sources/text") return createTextSource(req, res, deps)
   if (method === "POST" && sub === "/sources/url") return createUrlSource(req, res, deps)
+  if (method === "DELETE" && sub === "/sources") return deleteSource(req, res, deps)
   if (method === "GET" && sub === "/conversations") return listConversations(res, deps, searchParams)
   if (method === "GET" && sub === "/escalations") return listEscalations(res, deps, searchParams)
   if (method === "GET" && sub === "/usage") return getUsage(res, deps, searchParams)

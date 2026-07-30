@@ -8,6 +8,14 @@ import { MutationError } from "../components/mutation-error"
 import { Skeleton } from "../components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table"
 import { Textarea } from "../components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog"
 import { useFetch } from "../hooks/use-fetch"
 import { useMutation } from "../hooks/use-mutation"
 import { api, type SourceStatus } from "../lib/api"
@@ -35,6 +43,19 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
     await createSource({ tenantSlug, title, text })
     setTitle("")
     setText("")
+    setReloadKey((k) => k + 1)
+  }
+
+  // Held as the pending row rather than a boolean, so the dialog can name what is about to be
+  // deleted. A confirmation that does not say which source it means is one people click
+  // through without reading.
+  const [pendingDelete, setPendingDelete] = React.useState<{ id: string; title: string } | null>(null)
+  const { state: deleteState, mutate: removeSource } = useMutation(api.deleteSource)
+
+  async function confirmDelete() {
+    if (!pendingDelete) return
+    await removeSource({ tenantSlug, id: pendingDelete.id })
+    setPendingDelete(null)
     setReloadKey((k) => k + 1)
   }
 
@@ -72,12 +93,13 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
                   <TableHead>Title</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Error</TableHead>
+                  <TableHead className="text-right">Remove</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sources.data.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-muted-foreground">
+                    <TableCell colSpan={4} className="text-muted-foreground">
                       No sources yet. Add one below.
                     </TableCell>
                   </TableRow>
@@ -91,6 +113,16 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
                     <TableCell className="text-sm text-destructive">
                       {source.status === "error" ? (source.error ?? "No error message provided.") : ""}
                     </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setPendingDelete({ id: source.id, title: source.title })}
+                      >
+                        Delete
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -98,6 +130,33 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete &ldquo;{pendingDelete?.title}&rdquo;?</DialogTitle>
+            <DialogDescription>
+              Its text and everything indexed from it goes with it, and the assistant will stop
+              answering from it immediately. Past answers stay in the transcript but will no
+              longer link to it. This cannot be undone — the source has to be added again.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteState.status === "error" && <MutationError message={deleteState.message} />}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPendingDelete(null)}>
+              Keep it
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteState.status === "pending"}
+              onClick={confirmDelete}
+            >
+              {deleteState.status === "pending" ? "Deleting…" : "Delete it"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <CardHeader>

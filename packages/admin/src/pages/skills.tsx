@@ -5,6 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
 import { MutationError } from "../components/mutation-error"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select"
 import { Skeleton } from "../components/ui/skeleton"
 import { Textarea } from "../components/ui/textarea"
 import { useFetch } from "../hooks/use-fetch"
@@ -252,18 +259,18 @@ function RuleForm({
         setPattern("")
       }}
     >
-      <select
-        aria-label="Rule kind"
-        className="h-9 rounded-md border bg-background px-2 text-sm"
-        value={kind}
-        onChange={(e) => setKind(e.target.value)}
-      >
-        {KINDS.map((k) => (
-          <option key={k} value={k}>
-            {k}
-          </option>
-        ))}
-      </select>
+      <Select value={kind} onValueChange={setKind}>
+        <SelectTrigger className="w-36" aria-label="Rule kind">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {KINDS.map((k) => (
+            <SelectItem key={k} value={k}>
+              {k}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       {kind === "keyword" && (
         <Input
           aria-label="Keyword"
