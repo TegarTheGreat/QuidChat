@@ -1,5 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto"
-import { renderForChannel, type ChannelAdapter, type IncomingMessage } from "./types.js"
+import {
+  renderForChannel,
+  splitForChannel,
+  type ChannelAdapter,
+  type IncomingMessage,
+} from "./types.js"
 
 /**
  * WhatsApp Cloud API (Meta).
@@ -12,6 +17,9 @@ import { renderForChannel, type ChannelAdapter, type IncomingMessage } from "./t
  * The comparison is constant-time: a plain `===` on an HMAC leaks how many leading bytes
  * matched, which is enough to forge a signature byte by byte.
  */
+/** WhatsApp's limit for a text body, on the Cloud API and through WAHA alike. */
+const WHATSAPP_MESSAGE_LIMIT = 4096
+
 export function whatsappCloudAdapter(opts: {
   tenantSlug: string
   /** Phone number id from the WhatsApp Business account. */
@@ -58,6 +66,13 @@ export function whatsappCloudAdapter(opts: {
     },
 
     async send(message): Promise<void> {
+      const body = renderForChannel({
+        segments: [{ text: message.text, kind: "general" }],
+        sources: message.sources,
+      })
+      // WhatsApp rejects a body past 4096 characters, which a grounded answer with its citations
+      // reaches. Sent one at a time so a customer reads the halves in the order they were written.
+      for (const part of splitForChannel(body, WHATSAPP_MESSAGE_LIMIT)) {
       const res = await f(api, {
         method: "POST",
         headers: {
@@ -68,16 +83,12 @@ export function whatsappCloudAdapter(opts: {
           messaging_product: "whatsapp",
           to: message.replyTo,
           type: "text",
-          text: {
-            body: renderForChannel({
-              segments: [{ text: message.text, kind: "general" }],
-              sources: message.sources,
-            }),
-          },
+          text: { body: part },
         }),
       })
       if (!res.ok) {
         throw new Error(`whatsapp send failed with ${res.status}`)
+      }
       }
     },
 
@@ -146,23 +157,23 @@ export function wahaAdapter(opts: {
     },
 
     async send(message): Promise<void> {
-      const res = await f(`${base}/api/sendText`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(opts.apiKey ? { "x-api-key": opts.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          session,
-          chatId: message.replyTo,
-          text: renderForChannel({
-            segments: [{ text: message.text, kind: "general" }],
-            sources: message.sources,
-          }),
-        }),
+      const body = renderForChannel({
+        segments: [{ text: message.text, kind: "general" }],
+        sources: message.sources,
       })
-      if (!res.ok) {
-        throw new Error(`waha sendText failed with ${res.status}`)
+      // The same WhatsApp limit applies, whoever is delivering it.
+      for (const part of splitForChannel(body, WHATSAPP_MESSAGE_LIMIT)) {
+        const res = await f(`${base}/api/sendText`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(opts.apiKey ? { "x-api-key": opts.apiKey } : {}),
+          },
+          body: JSON.stringify({ session, chatId: message.replyTo, text: part }),
+        })
+        if (!res.ok) {
+          throw new Error(`waha sendText failed with ${res.status}`)
+        }
       }
     },
 

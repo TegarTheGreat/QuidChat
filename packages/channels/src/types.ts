@@ -84,3 +84,42 @@ export function renderForChannel(args: {
   const unique = [...new Set(args.sources)]
   return `${body}\n\n— ${unique.join(", ")}`
 }
+
+/**
+ * Splits a reply into pieces each platform will actually accept.
+ *
+ * Every one of these services rejects a message over its limit, and the send simply failed:
+ * a grounded answer over a few thousand characters — which a policy question with citations
+ * easily reaches — was logged as a delivery failure and the customer got nothing at all. The
+ * answer had already been produced, recorded and paid for.
+ *
+ * Splits at the largest boundary that fits: paragraphs first, then sentences, then words, and
+ * only inside a word when a single word is longer than the whole limit. Cutting mid-sentence
+ * when a paragraph break was available makes the second message read like a different thought.
+ */
+export function splitForChannel(text: string, limit: number): string[] {
+  if (limit <= 0) throw new Error("a channel's message limit must be positive")
+  if (text.length <= limit) return [text]
+
+  const pieces: string[] = []
+  let rest = text
+
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit)
+    // Each candidate is the position AFTER the separator, so the separator stays with the piece
+    // it ends rather than starting the next one.
+    const candidates = [
+      window.lastIndexOf("\n\n"),
+      window.lastIndexOf("\n"),
+      window.lastIndexOf(". "),
+      window.lastIndexOf(" "),
+    ].filter((i) => i > 0)
+
+    const cut = candidates.length > 0 ? Math.max(...candidates) : limit
+    pieces.push(rest.slice(0, cut).trimEnd())
+    rest = rest.slice(cut).trimStart()
+  }
+
+  if (rest.length > 0) pieces.push(rest)
+  return pieces
+}

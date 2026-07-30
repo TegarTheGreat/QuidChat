@@ -1,5 +1,10 @@
 import { createPublicKey, verify as verifySignature } from "node:crypto"
-import { renderForChannel, type ChannelAdapter, type IncomingMessage } from "./types.js"
+import {
+  renderForChannel,
+  splitForChannel,
+  type ChannelAdapter,
+  type IncomingMessage,
+} from "./types.js"
 
 /**
  * Discord, via interaction webhooks.
@@ -12,6 +17,10 @@ import { renderForChannel, type ChannelAdapter, type IncomingMessage } from "./t
  * Node's `crypto.verify` supports it, but the key must be wrapped as a DER SPKI structure
  * first — Discord hands out a bare 32-byte key. The prefix below is that wrapper.
  */
+/** Discord's limit for a message body — less than half of Telegram's, so an answer that fits
+ *  elsewhere is rejected here. */
+const DISCORD_MESSAGE_LIMIT = 2000
+
 export function discordAdapter(opts: {
   tenantSlug: string
   /** Application public key, hex, from the Discord developer portal. */
@@ -63,21 +72,25 @@ export function discordAdapter(opts: {
 
     async send(message): Promise<void> {
       const [applicationId, token] = message.replyTo.split(":")
-      const res = await f(
-        `https://discord.com/api/v10/webhooks/${applicationId}/${token}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            content: renderForChannel({
-              segments: [{ text: message.text, kind: "general" }],
-              sources: message.sources,
-            }),
-          }),
-        },
-      )
-      if (!res.ok) {
-        throw new Error(`discord follow-up failed with ${res.status}`)
+      const body = renderForChannel({
+        segments: [{ text: message.text, kind: "general" }],
+        sources: message.sources,
+      })
+      // Discord rejects a body past 2000 characters and the send simply failed, so an answer
+      // that fits on Telegram never reached a Discord customer at all. Each piece is its own
+      // follow-up, sent in the order it was written.
+      for (const part of splitForChannel(body, DISCORD_MESSAGE_LIMIT)) {
+        const res = await f(
+          `https://discord.com/api/v10/webhooks/${applicationId}/${token}`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ content: part }),
+          },
+        )
+        if (!res.ok) {
+          throw new Error(`discord follow-up failed with ${res.status}`)
+        }
       }
     },
 

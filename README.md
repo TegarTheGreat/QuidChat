@@ -157,6 +157,8 @@ Anything saved in the panel is encrypted with `QUIDCHAT_SECRET_KEY` (`openssl ra
 
 Set the signature secret. Verification runs before anything is parsed or stored, so a forged request never reaches the pipeline — without it, anyone who learns the URL can put words in a business's conversation history and spend its budget.
 
+A long answer is split at each platform's own limit — 4096 characters on Telegram and WhatsApp, 2000 on Discord — at a paragraph break where there is one, a sentence break otherwise. Without that a grounded answer with its citations, which passes those limits easily, was rejected by the platform and the customer got nothing at all, after the answer had already been produced, recorded and paid for.
+
 Every channel goes through the identical pipeline. Routing, retrieval, grounding, refusal and spend behave exactly as they do on the website, because the promise the product makes does not change with the transport.
 
 ## On your own site

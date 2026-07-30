@@ -1,5 +1,10 @@
 import { timingSafeEqual } from "node:crypto"
-import { renderForChannel, type ChannelAdapter, type IncomingMessage } from "./types.js"
+import {
+  renderForChannel,
+  splitForChannel,
+  type ChannelAdapter,
+  type IncomingMessage,
+} from "./types.js"
 
 /**
  * Telegram Bot API.
@@ -14,6 +19,9 @@ import { renderForChannel, type ChannelAdapter, type IncomingMessage } from "./t
  * who learns the URL can put words into a business's conversation history and spend its
  * budget.
  */
+/** Telegram's own limit for a text message. */
+const TELEGRAM_MESSAGE_LIMIT = 4096
+
 export function telegramAdapter(opts: {
   tenantSlug: string
   botToken: string
@@ -57,19 +65,22 @@ export function telegramAdapter(opts: {
     },
 
     async send(message): Promise<void> {
-      const res = await f(`${api}/sendMessage`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          chat_id: message.replyTo,
-          text: renderForChannel({
-            segments: [{ text: message.text, kind: "general" }],
-            sources: message.sources,
-          }),
-        }),
+      const body = renderForChannel({
+        segments: [{ text: message.text, kind: "general" }],
+        sources: message.sources,
       })
-      if (!res.ok) {
-        throw new Error(`telegram sendMessage failed with ${res.status}`)
+      // Telegram rejects anything past 4096 characters, and a grounded answer with its citations
+      // reaches that. Sent in order and one at a time: a customer reading a split answer needs
+      // the halves in the order they were written.
+      for (const part of splitForChannel(body, TELEGRAM_MESSAGE_LIMIT)) {
+        const res = await f(`${api}/sendMessage`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ chat_id: message.replyTo, text: part }),
+        })
+        if (!res.ok) {
+          throw new Error(`telegram sendMessage failed with ${res.status}`)
+        }
       }
     },
 
