@@ -75,7 +75,13 @@ function AdminApp() {
               No tenants yet. Create one from the Tenants section.
             </p>
           )}
-          {selectedTenant && section === "setup" && <SetupPage tenantSlug={selectedTenant} />}
+          {selectedTenant && section === "setup" && (
+            <SetupPage
+              tenantSlug={selectedTenant}
+              onGoTo={setSection}
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
+          )}
           {selectedTenant && section === "overview" && <OverviewPage tenantSlug={selectedTenant} />}
           {selectedTenant && section === "knowledge" && <KnowledgePage tenantSlug={selectedTenant} />}
           {selectedTenant && section === "conversations" && (

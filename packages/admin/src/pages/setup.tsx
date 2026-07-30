@@ -5,7 +5,36 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { MutationError } from "../components/mutation-error"
 import { Skeleton } from "../components/ui/skeleton"
 import { useFetch } from "../hooks/use-fetch"
+import { Button } from "../components/ui/button"
+import type { Section } from "../components/app-sidebar"
 import { api, type SetupFinding } from "../lib/api"
+
+/**
+ * Where each finding is fixed.
+ *
+ * Advice that names a problem and leaves the reader to work out which screen owns it is advice
+ * with a gap in the middle. The ids come from the advisor in `@quidchat/core`; a finding not
+ * listed here simply shows no button, which is the right failure for a new one nobody has
+ * mapped yet.
+ */
+type FixTarget = { kind: "section"; section: Section; label: string } | { kind: "settings"; label: string }
+
+const FIX_LOCATION: Record<string, FixTarget> = {
+  // Settings live in a dialog rather than on a screen, so these open it directly. Sending a
+  // reader to a page that does not hold the setting would be worse than saying nothing.
+  "no-allowed-origins": { kind: "settings", label: "Open settings" },
+  "no-budget-limit": { kind: "settings", label: "Open settings" },
+  "budget-exhausted": { kind: "settings", label: "Open settings" },
+  "budget-nearly-exhausted": { kind: "settings", label: "Open settings" },
+  "empty-refusal-text": { kind: "settings", label: "Open settings" },
+  "no-high-risk-topics": { kind: "settings", label: "Open settings" },
+  "no-sources": { kind: "section", section: "knowledge", label: "Add a document" },
+  "sources-not-indexed": { kind: "section", section: "knowledge", label: "See your sources" },
+  "errored-sources": { kind: "section", section: "knowledge", label: "See what failed" },
+  "static-mode-no-approved-answers": { kind: "section", section: "canned", label: "Write an answer" },
+  "consider-canned-answers": { kind: "section", section: "canned", label: "Write an answer" },
+  "many-no-source-escalations": { kind: "section", section: "escalations", label: "Read the questions" },
+}
 
 /**
  * Severity carried by colour and icon, not only by a word in a badge.
@@ -57,7 +86,17 @@ const TONE: Record<
  * Every finding shows why it matters and what to do. A finding without an action is just
  * bad news, which is worse than silence.
  */
-export function SetupPage({ tenantSlug }: { tenantSlug: string }) {
+export function SetupPage({
+  tenantSlug,
+  onGoTo,
+  onOpenSettings,
+}: {
+  tenantSlug: string
+  /** Navigates to the screen that owns a finding. Both are optional so the page still renders in
+   *  isolation — a test or a future embed should not have to supply navigation to see it. */
+  onGoTo?: (section: Section) => void
+  onOpenSettings?: () => void
+}) {
   const setup = useFetch(() => api.getSetup(tenantSlug), [tenantSlug])
 
   return (
@@ -117,6 +156,20 @@ export function SetupPage({ tenantSlug }: { tenantSlug: string }) {
                   <span className="font-medium">What to do: </span>
                   {finding.fix}
                 </p>
+{(() => {
+                  const target = FIX_LOCATION[finding.id]
+                  if (!target) return null
+                  const go =
+                    target.kind === "settings"
+                      ? onOpenSettings
+                      : onGoTo && (() => onGoTo(target.section))
+                  if (!go) return null
+                  return (
+                    <Button type="button" size="sm" variant="outline" onClick={go}>
+                      {target.label}
+                    </Button>
+                  )
+                })()}
               </CardContent>
             </Card>
             )
