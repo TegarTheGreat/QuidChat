@@ -765,7 +765,7 @@ import type { QuidDb } from "./client.js"
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations")
 
 export async function applyMigrations(db: QuidDb): Promise<void> {
-  const files = readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort()
+  const files = readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).toSorted()
   for (const file of files) {
     const body = readFileSync(join(migrationsDir, file), "utf8")
     await db.execute(sql.raw(body))
@@ -1528,8 +1528,17 @@ function fakeEmbedding(offset: number): number[] {
   return Array.from({ length: 1536 }, (_, i) => Math.sin(offset + i) * 0.01)
 }
 
-async function seed(db: Awaited<ReturnType<typeof freshPglite>>) {
-  const [t] = await db.insert(tenants).values({ slug: "toko", name: "Toko" }).returning()
+/**
+ * Menyiapkan satu tenant lengkap. `garansiText` dibuat berbeda antar tenant supaya
+ * test isolasi bisa membuktikan tenant MANA yang datanya terlihat — bukan sekadar
+ * bahwa hasilnya kosong.
+ */
+async function seed(
+  db: Awaited<ReturnType<typeof freshPglite>>,
+  slug: string,
+  garansiText: string,
+) {
+  const [t] = await db.insert(tenants).values({ slug, name: slug }).returning()
   await db.insert(tenantSettings).values({ tenantId: t!.id })
   const [s] = await db.insert(knowledgeSources)
     .values({ tenantId: t!.id, kind: "text", uri: "a.txt", status: "ready" }).returning()
@@ -1537,7 +1546,7 @@ async function seed(db: Awaited<ReturnType<typeof freshPglite>>) {
     .values({ tenantId: t!.id, sourceId: s!.id, title: "Kebijakan" }).returning()
   const rows = await db.insert(chunks).values([
     { tenantId: t!.id, documentId: d!.id, ordinal: 0,
-      content: "Garansi resmi berlaku 12 bulan sejak pembelian.",
+      content: garansiText,
       embedding: fakeEmbedding(1), embeddingModel: "test" },
     { tenantId: t!.id, documentId: d!.id, ordinal: 1,
       content: "Pengiriman ke Jawa memakan waktu 2 hari.",
@@ -1559,56 +1568,79 @@ async function seed(db: Awaited<ReturnType<typeof freshPglite>>) {
 //      `escalations` — tabel yang tidak dibaca test lain. Kalau nanti ada test
 //      yang membaca tabel tulis itu, urutan test mulai berpengaruh dan file ini
 //      harus dipecah, bukan ditambahi.
+const GARANSI_TOKO = "Garansi resmi berlaku 12 bulan sejak pembelian."
+const GARANSI_WARUNG = "Garansi warung hanya 3 bulan."
+
 describe("createStore", () => {
   let db: Awaited<ReturnType<typeof freshPglite>>
-  let ids: Awaited<ReturnType<typeof seed>>
+  let toko: Awaited<ReturnType<typeof seed>>
+  let warung: Awaited<ReturnType<typeof seed>>
 
   beforeAll(async () => {
     db = await freshPglite()
-    ids = await seed(db)
+    toko = await seed(db, "toko", GARANSI_TOKO)
+    warung = await seed(db, "warung", GARANSI_WARUNG)
   })
 
   it("mengembalikan konfigurasi tenant", async () => {
-    const cfg = await createStore(db).getTenantConfig(ids.tenantId)
+    const cfg = await createStore(db).getTenantConfig(toko.tenantId)
     expect(cfg.chatModel).toBe("claude-opus-5")
+    expect(cfg.embeddingModel).toBe("text-embedding-3-small")
     expect(cfg.highRiskTopics).toContain("garansi")
   })
 
   it("menemukan chunk lewat kata kunci", async () => {
     const hits = await createStore(db).searchChunks({
-      tenantId: ids.tenantId, query: "garansi", embedding: fakeEmbedding(1), limit: 5,
+      tenantId: toko.tenantId, query: "garansi", embedding: fakeEmbedding(1), limit: 5,
     })
     expect(hits.length).toBeGreaterThan(0)
-    expect(hits[0]!.content).toContain("Garansi")
+    expect(hits[0]!.content).toBe(GARANSI_TOKO)
     expect(hits[0]!.documentTitle).toBe("Kebijakan")
   })
 
-  it("tidak mengembalikan apa pun untuk tenant lain", async () => {
-    const hits = await createStore(db).searchChunks({
-      tenantId: "00000000-0000-0000-0000-000000000000",
-      query: "garansi", embedding: fakeEmbedding(1), limit: 5,
+  it("setiap tenant hanya melihat chunk miliknya sendiri", async () => {
+    // DUA tenant sungguhan, masing-masing punya chunk yang bisa dibedakan.
+    // Menanyai satu uuid acak yang tidak punya data hanya membuktikan "kosong", dan
+    // itu tidak membedakan "RLS menyaring" dari "tenant ini memang tak punya apa-apa".
+    // Di sini kedua tenant punya isi, jadi kalau RLS bocor, test ini gagal.
+    const store = createStore(db)
+    const args = { query: "garansi", embedding: fakeEmbedding(1), limit: 5 }
+
+    const isiToko = (await store.searchChunks({ tenantId: toko.tenantId, ...args }))
+      .map((h) => h.content)
+    const isiWarung = (await store.searchChunks({ tenantId: warung.tenantId, ...args }))
+      .map((h) => h.content)
+
+    expect(isiToko).toContain(GARANSI_TOKO)
+    expect(isiToko).not.toContain(GARANSI_WARUNG)
+    expect(isiWarung).toContain(GARANSI_WARUNG)
+    expect(isiWarung).not.toContain(GARANSI_TOKO)
+
+    // Tenant yang sama sekali tidak ada tetap harus kosong.
+    const isiAsing = await store.searchChunks({
+      tenantId: "00000000-0000-0000-0000-000000000000", ...args,
     })
-    expect(hits).toEqual([])
+    expect(isiAsing).toEqual([])
   })
 
   it("menyimpan jawaban beserta sitasinya, dan menyimpan eskalasi", async () => {
     const store = createStore(db)
     await store.recordAnswer({
-      tenantId: ids.tenantId,
-      conversationId: ids.conversationId,
+      tenantId: toko.tenantId,
+      conversationId: toko.conversationId,
       segments: [
         { kind: "general", text: "Halo!" },
-        { kind: "business_claim", text: "Garansi 12 bulan.", citations: [ids.chunkId] },
+        { kind: "business_claim", text: "Garansi 12 bulan.", citations: [toko.chunkId] },
       ],
-      citedChunkIds: [ids.chunkId],
+      citedChunkIds: [toko.chunkId],
     })
     await store.recordEscalation({
-      tenantId: ids.tenantId,
-      conversationId: ids.conversationId,
+      tenantId: toko.tenantId,
+      conversationId: toko.conversationId,
       reason: "no_source",
     })
 
-    const counts = await withTenant(db, ids.tenantId, async (tx) => {
+    const counts = await withTenant(db, toko.tenantId, async (tx) => {
       const res = await tx.execute(sql`
         SELECT
           (SELECT count(*)::int FROM messages)          AS messages,
@@ -2104,13 +2136,28 @@ git commit -m "feat(core): add answer pipeline with two-round retrieval limit"
 
 Kriteria dari spec §11 yang tercapai di rencana ini:
 
-- **§11.5** — Dua tenant di satu instalasi tidak bisa melihat data satu sama lain, dibuktikan test RLS (Task 4).
-- **§11.10 sebagian** — Tiga dari lima test wajib hijau:
-  - Validator grounding, tabel kasus lengkap (Task 7)
-  - KB kosong → penolakan (Task 10)
-  - Stabilitas prefix prompt (Task 8)
+- **Isolasi tenant** — Dua tenant di satu instalasi tidak bisa melihat data satu sama
+  lain, dibuktikan test RLS (Task 4) dan test hybrid search dua tenant (Task 9).
+- **§11.1 sebagian — TIGA dari DELAPAN test wajib hijau:**
 
-Test wajib #4 (scoping pengetahuan per skill) dan #5 (batas handoff) menunggu Rencana 3, karena tabel `skills` belum ada.
+| # | Test wajib | Status | Pemilik |
+|---|---|---|---|
+| 1 | Validator grounding, tabel kasus lengkap | ✅ hijau | Task 7 (rencana ini) |
+| 2 | KB kosong → penolakan | ✅ hijau | Task 10 (rencana ini) |
+| 3 | Stabilitas prefix prompt | ✅ hijau | Task 8 (rencana ini) |
+| 4 | Scoping pengetahuan per skill | ⏳ belum | Rencana 3 — butuh tabel `skills` + `skill_sources` |
+| 5 | Batas handoff | ⏳ belum | Rencana 3 — butuh routing & handoff |
+| 6 | Mode `static` tidak memanggil provider | ⏳ belum | Rencana 4 — butuh `answer_mode` |
+| 7 | Draft tidak pernah sampai ke pelanggan | ⏳ belum | Rencana 4 — butuh canned answer |
+| 8 | Pewarisan mode | ⏳ belum | Rencana 4 — butuh `answer_mode` di dua tingkat |
+
+**Catatan pembukuan.** Versi rencana ini sebelumnya menulis "tiga dari **lima** test
+wajib" dan hanya menyebut #4 dan #5 sebagai sisa. Spec §11.1 berjudul "Delapan test
+wajib sejak commit pertama" — jadi tiga test (#6 mode `static`, #7 draft, #8 pewarisan
+mode) tidak terhitung sama sekali. Ketiganya justru menyangkut fitur yang diminta
+eksplisit: QuidChat yang bisa dipakai tanpa AI, dan janji bahwa tidak ada teks buatan
+AI tayang tanpa persetujuan manusia. Tabel di atas ada supaya tak satu pun bisa hilang
+di antara rencana.
 
 Perintah verifikasi akhir:
 

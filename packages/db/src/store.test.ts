@@ -7,12 +7,23 @@ import {
 } from "./schema.js"
 import { withTenant } from "./tenant.js"
 
-function fakeEmbedding(seed: number): number[] {
-  return Array.from({ length: 1536 }, (_, i) => Math.sin(seed + i) * 0.01)
+// Parameternya `offset`, bukan `seed` — nama `seed` sudah dipakai fungsi seeding
+// di bawah, dan menaunginya membuat lint mengeluh serta pembaca ragu.
+function fakeEmbedding(offset: number): number[] {
+  return Array.from({ length: 1536 }, (_, i) => Math.sin(offset + i) * 0.01)
 }
 
-async function seed(db: Awaited<ReturnType<typeof freshPglite>>) {
-  const [t] = await db.insert(tenants).values({ slug: "toko", name: "Toko" }).returning()
+/**
+ * Menyiapkan satu tenant lengkap: settings, sumber, dokumen, dua chunk, dan satu
+ * percakapan. `garansiText` dibuat berbeda antar tenant supaya test isolasi bisa
+ * membuktikan tenant MANA yang datanya terlihat — bukan sekadar bahwa hasilnya kosong.
+ */
+async function seed(
+  db: Awaited<ReturnType<typeof freshPglite>>,
+  slug: string,
+  garansiText: string,
+) {
+  const [t] = await db.insert(tenants).values({ slug, name: slug }).returning()
   await db.insert(tenantSettings).values({ tenantId: t!.id })
   const [s] = await db.insert(knowledgeSources)
     .values({ tenantId: t!.id, kind: "text", uri: "a.txt", status: "ready" }).returning()
@@ -20,7 +31,7 @@ async function seed(db: Awaited<ReturnType<typeof freshPglite>>) {
     .values({ tenantId: t!.id, sourceId: s!.id, title: "Kebijakan" }).returning()
   const rows = await db.insert(chunks).values([
     { tenantId: t!.id, documentId: d!.id, ordinal: 0,
-      content: "Garansi resmi berlaku 12 bulan sejak pembelian.",
+      content: garansiText,
       embedding: fakeEmbedding(1), embeddingModel: "test" },
     { tenantId: t!.id, documentId: d!.id, ordinal: 1,
       content: "Pengiriman ke Jawa memakan waktu 2 hari.",
@@ -30,6 +41,9 @@ async function seed(db: Awaited<ReturnType<typeof freshPglite>>) {
     .values({ tenantId: t!.id, channel: "widget", visitorId: "v1" }).returning()
   return { tenantId: t!.id, chunkId: rows[0]!.id, conversationId: cv!.id }
 }
+
+const GARANSI_TOKO = "Garansi resmi berlaku 12 bulan sejak pembelian."
+const GARANSI_WARUNG = "Garansi warung hanya 3 bulan."
 
 // SATU database dipakai bersama oleh seluruh test di file ini, lewat `beforeAll`.
 // Dua alasan:
@@ -44,54 +58,74 @@ async function seed(db: Awaited<ReturnType<typeof freshPglite>>) {
 //      harus dipecah, bukan ditambahi.
 describe("createStore", () => {
   let db: Awaited<ReturnType<typeof freshPglite>>
-  let ids: Awaited<ReturnType<typeof seed>>
+  let toko: Awaited<ReturnType<typeof seed>>
+  let warung: Awaited<ReturnType<typeof seed>>
 
   beforeAll(async () => {
     db = await freshPglite()
-    ids = await seed(db)
+    toko = await seed(db, "toko", GARANSI_TOKO)
+    warung = await seed(db, "warung", GARANSI_WARUNG)
   })
 
   it("mengembalikan konfigurasi tenant", async () => {
-    const cfg = await createStore(db).getTenantConfig(ids.tenantId)
+    const cfg = await createStore(db).getTenantConfig(toko.tenantId)
     expect(cfg.chatModel).toBe("claude-opus-5")
+    expect(cfg.embeddingModel).toBe("text-embedding-3-small")
     expect(cfg.highRiskTopics).toContain("garansi")
   })
 
   it("menemukan chunk lewat kata kunci", async () => {
     const hits = await createStore(db).searchChunks({
-      tenantId: ids.tenantId, query: "garansi", embedding: fakeEmbedding(1), limit: 5,
+      tenantId: toko.tenantId, query: "garansi", embedding: fakeEmbedding(1), limit: 5,
     })
     expect(hits.length).toBeGreaterThan(0)
-    expect(hits[0]!.content).toContain("Garansi")
+    expect(hits[0]!.content).toBe(GARANSI_TOKO)
     expect(hits[0]!.documentTitle).toBe("Kebijakan")
   })
 
-  it("tidak mengembalikan apa pun untuk tenant lain", async () => {
-    const hits = await createStore(db).searchChunks({
-      tenantId: "00000000-0000-0000-0000-000000000000",
-      query: "garansi", embedding: fakeEmbedding(1), limit: 5,
+  it("setiap tenant hanya melihat chunk miliknya sendiri", async () => {
+    // DUA tenant sungguhan, masing-masing punya chunk yang bisa dibedakan.
+    // Menanyai satu uuid acak yang tidak punya data hanya membuktikan "kosong", dan
+    // itu tidak membedakan "RLS menyaring" dari "tenant ini memang tak punya apa-apa".
+    // Di sini kedua tenant punya isi, jadi kalau RLS bocor, test ini gagal.
+    const store = createStore(db)
+    const args = { query: "garansi", embedding: fakeEmbedding(1), limit: 5 }
+
+    const isiToko = (await store.searchChunks({ tenantId: toko.tenantId, ...args }))
+      .map((h) => h.content)
+    const isiWarung = (await store.searchChunks({ tenantId: warung.tenantId, ...args }))
+      .map((h) => h.content)
+
+    expect(isiToko).toContain(GARANSI_TOKO)
+    expect(isiToko).not.toContain(GARANSI_WARUNG)
+    expect(isiWarung).toContain(GARANSI_WARUNG)
+    expect(isiWarung).not.toContain(GARANSI_TOKO)
+
+    // Tenant yang sama sekali tidak ada tetap harus kosong.
+    const isiAsing = await store.searchChunks({
+      tenantId: "00000000-0000-0000-0000-000000000000", ...args,
     })
-    expect(hits).toEqual([])
+    expect(isiAsing).toEqual([])
   })
 
   it("menyimpan jawaban beserta sitasinya, dan menyimpan eskalasi", async () => {
     const store = createStore(db)
     await store.recordAnswer({
-      tenantId: ids.tenantId,
-      conversationId: ids.conversationId,
+      tenantId: toko.tenantId,
+      conversationId: toko.conversationId,
       segments: [
         { kind: "general", text: "Halo!" },
-        { kind: "business_claim", text: "Garansi 12 bulan.", citations: [ids.chunkId] },
+        { kind: "business_claim", text: "Garansi 12 bulan.", citations: [toko.chunkId] },
       ],
-      citedChunkIds: [ids.chunkId],
+      citedChunkIds: [toko.chunkId],
     })
     await store.recordEscalation({
-      tenantId: ids.tenantId,
-      conversationId: ids.conversationId,
+      tenantId: toko.tenantId,
+      conversationId: toko.conversationId,
       reason: "no_source",
     })
 
-    const counts = await withTenant(db, ids.tenantId, async (tx) => {
+    const counts = await withTenant(db, toko.tenantId, async (tx) => {
       const res = await tx.execute(sql`
         SELECT
           (SELECT count(*)::int FROM messages)          AS messages,

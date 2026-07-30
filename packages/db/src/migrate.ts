@@ -15,7 +15,9 @@ const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "migra
  * `PGlite#exec` dan `postgres.Sql#unsafe`.
  */
 export async function applyMigrations(db: QuidDb): Promise<void> {
-  const files = readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort()
+  // `toSorted()` supaya urutan migrasi jelas berasal dari array baru, bukan dari
+  // efek samping. Urutan itu penting: migrasi diterapkan menurut nama berkas.
+  const files = readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).toSorted()
   for (const file of files) {
     const body = readFileSync(join(migrationsDir, file), "utf8")
     const client = db.$client
