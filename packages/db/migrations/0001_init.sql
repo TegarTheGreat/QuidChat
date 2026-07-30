@@ -196,79 +196,67 @@ CREATE POLICY tenant_self ON tenants USING (id = current_tenant_id());
 -- message_citations dan admin_sessions: composite FK menjamin tenant_id cocok dengan parent.
 -- Kedua referensi parent mereka sekarang composite dan tidak bisa melintasi tenant.
 
--- Guard bagian 1: setiap tabel ber-`tenant_id` wajib RLS aktif DAN forced, dan wajib
--- punya setidaknya satu policy.
-DO $guard1$
+-- Guard isolasi tenant. SATU blok, mengenumerasi lewat RLS.
+--
+-- Versi sebelumnya memilih tabel lewat `column_name = 'tenant_id'`, dan ITU
+-- kesalahannya: `tenants` berkunci `id`, jadi ia luput dari SETIAP lapis pertahanan
+-- sekaligus. Membocorkan policy-nya membuat `SELECT slug FROM tenants` mengembalikan
+-- seluruh daftar pelanggan, dan tak satu pun test gagal.
+--
+-- Versi sebelumnya juga hanya memeriksa `qual`, yaitu jalur BACA. `WITH CHECK (true)`
+-- membuka jalur TULIS sepenuhnya: terukur di PGlite, sebuah baris usage_events bernilai
+-- 500.000 sen bisa ditulis ke buku besar tenant lain, dan pesan assistant palsu bisa
+-- ditanam di transkrip bisnis lain. Guard-nya diam, 44 test tetap hijau.
+--
+-- `with_check IS NULL` sah dan berarti Postgres menurunkannya dari `qual` — itu yang
+-- terjadi pada `tenants`. Yang ditolak adalah `with_check` yang ADA tapi berbeda.
+DO $guard_isolasi$
 DECLARE bad text;
 BEGIN
-  SELECT string_agg(format('%s (%s)', t.nama, t.alasan), ', ') INTO bad
+  SELECT string_agg(format('%s: %s', t.nama, a.alasan), ' | ') INTO bad
   FROM (
     SELECT c.relname AS nama,
-           CASE
-             WHEN NOT (c.relrowsecurity AND c.relforcerowsecurity)
-               THEN 'RLS tidak aktif atau tidak forced'
-             WHEN NOT EXISTS (
-               SELECT 1 FROM pg_policies p
-               WHERE p.schemaname = 'public' AND p.tablename = c.relname
-             ) THEN 'tanpa policy'
-           END AS alasan
+           -- Kunci tenant tabel ini: `tenant_id` bila ada, kalau tidak `id`.
+           -- `tenants` memakai `id` karena ia SENDIRI adalah tenant-nya.
+           CASE WHEN EXISTS (
+             SELECT 1 FROM information_schema.columns col
+             WHERE col.table_schema = 'public' AND col.table_name = c.relname
+               AND col.column_name = 'tenant_id'
+           ) THEN 'tenant_id' ELSE 'id' END AS kunci,
+           c.relrowsecurity AS rls_aktif,
+           c.relforcerowsecurity AS rls_forced
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind = 'r'
-      AND EXISTS (
-        SELECT 1 FROM information_schema.columns col
-        WHERE col.table_schema = 'public' AND col.table_name = c.relname
-          AND col.column_name = 'tenant_id'
-      )
   ) t
-  WHERE t.alasan IS NOT NULL;
-  IF bad IS NOT NULL THEN
-    RAISE EXCEPTION 'RLS tidak lengkap: %', bad;
-  END IF;
-END $guard1$;
+  CROSS JOIN LATERAL (
+    SELECT format('(%s = current_tenant_id())', t.kunci) AS harapan
+  ) h
+  CROSS JOIN LATERAL (
+    SELECT
+      CASE
+        WHEN NOT (t.rls_aktif AND t.rls_forced) THEN 'RLS tidak aktif atau tidak forced'
+        WHEN NOT EXISTS (
+          SELECT 1 FROM pg_policies p
+          WHERE p.schemaname = 'public' AND p.tablename = t.nama
+        ) THEN 'tanpa policy'
+        WHEN EXISTS (
+          SELECT 1 FROM pg_policies p
+          WHERE p.schemaname = 'public' AND p.tablename = t.nama
+            AND p.permissive = 'PERMISSIVE'
+            AND coalesce(p.qual, '') <> h.harapan
+        ) THEN format('ada policy permissive dengan qual bukan %s', h.harapan)
+        WHEN EXISTS (
+          SELECT 1 FROM pg_policies p
+          WHERE p.schemaname = 'public' AND p.tablename = t.nama
+            AND p.permissive = 'PERMISSIVE'
+            AND p.with_check IS NOT NULL
+            AND p.with_check <> h.harapan
+        ) THEN format('ada policy permissive dengan with_check bukan %s', h.harapan)
+      END AS alasan
+  ) a
+  WHERE a.alasan IS NOT NULL;
 
--- Guard bagian 2: SETIAP policy permissive pada tabel ber-`tenant_id` wajib ber-ekspresi
--- TEPAT `(tenant_id = current_tenant_id())`. Bukan "mengandung", bukan "menyebut" —
--- tepat itu.
---
--- Dua versi sebelumnya kalah, dan keduanya kalah karena mencoba menyimpulkan makna dari
--- teks:
---   1. "ada satu policy yang menyebut current_tenant_id()" -> dikalahkan dengan menambah
---      `USING (true)` DI SAMPING policy yang benar. Postgres menggabungkan policy
---      permissive dengan OR, jadi isolasinya runtuh sementara policy yang benar tetap ada
---      dan pemeriksaan keberadaan tetap terpenuhi.
---   2. "setiap policy permissive MENGANDUNG current_tenant_id()" -> dikalahkan dengan
---      `USING (current_tenant_id() IS NOT NULL)`. Menyebut fungsinya tanpa membatasi
---      satu baris pun. Diukur di PGlite: `conversations` bocor dari 1 baris menjadi 2,
---      mengembalikan visitor_id tenant lain, dan guard-nya diam.
---
--- Pemeriksaan substring TIDAK AKAN PERNAH bisa membuktikan sebuah policy MEMBATASI.
--- Karena seluruh tabel ber-tenant_id di skema ini memang memakai satu ekspresi yang
--- sama, keseragaman itu dijadikan aturan: apa pun selain ekspresi persis itu ditolak.
--- Kalau suatu saat ada tabel yang sah membutuhkan predikat lain, guard ini HARUS
--- diubah secara sadar — dan itu justru yang diinginkan.
---
--- Ini pun bukan pertahanan tunggal. `isolation-guard.test.ts` menguji PERILAKUNYA:
--- untuk setiap tabel ber-tenant_id, apa yang dilihat satu tenant wajib sama dengan
--- baris miliknya sendiri. Analisis teks menjaga bentuk; test perilaku menjaga akibat.
-DO $guard2$
-DECLARE bad text;
-BEGIN
-  SELECT string_agg(
-           format('%s.%s = %s', p.tablename, p.policyname, coalesce(p.qual, 'NULL')),
-           ' | '
-         ) INTO bad
-  FROM pg_policies p
-  WHERE p.schemaname = 'public'
-    AND p.permissive = 'PERMISSIVE'
-    AND EXISTS (
-      SELECT 1 FROM information_schema.columns col
-      WHERE col.table_schema = 'public' AND col.table_name = p.tablename
-        AND col.column_name = 'tenant_id'
-    )
-    AND coalesce(p.qual, '') <> '(tenant_id = current_tenant_id())';
   IF bad IS NOT NULL THEN
-    RAISE EXCEPTION
-      'policy pada tabel ber-tenant_id wajib TEPAT (tenant_id = current_tenant_id()); ditemukan: %',
-      bad;
+    RAISE EXCEPTION 'isolasi tenant tidak lengkap -> %', bad;
   END IF;
-END $guard2$;
+END $guard_isolasi$;

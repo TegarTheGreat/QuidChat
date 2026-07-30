@@ -61,7 +61,7 @@ describe("isolasi tenant di bawah serangan", () => {
     // hanya terlihat kalau ada data tenant lain yang bisa bocor.
     await db.insert(tenantSettings).values({ tenantId: a!.id })
     await db.insert(tenantSettings).values({ tenantId: b!.id })
-    guard = blokGuard("guard2")
+    guard = blokGuard("guard_isolasi")
   })
 
   it("guard migrasi lolos pada skema yang sehat", async () => {
@@ -101,6 +101,45 @@ describe("isolasi tenant di bawah serangan", () => {
     await expect(db.execute(sql.raw(guard))).rejects.toThrow()
     await db.execute(sql`DROP POLICY leak_menyebut ON conversations`)
   })
+
+  it("guard MENOLAK with_check yang dibocorkan — jalur TULIS", async () => {
+    // Versi guard sebelumnya hanya memeriksa `qual`, yaitu jalur BACA. Dengan
+    // `WITH CHECK (true)` sebuah tenant bisa MENULIS baris milik tenant lain:
+    // terukur, satu baris usage_events 500.000 sen masuk ke buku besar orang lain,
+    // dan satu pesan assistant palsu masuk ke transkrip bisnis lain.
+    await db.execute(sql`DROP POLICY tenant_isolation ON usage_events`)
+    await db.execute(sql`
+      CREATE POLICY tenant_isolation ON usage_events
+      USING (tenant_id = current_tenant_id()) WITH CHECK (true)
+    `)
+    await expect(db.execute(sql.raw(guard))).rejects.toThrow()
+    await db.execute(sql`DROP POLICY tenant_isolation ON usage_events`)
+    await db.execute(sql`
+      CREATE POLICY tenant_isolation ON usage_events
+      USING (tenant_id = current_tenant_id())
+    `)
+  })
+
+  it("guard MENOLAK policy tenants yang dibocorkan", async () => {
+    // `tenants` berkunci `id`, bukan `tenant_id`, jadi ia luput dari SETIAP lapis
+    // pertahanan versi sebelumnya. Membocorkannya membuat seluruh daftar pelanggan
+    // bisa dibaca tenant mana pun.
+    await db.execute(sql`DROP POLICY tenant_self ON tenants`)
+    await db.execute(sql`CREATE POLICY tenant_self ON tenants USING (true)`)
+    await expect(db.execute(sql.raw(guard))).rejects.toThrow()
+    await db.execute(sql`DROP POLICY tenant_self ON tenants`)
+    await db.execute(sql`CREATE POLICY tenant_self ON tenants USING (id = current_tenant_id())`)
+  })
+
+  it("guard MENOLAK RLS yang dimatikan", async () => {
+    // Mematok bagian guard yang memeriksa aktif+forced. Di versi sebelumnya bagian ini
+    // ada di blok terpisah yang tidak dipanggil test mana pun, jadi menghapusnya
+    // meninggalkan 44/44 hijau.
+    await db.execute(sql`ALTER TABLE chunks DISABLE ROW LEVEL SECURITY`)
+    await expect(db.execute(sql.raw(guard))).rejects.toThrow()
+    await db.execute(sql`ALTER TABLE chunks ENABLE ROW LEVEL SECURITY`)
+    await db.execute(sql`ALTER TABLE chunks FORCE ROW LEVEL SECURITY`)
+  })
 })
 
 /**
@@ -118,6 +157,7 @@ describe("isolasi tenant di bawah serangan", () => {
 describe("isolasi setiap tabel, diukur dari perilakunya", () => {
   let db: Awaited<ReturnType<typeof freshPglite>>
   let idA: string
+  let idB: string
 
   /** Mengisi SEMUA tabel ber-`tenant_id` untuk satu tenant, menghormati urutan FK. */
   async function isiPenuh(tenantId: string, tanda: string) {
@@ -174,50 +214,82 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
     `)
     const ids = rowsOf(r).map((x) => x.id as string)
     idA = ids[0]!
+    idB = ids[1]!
     // KEDUA tenant diisi. Satu tenant saja membuat setiap tabel "aman" secara hampa:
     // tidak ada data orang lain yang bisa bocor, jadi tidak ada yang dibuktikan.
     await isiPenuh(ids[0]!, "a")
     await isiPenuh(ids[1]!, "b")
   })
 
-  it("setiap tabel ber-tenant_id hanya memperlihatkan baris milik tenant itu", async () => {
-    const tabel = rowsOf(
-      await db.execute(sql`
-        SELECT c.relname AS nama
-        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public' AND c.relkind = 'r'
-          AND EXISTS (
-            SELECT 1 FROM information_schema.columns col
-            WHERE col.table_schema = 'public' AND col.table_name = c.relname
-              AND col.column_name = 'tenant_id'
-          )
-        ORDER BY c.relname
-      `),
-    ).map((x) => x.nama as string)
+  /** Semua tabel yang dilindungi RLS, beserta kunci tenant masing-masing. */
+  async function tabelBerRls(): Promise<{ nama: string; kunci: string }[]> {
+    const r = await db.execute(sql`
+      SELECT c.relname AS nama,
+             CASE WHEN EXISTS (
+               SELECT 1 FROM information_schema.columns col
+               WHERE col.table_schema = 'public' AND col.table_name = c.relname
+                 AND col.column_name = 'tenant_id'
+             ) THEN 'tenant_id' ELSE 'id' END AS kunci
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity
+      ORDER BY c.relname
+    `)
+    return rowsOf(r).map((x) => ({ nama: x.nama as string, kunci: x.kunci as string }))
+  }
 
+  it("setiap tabel ber-RLS hanya memperlihatkan baris milik tenant itu", async () => {
+    const tabel = await tabelBerRls()
     const bocor: string[] = []
     const hampa: string[] = []
-
-    for (const t of tabel) {
-      // Kebenaran diambil lewat raw handle, yang memang melewati RLS dengan sengaja.
-      const milikA = Number(
+    for (const { nama, kunci } of tabel) {
+      const milik = Number(
         rowsOf(
           await db.execute(
-            sql.raw(`SELECT count(*)::int AS n FROM ${t} WHERE tenant_id = '${idA}'`),
+            sql.raw(`SELECT count(*)::int AS n FROM ${nama} WHERE ${kunci} = '${idA}'`),
           ),
         )[0]!.n,
       )
       const terlihat = await withTenant(db, idA, async (tx) =>
-        Number(rowsOf(await tx.execute(sql.raw(`SELECT count(*)::int AS n FROM ${t}`)))[0]!.n),
+        Number(rowsOf(await tx.execute(sql.raw(`SELECT count(*)::int AS n FROM ${nama}`)))[0]!.n),
       )
-      if (milikA === 0) hampa.push(t)
-      if (terlihat !== milikA) bocor.push(`${t}: terlihat ${terlihat}, milik tenant ${milikA}`)
+      if (milik === 0) hampa.push(nama)
+      if (terlihat !== milik) bocor.push(`${nama}: terlihat ${terlihat}, milik ${milik}`)
     }
-
     expect(bocor).toEqual([])
-    // Tabel tanpa data milik A tidak membuktikan apa pun. Assertion ini yang mencegah
-    // test ini melemah tanpa suara kalau suatu hari `isiPenuh` berhenti mengisi sesuatu.
     expect(hampa).toEqual([])
-    expect(tabel.length).toBeGreaterThanOrEqual(11)
+    // 12, bukan 11: `tenants` sekarang ikut. Angka ini yang membuat kelalaian
+    // enumerasi terlihat kalau suatu saat ada tabel yang tidak ber-RLS.
+    expect(tabel).toHaveLength(12)
+  })
+
+  it("tenant tidak bisa MENULIS baris milik tenant lain", async () => {
+    // Jalur tulis. Isolasi baca yang sempurna tidak ada gunanya kalau sebuah tenant
+    // masih bisa menanam baris di data tenant lain — dan itu justru yang paling
+    // merusak: klaim bisnis palsu di transkrip orang lain, atau biaya di buku besar
+    // orang lain.
+    const gagal: string[] = []
+    const upaya: [string, ReturnType<typeof sql>][] = [
+      ["usage_events", sql`
+        INSERT INTO usage_events (tenant_id, model, input_tokens, output_tokens, cost_cents)
+        VALUES (${idB}, 'test', 1, 1, 500000)`],
+      ["conversations", sql`
+        INSERT INTO conversations (tenant_id, channel, visitor_id)
+        VALUES (${idB}, 'widget', 'penyusup')`],
+      ["knowledge_sources", sql`
+        INSERT INTO knowledge_sources (tenant_id, kind, uri, status)
+        VALUES (${idB}, 'text', 'penyusup.txt', 'ready')`],
+    ]
+    for (const [nama, perintah] of upaya) {
+      let ditolak = false
+      try {
+        await withTenant(db, idA, async (tx) => {
+          await tx.execute(perintah)
+        })
+      } catch {
+        ditolak = true
+      }
+      if (!ditolak) gagal.push(nama)
+    }
+    expect(gagal).toEqual([])
   })
 })
