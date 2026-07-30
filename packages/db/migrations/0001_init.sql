@@ -122,3 +122,62 @@ CREATE TABLE usage_events (
   cost_cents    integer NOT NULL,
   created_at    timestamptz NOT NULL DEFAULT now()
 );
+
+-- Role aplikasi. Bukan superuser, bukan pemilik tabel, sehingga RLS berlaku.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'quidchat_app') THEN
+    CREATE ROLE quidchat_app NOLOGIN;
+  END IF;
+END $$;
+
+GRANT USAGE ON SCHEMA public TO quidchat_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO quidchat_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO quidchat_app;
+
+-- Helper: konteks tenant transaksi saat ini.
+CREATE OR REPLACE FUNCTION current_tenant_id() RETURNS uuid
+LANGUAGE sql STABLE AS $$
+  SELECT NULLIF(current_setting('quidchat.tenant_id', true), '')::uuid
+$$;
+
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'tenant_settings','admin_users','knowledge_sources','documents','chunks',
+    'conversations','messages','escalations','usage_events'
+  ] LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
+    EXECUTE format(
+      'CREATE POLICY tenant_isolation ON %I USING (tenant_id = current_tenant_id()) '
+      || 'WITH CHECK (tenant_id = current_tenant_id())', t);
+  END LOOP;
+END $$;
+
+-- tenants sendiri: dibaca lewat id, bukan tenant_id.
+ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenants FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_self ON tenants USING (id = current_tenant_id());
+
+-- message_citations tidak punya tenant_id; ikut induknya.
+ALTER TABLE message_citations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE message_citations FORCE ROW LEVEL SECURITY;
+CREATE POLICY citations_via_message ON message_citations
+  USING (EXISTS (
+    SELECT 1 FROM messages m
+    WHERE m.id = message_citations.message_id
+      AND m.tenant_id = current_tenant_id()
+  ));
+
+-- admin_sessions juga ikut induknya.
+ALTER TABLE admin_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_sessions FORCE ROW LEVEL SECURITY;
+CREATE POLICY sessions_via_user ON admin_sessions
+  USING (EXISTS (
+    SELECT 1 FROM admin_users u
+    WHERE u.id = admin_sessions.admin_user_id
+      AND u.tenant_id = current_tenant_id()
+  ));
