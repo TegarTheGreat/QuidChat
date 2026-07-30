@@ -151,6 +151,17 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO quidchat_
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO quidchat_app;
 
+-- Role aplikasi hanya boleh MEMBACA barisnya sendiri di `tenants`, tidak lebih.
+-- `GRANT ... ON ALL TABLES` di atas memberinya UPDATE dan DELETE juga, dan keduanya
+-- berbahaya: `DELETE FROM tenants` di dalam withTenant berhasil dan meng-cascade habis
+-- seluruh data tenant itu; `UPDATE tenants SET slug=...` berhasil, dan karena indeks unik
+-- slug bersifat GLOBAL ia menjadi oracle keberadaan lintas tenant — slug milik tenant
+-- lain menghasilkan duplicate key, slug bebas menghasilkan sukses.
+--
+-- Onboarding memang memakai raw handle, karena policy `tenant_self` membuat INSERT
+-- sebagai quidchat_app tidak mungkin berhasil. Jadi tidak ada yang hilang.
+REVOKE INSERT, UPDATE, DELETE ON tenants FROM quidchat_app;
+
 -- Role yang dipakai aplikasi untuk konek WAJIB jadi anggota `quidchat_app`, kalau tidak
 -- `SET LOCAL ROLE quidchat_app` di withTenant() gagal dengan "permission denied to set
 -- role". `quidchat_app` sendiri NOLOGIN dengan sengaja: ia bukan role untuk konek, ia

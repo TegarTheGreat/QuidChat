@@ -780,6 +780,10 @@ Performa di bawah beban, kualitas crawler terhadap situs tidak lazim, dan kompat
 | Onboarding tenant baru WAJIB memakai raw handle | Rencana admin/signup | Policy `tenant_self` ber-`USING` saja juga berlaku sebagai `WITH CHECK`, jadi `INSERT` tenant baru sebagai `quidchat_app` selalu gagal: `id` yang baru dibuat tidak mungkin sama dengan `current_tenant_id()` |
 | `answer()` membuka 3–4 transaksi terpisah per turn | Rencana akuntansi biaya | Retrieval dan pencatatan tidak atomik satu sama lain; belum ada yang rusak, tapi perlu diketahui sebelum akuntansi budget mendarat |
 | Test wajib #4–#8 (scoping per skill, batas handoff, mode `static` tanpa provider, draft tidak tayang, pewarisan mode) | Rencana multi-skill (#4, #5) dan rencana mode jawaban (#6, #7, #8) | Semuanya butuh tabel `skills`, `skill_sources`, `canned_answers`, dan kolom `answer_mode` yang belum ada. Dicatat di sini supaya "delapan test wajib" tidak dibaca sebagai delapan yang sudah ada |
+| Pencarian `admin_sessions` by session id butuh query raw-handle **sebelum** tenant diketahui, dan tidak ada lapis isolasi yang menutupinya | Rencana panel admin | Bahaya isolasi pertama panel admin. Perlu jalur khusus yang sempit dan diaudit, bukan raw handle serba bisa |
+| `withTenant` bukan batas terhadap kode aplikasi sendiri: `RESET ROLE` di dalam callback memulihkan superuser | Rencana server | Disiplin kode, bukan lubang skema. Perlu aturan lint atau review, bukan perubahan skema |
+| Migrasi menolak diterapkan bila `search_path` deployment tidak memuat `public` | Rencana server | Guard gagal TERTUTUP, jadi aman — tapi pesannya perlu menjelaskan sebabnya |
+| Indeks unik `tenants.slug` bersifat global, jadi tetap oracle keberadaan bagi siapa pun yang bisa INSERT | Rencana signup | Setelah Step 1 role aplikasi tidak bisa INSERT; alur signup harus menanganinya sendiri |
 
 ---
 

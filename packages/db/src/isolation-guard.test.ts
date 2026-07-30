@@ -425,4 +425,24 @@ describe("isolasi setiap tabel, diukur dari perilakunya", () => {
     }
     expect(pindahDitolak).toBe(true)
   })
+
+  it("app role tidak bisa menghapus atau mengubah baris tenants", async () => {
+    // DELETE dulu berhasil dan meng-cascade habis seluruh data tenant itu sendiri.
+    // UPDATE slug dulu berhasil, dan indeks unik slug yang GLOBAL menjadikannya oracle
+    // keberadaan lintas tenant.
+    for (const perintah of [
+      sql`DELETE FROM tenants`,
+      sql`UPDATE tenants SET slug = 'apa-pun'`,
+    ]) {
+      let ditolak = false
+      try {
+        await withTenant(db, idA, async (tx) => {
+          await tx.execute(perintah)
+        })
+      } catch {
+        ditolak = true
+      }
+      expect(ditolak).toBe(true)
+    }
+  })
 })
