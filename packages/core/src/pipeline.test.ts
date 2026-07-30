@@ -49,6 +49,12 @@ describe("answer", () => {
     const res = await answer({ store, provider, ...ctx })
 
     expect(provider.calls).toHaveLength(2)
+    // Ronde kedua wajib membawa prompt yang BERBEDA. Assertion inilah yang gagal pada
+    // versi sebelumnya, ketika ronde 2 adalah resample byte-identik.
+    expect(provider.calls[1]!.currentTurn).not.toBe(provider.calls[0]!.currentTurn)
+    expect(provider.calls[1]!.currentTurn).toContain("missing_citation")
+    // Tapi PREFIX-nya wajib tetap sama, kalau tidak cache-nya batal.
+    expect(provider.calls[1]!.system).toBe(provider.calls[0]!.system)
     expect(res.kind).toBe("answered")
   })
 

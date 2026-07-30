@@ -14,8 +14,14 @@ export function buildPrompt(args: {
   history: { role: "user" | "assistant"; content: string }[]
   candidates: Candidate[]
   question: string
+  /**
+   * Alasan jawaban sebelumnya ditolak, kalau ini ronde perbaikan. Ditaruh di
+   * `currentTurn`, BUKAN di `system` — ia berubah per percobaan, dan menaruhnya di
+   * bagian stabil akan membatalkan cache prefix untuk setiap pesan.
+   */
+  feedback?: string
 }): PromptParts {
-  const { config, history, candidates, question } = args
+  const { config, history, candidates, question, feedback } = args
 
   const system = [
     "Kamu adalah asisten layanan pelanggan untuk sebuah bisnis.",
@@ -46,6 +52,16 @@ export function buildPrompt(args: {
     contextBlock,
     "</konteks>",
     "",
+    ...(feedback
+      ? [
+          "<perbaikan>",
+          `Jawaban sebelumnya DITOLAK: ${feedback}`,
+          "Perbaiki dengan menyitasi id dari <konteks> di atas untuk setiap klaim bisnis,",
+          "atau sampaikan teks penolakan bila konteksnya memang tidak memuat jawabannya.",
+          "</perbaikan>",
+          "",
+        ]
+      : []),
     `Pertanyaan pelanggan: ${question}`,
   ].join("\n")
 

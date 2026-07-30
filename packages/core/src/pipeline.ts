@@ -63,8 +63,9 @@ export async function answer(args: {
   // satu panggilan LLM yang pasti gagal validasi.
   if (candidates.length === 0) return refuse("no_source")
 
+  let feedback: string | undefined
   for (let round = 1; round <= MAX_ROUNDS; round++) {
-    const prompt = buildPrompt({ config, history, candidates, question })
+    const prompt = buildPrompt({ config, history, candidates, question, ...(feedback ? { feedback } : {}) })
 
     let result
     try {
@@ -91,6 +92,11 @@ export async function answer(args: {
         citedChunkIds: verdict.citedChunkIds,
       }
     }
+
+    // Alasan penolakan dibawa ke ronde berikutnya. Tanpa ini ronde 2 mengirim prompt
+    // yang IDENTIK, dan model bertemperature 0 mengembalikan jawaban yang identik —
+    // biaya dua kali untuk duplikat yang terjamin.
+    feedback = `${verdict.violation} — ${verdict.detail}`
   }
 
   return refuse("ungrounded")
