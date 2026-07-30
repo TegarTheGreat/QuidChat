@@ -24,6 +24,10 @@ export type QuidTx =
  * Menjalankan `fn` di dalam satu transaksi dengan role aplikasi dan konteks
  * tenant terpasang. Keduanya `SET LOCAL`, jadi otomatis lepas saat transaksi
  * selesai — tidak ada kebocoran konteks ke query berikutnya di koneksi yang sama.
+ *
+ * Ini satu-satunya jalan yang membuat RLS benar-benar berlaku (lihat catatan
+ * pada `QuidDb`/`createDb`) — tanpanya, query jalan sebagai superuser dan
+ * melihat semua tenant, bukan gagal atau kosong.
  */
 export async function withTenant<T>(
   db: QuidDb,

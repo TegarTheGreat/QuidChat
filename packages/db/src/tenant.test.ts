@@ -32,7 +32,10 @@ describe("isolasi tenant", () => {
     expect(rowsB[0]!.tenantId).toBe(b)
   })
 
-  it("tanpa konteks tenant mengembalikan nol baris, bukan semuanya", async () => {
+  // Tenant id tak dikenal setara dengan tanpa konteks sama sekali di bawah
+  // semantik NULL Postgres: current_tenant_id() sama-sama tidak cocok dengan
+  // tenant_id manapun, jadi keduanya berakhir sebagai nol baris.
+  it("tenant id yang tidak dikenal mengembalikan nol baris, bukan semuanya", async () => {
     const db = await freshPglite()
     await seedTenant(db, "tenant-a")
     await seedTenant(db, "tenant-b")
@@ -40,5 +43,22 @@ describe("isolasi tenant", () => {
     const rows = await withTenant(db, "00000000-0000-0000-0000-000000000000",
       (tx) => tx.select().from(chunks))
     expect(rows).toHaveLength(0)
+  })
+
+  it("handle mentah MELEWATI RLS — inilah alasan withTenant wajib dipakai", async () => {
+    const db = await freshPglite()
+    const a = await seedTenant(db, "tenant-a")
+    await seedTenant(db, "tenant-b")
+
+    // Tanpa withTenant: koneksi default adalah superuser, dan superuser melewati
+    // RLS sepenuhnya — termasuk FORCE ROW LEVEL SECURITY. Jadi query ini melihat
+    // SEMUA tenant. Ini bukan bug yang ditunggu perbaikannya; ini alasan kenapa
+    // setiap query ke tabel ber-tenant WAJIB lewat withTenant.
+    const raw = await db.select().from(chunks)
+    expect(raw).toHaveLength(2)
+
+    // Lewat withTenant, tenant yang sama hanya melihat miliknya.
+    const scoped = await withTenant(db, a, (tx) => tx.select().from(chunks))
+    expect(scoped).toHaveLength(1)
   })
 })
