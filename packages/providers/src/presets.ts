@@ -45,6 +45,10 @@ export const presets: readonly Preset[] = [
     kind: "anthropic",
     baseUrl: "https://api.anthropic.com/v1",
     apiKeyVar: "ANTHROPIC_API_KEY",
+    // An OpenAI-compatible proxy or gateway is a very common deployment — LiteLLM,
+    // a corporate gateway, Azure, or a local mock. Presence still requires the API
+    // key, so setting only a base URL cannot make this preset look configured.
+    baseUrlVar: "ANTHROPIC_BASE_URL",
     // Anthropic has no embeddings endpoint. This is load-bearing: it is what
     // forces the resolver to refuse handing back Anthropic alone.
     hasEmbeddings: false,
@@ -54,6 +58,10 @@ export const presets: readonly Preset[] = [
     kind: "openai-compatible",
     baseUrl: "https://api.openai.com/v1",
     apiKeyVar: "OPENAI_API_KEY",
+    // An OpenAI-compatible proxy or gateway is a very common deployment — LiteLLM,
+    // a corporate gateway, Azure, or a local mock. Presence still requires the API
+    // key, so setting only a base URL cannot make this preset look configured.
+    baseUrlVar: "OPENAI_BASE_URL",
     hasEmbeddings: true,
   },
   {
@@ -61,6 +69,10 @@ export const presets: readonly Preset[] = [
     kind: "openai-compatible",
     baseUrl: "https://openrouter.ai/api/v1",
     apiKeyVar: "OPENROUTER_API_KEY",
+    // An OpenAI-compatible proxy or gateway is a very common deployment — LiteLLM,
+    // a corporate gateway, Azure, or a local mock. Presence still requires the API
+    // key, so setting only a base URL cannot make this preset look configured.
+    baseUrlVar: "OPENROUTER_BASE_URL",
     hasEmbeddings: true,
   },
   {
@@ -68,6 +80,10 @@ export const presets: readonly Preset[] = [
     kind: "openai-compatible",
     baseUrl: "https://api.groq.com/openai/v1",
     apiKeyVar: "GROQ_API_KEY",
+    // An OpenAI-compatible proxy or gateway is a very common deployment — LiteLLM,
+    // a corporate gateway, Azure, or a local mock. Presence still requires the API
+    // key, so setting only a base URL cannot make this preset look configured.
+    baseUrlVar: "GROQ_BASE_URL",
     hasEmbeddings: false,
   },
   {
@@ -75,6 +91,10 @@ export const presets: readonly Preset[] = [
     kind: "openai-compatible",
     baseUrl: "https://api.together.xyz/v1",
     apiKeyVar: "TOGETHER_API_KEY",
+    // An OpenAI-compatible proxy or gateway is a very common deployment — LiteLLM,
+    // a corporate gateway, Azure, or a local mock. Presence still requires the API
+    // key, so setting only a base URL cannot make this preset look configured.
+    baseUrlVar: "TOGETHER_BASE_URL",
     hasEmbeddings: true,
   },
   {
@@ -82,6 +102,10 @@ export const presets: readonly Preset[] = [
     kind: "openai-compatible",
     baseUrl: "https://api.deepseek.com/v1",
     apiKeyVar: "DEEPSEEK_API_KEY",
+    // An OpenAI-compatible proxy or gateway is a very common deployment — LiteLLM,
+    // a corporate gateway, Azure, or a local mock. Presence still requires the API
+    // key, so setting only a base URL cannot make this preset look configured.
+    baseUrlVar: "DEEPSEEK_BASE_URL",
     hasEmbeddings: false,
   },
   {
@@ -89,6 +113,10 @@ export const presets: readonly Preset[] = [
     kind: "openai-compatible",
     baseUrl: "https://api.fireworks.ai/inference/v1",
     apiKeyVar: "FIREWORKS_API_KEY",
+    // An OpenAI-compatible proxy or gateway is a very common deployment — LiteLLM,
+    // a corporate gateway, Azure, or a local mock. Presence still requires the API
+    // key, so setting only a base URL cannot make this preset look configured.
+    baseUrlVar: "FIREWORKS_BASE_URL",
     hasEmbeddings: true,
   },
   {

@@ -28,6 +28,8 @@
   "devDependencies": {
     "@quidchat/db": "workspace:*",
     "@quidchat/providers": "workspace:*",
-    "@quidchat/server": "workspace:*"
+    "@quidchat/server": "workspace:*",
+    "@quidchat/ingest": "workspace:*",
+    "@quidchat/core": "workspace:*"
   }
 }

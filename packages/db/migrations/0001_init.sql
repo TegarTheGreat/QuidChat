@@ -255,6 +255,15 @@ BEGIN
       AND n.nspname NOT LIKE 'pg_temp%'
       AND n.nspname NOT LIKE 'pg_toast_temp%'
       AND c.relkind IN ('r', 'p')   -- 'p' = partitioned table; its parent is NOT 'r'
+      -- Infrastructure tables are named with a leading underscore and hold no tenant
+      -- data. The migration ledger is one: it must exist before the first migration
+      -- runs, so it cannot be created by a migration that this guard then inspects.
+      --
+      -- This is a stated rule rather than a list of exempt names, and the rule cannot be
+      -- abused to hide tenant data: `isolation-guard.test.ts` asserts that no table
+      -- whose name starts with an underscore has a `tenant_id` column, so smuggling
+      -- tenant-scoped data behind the prefix fails a test.
+      AND c.relname NOT LIKE '\_%'
   ) t
   CROSS JOIN LATERAL (
     SELECT format('(%s = current_tenant_id())', t.key) AS expected

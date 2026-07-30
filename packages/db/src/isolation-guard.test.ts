@@ -302,6 +302,32 @@ describe("isolation of every table, measured by behavior", () => {
     return rowsOf(r).map((x) => ({ name: x.name as string, key: x.key as string }))
   }
 
+  it("no underscore-prefixed table carries tenant data", async () => {
+    // The guard exempts tables whose name starts with an underscore, because the
+    // migration ledger must exist before the first migration runs and so cannot be
+    // created by a migration the guard then inspects.
+    //
+    // That exemption is a rule, not a list of names — which means it could be abused to
+    // hide a tenant-scoped table from every isolation check. This test closes that: an
+    // infrastructure table holding a `tenant_id` fails here, so the only way to store
+    // tenant data is under a name the guard actually examines.
+    const smuggled = rowsOf(
+      await db.execute(sql`
+        SELECT c.relname AS name
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+          AND c.relkind IN ('r', 'p')
+          AND c.relname LIKE '\\_%'
+          AND EXISTS (
+            SELECT 1 FROM information_schema.columns col
+            WHERE col.table_schema = n.nspname AND col.table_name = c.relname
+              AND col.column_name = 'tenant_id'
+          )
+      `),
+    ).map((r) => r.name as string)
+    expect(smuggled).toEqual([])
+  })
+
   it("every RLS-protected table only shows rows owned by that tenant", async () => {
     const tables = await rlsTables()
     const leaks: string[] = []

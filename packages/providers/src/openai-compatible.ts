@@ -79,7 +79,7 @@ export function openAiCompatible(opts: {
     if (!res.ok) {
       throw new ProviderError(
         reasonFromStatus(res.status),
-        `${opts.id} membalas ${res.status}`,
+        `${opts.id} responded ${res.status}`,
         { status: res.status },
       )
     }
