@@ -306,12 +306,21 @@ Dan tambahkan tiga test ini:
 
 ```ts
   it("jalur kata kunci hidup: chunk ber-kata-kunci menang walau embedding-nya jauh", async () => {
-    // Embedding query sengaja jauh dari SEMUA chunk, jadi satu-satunya alasan sebuah
+    // Embedding query WAJIB jauh dari SEMUA chunk, supaya satu-satunya alasan sebuah
     // chunk bisa menang adalah jalur kata kunci. Kalau suku ts_rank dihapus dari
     // implementasi, test ini gagal — yang tidak terjadi pada versi sebelumnya.
+    //
+    // Offset 600 BUKAN sembarang angka. `fakeEmbedding` memakai `Math.sin(offset + i)`,
+    // yang PERIODIK, jadi offset yang terlihat "jauh" bisa justru berdekatan. Jarak
+    // cosine yang terukur:
+    //     offset 999 -> 0,0284 dari chunk kata-kunci   (praktis IDENTIK)
+    //     offset 600 -> 1,9756 dari chunk kata-kunci, 1,5027 dari chunk semantik
+    // Versi pertama test ini memakai 999 dan karena itu LOLOS walau jalur kata kunci
+    // dihapus: chunk-nya menang lewat jalur semantik. Test yang tidak bisa gagal.
+    // Kalau offset ini diubah, HITUNG ULANG jarak cosine-nya lebih dulu.
     const hits = await createStore(db).searchChunks({
       tenantId: toko.tenantId, query: "garansi",
-      embedding: fakeEmbedding(999), embeddingModel: "test", limit: 1,
+      embedding: fakeEmbedding(600), embeddingModel: "test", limit: 1,
     })
     expect(hits[0]!.content).toBe(GARANSI_TOKO)
   })
@@ -431,7 +440,7 @@ Model yang dipakai meng-embed pertanyaan dan model yang menyaring chunk kini pas
 - [ ] **Step 7: Verifikasi**
 
 ```bash
-pnpm test        # 37 test (store 4 -> 7)
+pnpm test        # 43 test (store 4 -> 7)
 pnpm typecheck
 pnpm lint
 pnpm build
