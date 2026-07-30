@@ -1,0 +1,13 @@
+{
+  "name": "@quidchat/channels",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.22.3" },
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "build": "tsdown src/index.ts --dts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {}
+}

@@ -136,6 +136,7 @@ Isolation is row-level security, not application filters. Foreign keys carry `te
 | `@quidchat/server` | HTTP API |
 | `@quidchat/widget` | The embeddable widget |
 | `@quidchat/admin` | Admin panel |
+| `@quidchat/channels` | WhatsApp, WAHA, Telegram and Discord adapters |
 | `@quidchat/cli` | The `quidchat` binary |
 
 ## Development
