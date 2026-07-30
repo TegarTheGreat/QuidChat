@@ -166,6 +166,8 @@ If your site sets a `Content-Security-Policy`, allow the bundle and the API: `sc
 
 On a phone the panel takes the screen the way a messaging app does, rather than sitting in a 320-pixel box in the corner. Most customers arrive on one.
 
+A conversation follows a visitor across your pages. The widget keeps the conversation id in `sessionStorage`, so someone who asks about a product and then walks to checkout is still in the same thread — "how much is that one?" only means something after "do you have it in blue?". Closing the tab ends it, which is both what a person expects and what leaves least behind on their machine. Only the id is stored, never the messages: restoring the visible transcript would mean an endpoint that hands a conversation to anyone holding its id, and that turns the id into a password for someone else's questions.
+
 ## Making it look like yours
 
 **Settings → Widget** sets the accent colour, which side the launcher sits on, and the title your customers read. The colour is a colour picker rather than a text field, because the widget only accepts a real colour and a typed value that gets rejected reads as the setting being broken.

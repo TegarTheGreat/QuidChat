@@ -1,3 +1,4 @@
+import { readConversationId, rememberConversationId } from "./session.js"
 import {
   sendMessageWithProgress as defaultSendMessage,
   type ChatResponse,
@@ -308,7 +309,9 @@ export function mountWidget(
   panel.append(header, messages, composer)
   shadow.append(launcher, panel)
 
-  let conversationId: string | undefined
+  // Picked up from the visitor's tab, so moving between pages continues the conversation rather
+  // than starting one the assistant has no history for.
+  let conversationId: string | undefined = readConversationId(config)
   let pending = false
   let typingIndicator: HTMLElement | undefined
 
@@ -416,6 +419,7 @@ export function mountWidget(
         setStage,
       )
       conversationId = result.conversationId
+      rememberConversationId(config, result.conversationId)
       appendResult(result)
     } catch (err) {
       appendErrorMessage(err instanceof Error ? err.message : String(err))
