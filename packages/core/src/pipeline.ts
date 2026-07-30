@@ -54,7 +54,9 @@ export async function answer(args: {
   }
 
   const candidates = await store.searchChunks({
-    tenantId, query: question, embedding, limit: CANDIDATE_LIMIT,
+    tenantId, query: question, embedding,
+    embeddingModel: config.embeddingModel,
+    limit: CANDIDATE_LIMIT,
   })
 
   // Tanpa kandidat, tidak ada yang bisa disitasi. Menolak di sini menghemat

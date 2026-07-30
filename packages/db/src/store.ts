@@ -53,22 +53,54 @@ export function createStore(db: QuidDb): Store {
       })
     },
 
-    async searchChunks({ tenantId, query, embedding, limit }): Promise<Candidate[]> {
+    async searchChunks({ tenantId, query, embedding, embeddingModel, limit }): Promise<Candidate[]> {
       const vec = `[${embedding.join(",")}]`
+      // Kolam per jalur dibuat lebih besar dari `limit` supaya fusi punya bahan;
+      // 20 sebagai dasar agar limit kecil tidak mempersempit kandidatnya.
+      const poolSize = Math.max(limit * 4, 20)
       return withTenant(db, tenantId, async (tx) => {
-        // Hybrid: skor keyword (ts_rank) dan skor semantik (1 - cosine distance)
-        // dijumlahkan dengan bobot setara, lalu diambil top-k.
+        // Reciprocal Rank Fusion. Kedua jalur diambil top-k SENDIRI-SENDIRI lalu
+        // digabung berdasarkan PERINGKAT, bukan berdasarkan skor mentah.
+        //
+        // Menjumlahkan skor mentah tidak bisa dipakai: ts_rank untuk kecocokan satu kata
+        // sekitar 0,06 sementara (1 - cosine) berkisar [-1, 1]. Diukur di PGlite, chunk
+        // yang MEMUAT kata kuncinya kalah dari chunk yang tidak memuatnya sama sekali.
+        // RRF tidak peduli skala — hanya urutan — jadi kedua jalur benar-benar berbobot.
+        //
+        // Efek samping yang penting: CTE `sem` memakai bentuk
+        // `ORDER BY embedding <=> vec LIMIT k`, satu-satunya bentuk yang bisa memakai
+        // indeks HNSW. Versi lama yang mengurutkan berdasarkan jumlah dua skor tidak
+        // pernah bisa memakainya.
         const res = await tx.execute(sql`
-          SELECT c.id, c.content, d.title,
-                 ts_rank(c.tsv, plainto_tsquery('simple', ${query})) AS kw,
-                 1 - (c.embedding <=> ${vec}::vector)                AS sem
-          FROM chunks c
+          WITH kw AS (
+            SELECT c.id,
+                   row_number() OVER (
+                     ORDER BY ts_rank(c.tsv, plainto_tsquery('simple', ${query})) DESC, c.id
+                   ) AS rnk
+            FROM chunks c
+            WHERE c.tsv @@ plainto_tsquery('simple', ${query})
+            ORDER BY ts_rank(c.tsv, plainto_tsquery('simple', ${query})) DESC, c.id
+            LIMIT ${poolSize}
+          ),
+          sem AS (
+            SELECT c.id,
+                   row_number() OVER (ORDER BY c.embedding <=> ${vec}::vector, c.id) AS rnk
+            FROM chunks c
+            WHERE c.embedding IS NOT NULL
+              AND c.embedding_model = ${embeddingModel}
+            ORDER BY c.embedding <=> ${vec}::vector, c.id
+            LIMIT ${poolSize}
+          ),
+          fused AS (
+            SELECT id, SUM(1.0 / (60 + rnk)) AS score
+            FROM (SELECT id, rnk FROM kw UNION ALL SELECT id, rnk FROM sem) u
+            GROUP BY id
+          )
+          SELECT c.id, c.content, d.title, f.score
+          FROM fused f
+          JOIN chunks c ON c.id = f.id
           JOIN documents d ON d.id = c.document_id
-          WHERE c.embedding IS NOT NULL
-          ORDER BY (
-            ts_rank(c.tsv, plainto_tsquery('simple', ${query}))
-            + (1 - (c.embedding <=> ${vec}::vector))
-          ) DESC
+          ORDER BY f.score DESC, c.id
           LIMIT ${limit}
         `)
         return rowsOf(res).map((r) => ({

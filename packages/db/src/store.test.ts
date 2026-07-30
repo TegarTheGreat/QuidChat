@@ -30,12 +30,18 @@ async function seed(
   const [d] = await db.insert(documents)
     .values({ tenantId: t!.id, sourceId: s!.id, title: "Kebijakan" }).returning()
   const rows = await db.insert(chunks).values([
+    // Memuat kata kuncinya, embedding JAUH dari query uji.
     { tenantId: t!.id, documentId: d!.id, ordinal: 0,
       content: garansiText,
-      embedding: fakeEmbedding(1), embeddingModel: "test" },
+      embedding: fakeEmbedding(50), embeddingModel: "test" },
+    // TIDAK memuat kata kuncinya, embedding IDENTIK dengan query uji.
     { tenantId: t!.id, documentId: d!.id, ordinal: 1,
-      content: "Pengiriman ke Jawa memakan waktu 2 hari.",
-      embedding: fakeEmbedding(2), embeddingModel: "test" },
+      content: SEM_ONLY,
+      embedding: fakeEmbedding(1), embeddingModel: "test" },
+    // Embedding identik TAPI model berbeda -> harus tersaring.
+    { tenantId: t!.id, documentId: d!.id, ordinal: 2,
+      content: MODEL_LAIN,
+      embedding: fakeEmbedding(1), embeddingModel: "model-lain" },
   ]).returning()
   const [cv] = await db.insert(conversations)
     .values({ tenantId: t!.id, channel: "widget", visitorId: "v1" }).returning()
@@ -44,6 +50,8 @@ async function seed(
 
 const GARANSI_TOKO = "Garansi resmi berlaku 12 bulan sejak pembelian."
 const GARANSI_WARUNG = "Garansi warung hanya 3 bulan."
+const SEM_ONLY = "Pengiriman ke Jawa memakan waktu dua hari kerja."
+const MODEL_LAIN = "Ini di-embed dengan model lain dan tidak boleh muncul."
 
 // SATU database dipakai bersama oleh seluruh test di file ini, lewat `beforeAll`.
 // Dua alasan:
@@ -76,11 +84,46 @@ describe("createStore", () => {
 
   it("menemukan chunk lewat kata kunci", async () => {
     const hits = await createStore(db).searchChunks({
-      tenantId: toko.tenantId, query: "garansi", embedding: fakeEmbedding(1), limit: 5,
+      tenantId: toko.tenantId, query: "garansi",
+      embedding: fakeEmbedding(1), embeddingModel: "test", limit: 5,
     })
     expect(hits.length).toBeGreaterThan(0)
     expect(hits[0]!.content).toBe(GARANSI_TOKO)
     expect(hits[0]!.documentTitle).toBe("Kebijakan")
+  })
+
+  it("jalur kata kunci hidup: chunk ber-kata-kunci menang walau embedding-nya jauh", async () => {
+    // Embedding query sengaja jauh dari SEMUA chunk, jadi satu-satunya alasan sebuah
+    // chunk bisa menang adalah jalur kata kunci. Kalau suku ts_rank dihapus dari
+    // implementasi, test ini gagal — yang tidak terjadi pada versi sebelumnya.
+    //
+    // Offset 600, bukan 999: `fakeEmbedding` berbasis sin(offset+i), jadi periodik.
+    // Diverifikasi lewat perhitungan cosine manual bahwa 600 membuat jalur semantik
+    // SENDIRIAN memenangkan SEM_ONLY (bukan GARANSI_TOKO) — sehingga tanpa jalur kata
+    // kunci, test ini benar-benar gagal, bukan kebetulan tetap lolos.
+    const hits = await createStore(db).searchChunks({
+      tenantId: toko.tenantId, query: "garansi",
+      embedding: fakeEmbedding(600), embeddingModel: "test", limit: 1,
+    })
+    expect(hits[0]!.content).toBe(GARANSI_TOKO)
+  })
+
+  it("jalur semantik hidup: tanpa kecocokan kata kunci, yang terdekat tetap ditemukan", async () => {
+    // Query yang tidak cocok kata kunci apa pun. Kalau suku cosine dihapus, jalur
+    // kata kunci tidak mengembalikan apa pun dan test ini gagal.
+    const hits = await createStore(db).searchChunks({
+      tenantId: toko.tenantId, query: "zzz tidak ada di mana pun",
+      embedding: fakeEmbedding(1), embeddingModel: "test", limit: 1,
+    })
+    expect(hits[0]!.content).toBe(SEM_ONLY)
+  })
+
+  it("chunk dari model embedding lain dikecualikan", async () => {
+    const hits = await createStore(db).searchChunks({
+      tenantId: toko.tenantId, query: "garansi",
+      embedding: fakeEmbedding(1), embeddingModel: "test", limit: 10,
+    })
+    expect(hits.map((h) => h.content)).not.toContain(MODEL_LAIN)
   })
 
   it("setiap tenant hanya melihat chunk miliknya sendiri", async () => {
@@ -89,7 +132,7 @@ describe("createStore", () => {
     // itu tidak membedakan "RLS menyaring" dari "tenant ini memang tak punya apa-apa".
     // Di sini kedua tenant punya isi, jadi kalau RLS bocor, test ini gagal.
     const store = createStore(db)
-    const args = { query: "garansi", embedding: fakeEmbedding(1), limit: 5 }
+    const args = { query: "garansi", embedding: fakeEmbedding(1), embeddingModel: "test", limit: 5 }
 
     const isiToko = (await store.searchChunks({ tenantId: toko.tenantId, ...args }))
       .map((h) => h.content)
