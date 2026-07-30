@@ -176,3 +176,16 @@ export const routingRules = pgTable("routing_rules", {
   pattern: text("pattern"),
   enabled: boolean("enabled").notNull().default(true),
 }, (t) => [unique("routing_rules_tenant_id_key").on(t.tenantId, t.id)])
+
+// Per-tenant channel credentials. `secrets` holds one AES-256-GCM blob rather than a column
+// per field — each channel needs a different set, and a table with a nullable column for every
+// field of every channel is a table where nothing is required and nothing is validated. See
+// `migrations/0006_channel_configs.sql` and `packages/server/src/secrets.ts`.
+export const channelConfigs = pgTable("channel_configs", {
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  channel: text("channel", { enum: ["telegram", "whatsapp", "waha", "discord"] }).notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  secrets: text("secrets").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.tenantId, t.channel] })])
