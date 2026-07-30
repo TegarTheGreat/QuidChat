@@ -285,6 +285,10 @@ Both browser halves can also be run on their own, against a server you already h
 
 After changing anything under `packages/db/migrations/`, run `pnpm generate:migrations`. The SQL is embedded in a module so applying migrations never depends on a filesystem path — a path relative to the module works only from the source tree, and a bundled binary dies on start instead. A test fails if the two copies drift.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). It is short, and the half of it worth reading is the list of things about this codebase that will surprise you — starting with the fact that using the database handle directly on a tenant-scoped table returns every tenant's rows.
+
 ## Licence
 
 MIT.
