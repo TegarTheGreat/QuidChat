@@ -88,6 +88,8 @@ Anything saved in the panel is encrypted with `QUIDCHAT_SECRET_KEY` (`openssl ra
 | WAHA (self-hosted WhatsApp) | `WAHA_BASE_URL`, `WAHA_SESSION`, `WAHA_API_KEY` |
 | Discord | `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY` |
 
+**Self-hosted WhatsApp** goes through WAHA, which runs Baileys as its engine and exposes it over HTTP. QuidChat talks to that HTTP API rather than embedding the library: a Baileys session is a long-lived socket with its own pairing, reconnection and auth state, and putting one per tenant inside the process that answers customers makes an outage in an unofficial protocol into an outage of everything. Running it beside QuidChat keeps each failure where it belongs.
+
 Set the signature secret. Verification runs before anything is parsed or stored, so a forged request never reaches the pipeline — without it, anyone who learns the URL can put words in a business's conversation history and spend its budget.
 
 Every channel goes through the identical pipeline. Routing, retrieval, grounding, refusal and spend behave exactly as they do on the website, because the promise the product makes does not change with the transport.
