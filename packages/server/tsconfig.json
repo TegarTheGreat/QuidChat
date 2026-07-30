@@ -1,9 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
   "include": ["src"],
-  // `admin-contract.test.ts` imports the admin panel's own API client, which reads
-  // `import.meta.env` — typed by `vite/client` in that package and not here. Excluded from
-  // this package's typecheck rather than teaching the server about Vite: vitest still runs the
-  // file, and the client is still typechecked where it lives.
-  "exclude": ["src/admin-contract.test.ts"]
+  // These two import another package's source — the admin panel's API client and the widget's
+  // — to run them against this server. The admin client reads `import.meta.env`, typed by
+  // `vite/client` where it lives and not here, and neither belongs in this package's build
+  // graph. Excluded from THIS typecheck rather than teaching the server about Vite: vitest
+  // still runs both files, and both clients are still typechecked in their own packages.
+  "exclude": ["src/admin-contract.test.ts", "src/widget-contract.test.ts"]
 }

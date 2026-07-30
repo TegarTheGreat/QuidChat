@@ -37,7 +37,12 @@ beforeAll(async () => {
     db,
     provider: new FakeProvider([]),
     logError: () => {},
-    env: { QUIDCHAT_ADMIN_TOKEN: ADMIN_TOKEN },
+    env: {
+      QUIDCHAT_ADMIN_TOKEN: ADMIN_TOKEN,
+      // A real 32-byte key, so the channel routes below exercise encryption rather than the
+      // "no key configured" path.
+      QUIDCHAT_SECRET_KEY: Buffer.alloc(32, 3).toString("base64"),
+    },
   })
   await new Promise<void>((resolve) => server.listen(0, resolve))
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -163,6 +168,56 @@ describe("the admin panel's client against the admin API", () => {
       expect(typeof finding.fix).toBe("string")
       expect(["blocker", "warning", "suggestion"]).toContain(finding.severity)
     }
+  })
+})
+
+describe("channel credentials", () => {
+  it("saves a channel and reports which fields are stored, never their values", async () => {
+    const api = await client()
+    const saved = await api.saveChannel({
+      tenantSlug: "contract",
+      channel: "telegram",
+      enabled: true,
+      secrets: { botToken: "123456:CONTRACT-TOKEN", secretToken: "contract-hook-secret" },
+    })
+    expect(saved.configuredFields).toEqual(["botToken", "secretToken"])
+
+    const listed = await api.listChannels("contract")
+    expect(listed.secretKeyConfigured).toBe(true)
+    const telegram = listed.channels.find((c) => c.channel === "telegram")
+    expect(telegram?.enabled).toBe(true)
+    expect(telegram?.configuredFields).toContain("botToken")
+    expect(telegram?.error).toBeNull()
+
+    // The screen renders from `fields`, so the contract includes it: a channel whose fields the
+    // panel does not know about renders as a card with no inputs.
+    expect(listed.fields.telegram?.required).toEqual(["botToken"])
+
+    // The whole response, serialised, must not contain either secret. Asserting on the parsed
+    // object would miss a value that reached some other field name.
+    expect(JSON.stringify(listed)).not.toMatch(/CONTRACT-TOKEN|contract-hook-secret/)
+  })
+
+  it("refuses an incomplete channel and names what is missing", async () => {
+    const api = await client()
+    await expect(
+      api.saveChannel({
+        tenantSlug: "contract",
+        channel: "whatsapp",
+        enabled: true,
+        secrets: { phoneNumberId: "555" },
+      }),
+    ).rejects.toThrow(/accessToken/)
+  })
+
+  it("disconnects a channel, and says so when there is nothing to disconnect", async () => {
+    const api = await client()
+    expect(await api.deleteChannel({ tenantSlug: "contract", channel: "telegram" })).toEqual({ ok: true })
+    // A second delete must not report success: an owner clicking twice should learn the channel
+    // is already gone rather than believing they removed something.
+    await expect(
+      api.deleteChannel({ tenantSlug: "contract", channel: "telegram" }),
+    ).rejects.toThrow(/not configured/)
   })
 })
 
