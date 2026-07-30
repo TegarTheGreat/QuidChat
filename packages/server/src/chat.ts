@@ -76,6 +76,18 @@ async function readBoundedBody(req: IncomingMessage): Promise<string | null> {
   })
 }
 
+/**
+ * Removes the one character Postgres will not store in a `text` column.
+ *
+ * A NUL byte reaching the database throws, and the visitor gets a 503 for a message that would
+ * never work no matter how many times they tried. Stripped rather than rejected: a NUL in a
+ * customer's question is an artifact of a paste or a broken client, never something they meant
+ * to type, so answering the rest of their sentence is better than refusing all of it.
+ */
+function stripNulls(text: string): string {
+  return text.replaceAll("\u0000", "")
+}
+
 /** Why a body was rejected, so the visitor can be told something they can act on. */
 export type ChatRequestProblem = "malformed" | "message_too_long"
 
@@ -99,7 +111,7 @@ function parseChatRequest(raw: string): ChatRequest | ChatRequestProblem {
 
   return {
     tenantSlug: body.tenantSlug,
-    message: body.message,
+    message: stripNulls(body.message),
     ...(typeof body.conversationId === "string" ? { conversationId: body.conversationId } : {}),
   }
 }

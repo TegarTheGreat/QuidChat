@@ -57,7 +57,10 @@ export async function handleChannelMessage(args: {
     return { status: "ignored", sent: false, why: "not a customer text message" }
   }
 
-  const result = await answer(incoming)
+  // Same reason as the web route: a NUL byte cannot be stored in a Postgres text column, and a
+  // message carrying one would fail after the platform had already been told the webhook
+  // succeeded — leaving a customer waiting for an answer that was never going to come.
+  const result = await answer({ ...incoming, text: incoming.text.replaceAll("\u0000", "") })
 
   const text =
     result.kind === "answered"

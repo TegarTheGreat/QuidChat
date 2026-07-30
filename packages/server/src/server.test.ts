@@ -342,6 +342,32 @@ describe("chat endpoint", () => {
       }
     })
   })
+
+  it("answers a message carrying a NUL byte instead of failing on it", async () => {
+    const provider = new FakeProvider([{ segments: [{ kind: "general", text: "Sure." }] }])
+    const server = createServer({ db, provider, logError: () => {} })
+    await new Promise<void>((resolve) => server.listen(0, resolve))
+    const port = (server.address() as AddressInfo).port
+    try {
+      // Postgres will not store a NUL in a text column, so this used to throw on the insert and
+      // the visitor got a 503 for a message that would never have worked however many times they
+      // tried it.
+      const res = await fetch(`http://127.0.0.1:${port}/v1/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: ALLOWED_ORIGIN },
+        body: JSON.stringify({ tenantSlug: "shop", message: "what is the\u0000 warranty?" }),
+      })
+      expect(res.status).toBe(200)
+
+      const stored = await db.select().from(messages).where(eq(messages.role, "user"))
+      // Stripped, not escaped: the rest of the sentence is what the customer meant.
+      expect(stored.some((m) => m.content.includes("\u0000"))).toBe(false)
+      expect(stored.some((m) => m.content === "what is the warranty?")).toBe(true)
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
 })
 
 describe("budget enforcement", () => {
