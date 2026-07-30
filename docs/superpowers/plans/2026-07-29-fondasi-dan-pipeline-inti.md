@@ -831,14 +831,16 @@ git commit -m "feat(db): add connection factory, tenant context and isolation te
   "private": true,
   "type": "module",
   "engines": { "node": ">=22.22.3" },
-  "exports": { ".": "./src/index.ts", "./testing": "./src/testing/fakes.ts" },
+  "exports": { ".": "./src/index.ts" },
   "scripts": {
-    "build": "tsdown src/index.ts src/testing/fakes.ts --dts",
+    "build": "tsdown src/index.ts --dts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {}
 }
 ```
+
+**Entry point `./testing` sengaja BELUM didaftarkan di sini.** Berkasnya (`src/testing/fakes.ts`) dibuat di Task 10, dan mendeklarasikan export atau entri build untuk berkas yang belum ada membuat `pnpm build` gagal — `tsdown` menolak input yang tidak ditemukan. Task 10 yang menambahkan keduanya bersamaan dengan berkasnya. Aturan umumnya: **setiap task hanya mendeklarasikan apa yang ia buat.**
 
 `dependencies` kosong bukan kelalaian — `core` adalah library murni. Kalau nanti ada yang menambahkan dependency runtime ke sini, itu sinyal batas arsitektur sedang dilanggar.
 
@@ -1672,6 +1674,20 @@ git commit -m "feat(db): implement Store with hybrid search relying on RLS for s
 - Produces:
   - `answer(args: { store: Store; provider: Provider; tenantId: string; conversationId: string; history: {role:"user"|"assistant";content:string}[]; question: string }): Promise<PipelineResult>`
   - `MemoryStore`, `FakeProvider` dari `@quidchat/core/testing`
+
+- [ ] **Step 0: Daftarkan entry point `./testing` yang Task 5 sengaja tunda**
+
+Task 5 tidak mendeklarasikan export ini karena berkasnya belum ada dan `tsdown` menolak input yang tidak ditemukan. Sekarang berkasnya dibuat, jadi daftarkan bersamaan.
+
+Modify `packages/core/package.json`:
+
+```json
+  "exports": { ".": "./src/index.ts", "./testing": "./src/testing/fakes.ts" },
+  "scripts": {
+    "build": "tsdown src/index.ts src/testing/fakes.ts --dts",
+```
+
+Jalankan `pnpm build` setelah Step 1 selesai untuk memastikan input barunya ditemukan.
 
 - [ ] **Step 1: Tulis fake untuk test**
 
