@@ -1,5 +1,5 @@
 import { fetchWithRetry } from "./http.js"
-import { ProviderError, type Answer, type Capabilities, type CompleteResult, type Provider, type PromptParts } from "@quidchat/core"
+import { ProviderError, type Answer, type Capabilities, type CompleteResult, type Provider, type PromptParts, type ToolCall } from "@quidchat/core"
 
 /** Maps an HTTP status to a failure reason. Not everything is `unavailable`. */
 function reasonFromStatus(status: number): "auth" | "unknown_model" | "rate_limit" | "unavailable" {
@@ -53,6 +53,37 @@ export function asAnswer(value: unknown): Answer {
  *
  * `fetchImpl` can be injected so tests never touch the network.
  */
+/**
+ * Reads the tool calls out of an OpenAI-compatible response.
+ *
+ * `function.arguments` is a JSON *string* here, not an object — the one difference from
+ * Anthropic's shape, and the one that silently yields undefined arguments if the two are treated
+ * alike. A call whose arguments will not parse is dropped rather than thrown: the model tried to
+ * hand off and garbled it, and answering with the current skill beats failing the question.
+ */
+function parseToolCalls(raw: unknown): ToolCall[] {
+  if (!Array.isArray(raw)) return []
+  const calls: ToolCall[] = []
+  for (const entry of raw as { id?: unknown; function?: { name?: unknown; arguments?: unknown } }[]) {
+    const name = entry.function?.name
+    if (typeof name !== "string") continue
+    let input: Record<string, unknown> = {}
+    const args = entry.function?.arguments
+    if (typeof args === "string" && args.trim() !== "") {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(args)
+      } catch {
+        continue
+      }
+      if (parsed === null || typeof parsed !== "object") continue
+      input = parsed as Record<string, unknown>
+    }
+    calls.push({ id: typeof entry.id === "string" ? entry.id : name, name, input })
+  }
+  return calls
+}
+
 export function openAiCompatible(opts: {
   id: string
   baseUrl: string
@@ -92,13 +123,40 @@ export function openAiCompatible(opts: {
   return {
     id: opts.id,
 
-    async complete({ model, prompt }): Promise<CompleteResult> {
+    async complete({ model, prompt, tools }): Promise<CompleteResult> {
       const j = await call("/chat/completions", {
         model,
         messages: messagesFrom(prompt),
         response_format: { type: "json_object" },
+        // Tools render before the messages, so the list is passed exactly as given — the caller
+        // keeps it identical across skills to protect the cached prefix.
+        ...(tools && tools.length > 0
+          ? {
+              tools: tools.map((t) => ({
+                type: "function",
+                function: { name: t.name, description: t.description, parameters: t.parameters },
+              })),
+            }
+          : {}),
       })
-      const choice = (j.choices as { message?: { content?: unknown } }[] | undefined)?.[0]
+      const choice = (
+        j.choices as { message?: { content?: unknown; tool_calls?: unknown } }[] | undefined
+      )?.[0]
+
+      // Read tool calls BEFORE the text check. A model that calls a tool returns `content: null`,
+      // so checking for text first turns every tool call into a schema error — the handoff would
+      // look like a broken provider.
+      const toolCalls = parseToolCalls(choice?.message?.tool_calls)
+      const usage = (j.usage ?? {}) as Record<string, number | undefined>
+      const reportedUsage = {
+        inputTokens: usage.prompt_tokens ?? 0,
+        outputTokens: usage.completion_tokens ?? 0,
+        // The field that reports cached tokens varies in location across
+        // OpenAI-compatible services; `null` means "unknown", not "zero".
+        cachedTokens: usage.prompt_cache_hit_tokens ?? null,
+      }
+      if (toolCalls.length > 0) return { answer: null, toolCalls, usage: reportedUsage }
+
       const text = choice?.message?.content
       if (typeof text !== "string") {
         throw new ProviderError("schema", "response has no text at choices[0].message.content")
@@ -109,17 +167,7 @@ export function openAiCompatible(opts: {
       } catch (cause) {
         throw new ProviderError("schema", "the model's response is not valid JSON", { cause })
       }
-      const usage = (j.usage ?? {}) as Record<string, number | undefined>
-      return {
-        answer: asAnswer(parsed),
-        usage: {
-          inputTokens: usage.prompt_tokens ?? 0,
-          outputTokens: usage.completion_tokens ?? 0,
-          // The field that reports cached tokens varies in location across
-          // OpenAI-compatible services; `null` means "unknown", not "zero".
-          cachedTokens: usage.prompt_cache_hit_tokens ?? null,
-        },
-      }
+      return { answer: asAnswer(parsed), toolCalls: [], usage: reportedUsage }
     },
 
     async generateText({ model, system, user }): Promise<string> {

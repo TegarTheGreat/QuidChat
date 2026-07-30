@@ -379,6 +379,7 @@ describe("chat endpoint", () => {
         seen.push(args.prompt.history)
         return {
           answer: { segments: [{ kind: "general" as const, text: "Noted." }] },
+          toolCalls: [],
           usage: { inputTokens: 1, outputTokens: 1, cachedTokens: null },
         }
       },

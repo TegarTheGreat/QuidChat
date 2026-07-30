@@ -54,6 +54,14 @@ One entry in `packages/channels/src/registry.ts` — id, title, hint, credential
 
 Nothing else. The server reads credentials from the environment and from a tenant's stored secrets using the same definition, the admin API serves the field list from it, and the panel renders whatever the API says. It was six places before, five of which were the same information written five ways, with nothing to notice when they disagreed.
 
+## The one tool the model may call
+
+`handoff(to, reason)` — a skill passing a question to the sibling that owns it. Two properties are load-bearing and easy to undo by accident:
+
+**The target is an enum built from the database**, so an invented skill is not representable. **The tool list is identical for every skill in a tenant** — tools render *before* the system prompt, so a list that varies per skill moves the first cache breakpoint to position 0 and re-bills the entire prefix on every handoff. Which targets a skill may actually reach is enforced in code after the call, not by changing what the model sees.
+
+`Provider` is a public interface — a self-hosted deployment can supply its own. Read new fields defensively; a provider written before `toolCalls` existed once took down every turn with a `TypeError` the customer saw as a refusal.
+
 ## Commits
 
 Present tense, and say why rather than what. The diff already says what.

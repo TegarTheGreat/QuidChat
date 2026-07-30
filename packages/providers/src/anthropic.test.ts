@@ -110,7 +110,7 @@ describe("anthropic", () => {
     const { impl } = fakeFetch({ json: validAnswer })
     const p = anthropic({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
     const result = await p.complete({ model: "m", prompt })
-    expect(result.answer.segments).toHaveLength(1)
+    expect(result.answer!.segments).toHaveLength(1)
     expect(result.usage.inputTokens).toBe(100)
     expect(result.usage.outputTokens).toBe(20)
     expect(result.usage.cachedTokens).toBe(80)

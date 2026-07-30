@@ -1,5 +1,5 @@
 import { fetchWithRetry } from "./http.js"
-import { ProviderError, type Capabilities, type CompleteResult, type Provider, type PromptParts } from "@quidchat/core"
+import { ProviderError, type Capabilities, type CompleteResult, type Provider, type PromptParts, type ToolCall } from "@quidchat/core"
 import { asAnswer } from "./openai-compatible.js"
 
 /** Maps an HTTP status to a failure reason. Same mapping as the OpenAI-compatible
@@ -20,6 +20,29 @@ const ANTHROPIC_VERSION = "2023-06-01"
 /** Builds the `messages` array in STABLE -> VOLATILE order: history, then the
  *  current turn. `system` is deliberately NOT in here — on Anthropic's wire format
  *  it is a top-level field, not a `role: "system"` message. */
+type ContentBlock = {
+  type?: string
+  text?: unknown
+  id?: unknown
+  name?: unknown
+  input?: unknown
+}
+
+/** Reads `tool_use` blocks. `input` arrives as an object here — no JSON string to parse. */
+function toolCallsFrom(content: ContentBlock[]): ToolCall[] {
+  const calls: ToolCall[] = []
+  for (const block of content) {
+    if (block.type !== "tool_use") continue
+    if (typeof block.name !== "string") continue
+    const input =
+      block.input !== null && typeof block.input === "object"
+        ? (block.input as Record<string, unknown>)
+        : {}
+    calls.push({ id: typeof block.id === "string" ? block.id : block.name, name: block.name, input })
+  }
+  return calls
+}
+
 function messagesFrom(prompt: PromptParts) {
   return [
     ...prompt.history.map((h) => ({ role: h.role, content: h.content })),
@@ -82,7 +105,7 @@ export function anthropic(opts: {
   return {
     id,
 
-    async complete({ model, prompt }): Promise<CompleteResult> {
+    async complete({ model, prompt, tools }): Promise<CompleteResult> {
       const j = await call("/messages", {
         model,
         max_tokens: 4096,
@@ -94,11 +117,34 @@ export function anthropic(opts: {
           { type: "text", text: prompt.system, cache_control: { type: "ephemeral" } },
         ],
         messages: messagesFrom(prompt),
+        // Anthropic takes `input_schema`, and the arguments come back already parsed — unlike the
+        // OpenAI-compatible shape, where they arrive as a JSON string.
+        ...(tools && tools.length > 0
+          ? {
+              tools: tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                input_schema: t.parameters,
+              })),
+            }
+          : {}),
       })
-      const content = j.content as { type?: string; text?: unknown }[] | undefined
-      const text = content?.[0]?.text
+      const content = (j.content ?? []) as ContentBlock[]
+      const usage = (j.usage ?? {}) as Record<string, number | undefined>
+      const reportedUsage = {
+        inputTokens: usage.input_tokens ?? 0,
+        outputTokens: usage.output_tokens ?? 0,
+        cachedTokens: usage.cache_read_input_tokens ?? null,
+      }
+
+      const toolCalls = toolCallsFrom(content)
+      if (toolCalls.length > 0) return { answer: null, toolCalls, usage: reportedUsage }
+
+      // Found by type rather than read from position 0. A response can lead with a thinking block
+      // or a tool_use block, and indexing the first block returns those instead of the answer.
+      const text = content.find((block) => block.type === "text")?.text
       if (typeof text !== "string") {
-        throw new ProviderError("schema", "response has no text at content[0].text")
+        throw new ProviderError("schema", "response has no text block in content")
       }
       let parsed: unknown
       try {
@@ -106,15 +152,7 @@ export function anthropic(opts: {
       } catch (cause) {
         throw new ProviderError("schema", "the model's response is not valid JSON", { cause })
       }
-      const usage = (j.usage ?? {}) as Record<string, number | undefined>
-      return {
-        answer: asAnswer(parsed),
-        usage: {
-          inputTokens: usage.input_tokens ?? 0,
-          outputTokens: usage.output_tokens ?? 0,
-          cachedTokens: usage.cache_read_input_tokens ?? null,
-        },
-      }
+      return { answer: asAnswer(parsed), toolCalls: [], usage: reportedUsage }
     },
 
     async generateText({ model, system, user }): Promise<string> {

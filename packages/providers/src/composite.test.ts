@@ -11,7 +11,8 @@ function fakeProvider(id: string) {
       calls.push("complete")
       return Promise.resolve({
         answer: { segments: [{ text: "x", kind: "general" }] },
-        usage: { inputTokens: 0, outputTokens: 0, cachedTokens: null },
+        toolCalls: [],
+      usage: { inputTokens: 0, outputTokens: 0, cachedTokens: null },
       })
     },
     generateText: (): Promise<string> => {

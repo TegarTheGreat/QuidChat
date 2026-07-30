@@ -1,6 +1,7 @@
 import { validateGrounding } from "./grounding/validator.js"
 import { effectiveMode, type AnswerMode } from "./modes.js"
 import { canHandoff } from "./routing/handoff.js"
+import { handoffTool, pairAlreadyUsed, resolveHandoff } from "./routing/handoff-tool.js"
 import { route, type Skill } from "./routing/router.js"
 import { buildPrompt } from "./prompt/builder.js"
 import { ProviderError } from "./provider-error.js"
@@ -230,6 +231,14 @@ export async function answer(args: {
     }
   }
 
+  // Built once, from every skill in the tenant, and passed unchanged on every request in this
+  // turn — including after a handoff. Tools render before the system prompt, so a list that
+  // changed per skill would move the cache breakpoint to position 0 and re-bill the whole prefix.
+  const tool = handoffTool(skills)
+  const tools = tool ? [tool] : undefined
+  /** Which pairs have already exchanged this question this turn, for the cycle check. */
+  const handoffTrail: { from: string | null; to: string }[] = []
+
   let feedback: string | undefined
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     // A skill's own instructions are appended to the grounding rules, never in place of
@@ -245,9 +254,52 @@ export async function answer(args: {
 
     let result
     try {
-      result = await provider.complete({ model: config.chatModel, prompt })
+      result = await provider.complete({
+        model: config.chatModel,
+        prompt,
+        ...(tools ? { tools } : {}),
+      })
     } catch (e) {
       return refuse(escalationReasonFor(e))
+    }
+
+    addUsage(result.usage)
+
+    // The model decided this question belongs to a colleague. This is the trigger a keyword rule
+    // cannot cover: retrieval succeeded, the documents are simply about the wrong subject.
+    // `?? []` because `Provider` is a public interface: a self-hosted deployment can supply its
+    // own, and one written before this field existed would otherwise take down every turn with a
+    // TypeError that reaches the customer as a refusal. Found exactly that way.
+    const requested = (result.toolCalls ?? [])
+      .map((call) => resolveHandoff({ call, skills, current: skill }))
+      .find((r) => r !== null)
+    if (requested) {
+      const conversationHandoffs = await store.incrementHandoffCount({ tenantId, conversationId })
+      const allowed =
+        canHandoff({
+          turnCount: handoffsThisTurn,
+          conversationCount: conversationHandoffs - 1,
+          maxPerTurn: config.maxHandoffsPerTurn,
+          maxPerConversation: config.maxHandoffsPerConversation,
+        }) && !pairAlreadyUsed(handoffTrail, skill?.id ?? null, requested.target.id)
+
+      if (!allowed) return refuse("handoff_limit")
+
+      handoffTrail.push({ from: skill?.id ?? null, to: requested.target.id })
+      handoffsThisTurn += 1
+      skill = requested.target
+      candidates = await retrieve(requested.target)
+      // The new skill is scoped to different sources and may have nothing either. Refusing here
+      // rather than generating saves a call that is guaranteed to fail validation.
+      if (candidates.length === 0) return refuse("no_source")
+      feedback = undefined
+      continue
+    }
+
+    if (!result.answer) {
+      // A tool call that resolved to nothing usable — an unknown target, or a tool we do not
+      // define. There is no answer to validate and nothing to hand off to, so the round is spent.
+      return refuse("no_source")
     }
 
     progress("validating")
@@ -257,8 +309,6 @@ export async function answer(args: {
       candidates,
       highRiskTopics: config.highRiskTopics,
     })
-
-    addUsage(result.usage)
 
     if (verdict.ok) {
       await store.recordAnswer({

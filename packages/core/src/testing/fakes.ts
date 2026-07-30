@@ -1,4 +1,11 @@
-import type { Capabilities, CompleteResult, Provider, PromptParts } from "../provider.js"
+import type {
+  Capabilities,
+  CompleteResult,
+  PromptParts,
+  Provider,
+  ToolCall,
+  ToolDefinition,
+} from "../provider.js"
 import type { RoutingRule, Skill } from "../routing/router.js"
 import type { Store } from "../store.js"
 import type { Answer, Candidate, EscalationReason, Segment, TenantConfig } from "../types.js"
@@ -145,16 +152,29 @@ export class FakeProvider implements Provider {
   /** The reply `generateText` returns, settable by a test. */
   textReply = "rewritten question"
 
+  /** Tool definitions the pipeline passed, so a test can assert the list is stable across a
+   *  handoff rather than trusting the comment that says it is. */
+  toolsSeen: (ToolDefinition[] | undefined)[] = []
+  /** Queued tool calls, one entry per `complete` call. A `null` entry means "answer normally". */
+  toolCallQueue: (ToolCall[] | null)[] = []
+
   constructor(private answers: Answer[]) {}
 
-  async complete(args: { model: string; prompt: PromptParts }): Promise<CompleteResult> {
+  async complete(args: {
+    model: string
+    prompt: PromptParts
+    tools?: ToolDefinition[]
+  }): Promise<CompleteResult> {
     this.calls.push(args.prompt)
+    this.toolsSeen.push(args.tools)
+    const usage = { inputTokens: 10, outputTokens: 5, cachedTokens: null }
+
+    const queued = this.toolCallQueue[this.calls.length - 1]
+    if (queued && queued.length > 0) return { answer: null, toolCalls: queued, usage }
+
     const next = this.answers[this.calls.length - 1] ?? this.answers.at(-1)
     if (!next) throw new Error("FakeProvider ran out of answers")
-    return {
-      answer: next,
-      usage: { inputTokens: 10, outputTokens: 5, cachedTokens: null },
-    }
+    return { answer: next, toolCalls: [], usage }
   }
 
   async generateText(args: { model: string; system: string; user: string }): Promise<string> {
