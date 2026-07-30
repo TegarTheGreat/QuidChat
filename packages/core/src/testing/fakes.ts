@@ -19,6 +19,15 @@ export class MemoryStore implements Store {
   recordedAnswers: { segments: Segment[]; citedChunkIds: string[] }[] = []
   recordedEscalations: EscalationReason[] = []
   recordedUserTurns: string[] = []
+  createdDocuments: { sourceId: string; title: string; url: string | undefined }[] = []
+  insertedChunks: {
+    documentId: string
+    ordinal: number
+    content: string
+    embedding: number[] | null
+    embeddingModel: string
+  }[] = []
+  sourceStatuses: { sourceId: string; status: string; error: string | undefined }[] = []
 
   constructor(
     private candidates: Candidate[] = [],
@@ -43,6 +52,28 @@ export class MemoryStore implements Store {
 
   async recordUserTurn(args: { text: string }): Promise<void> {
     this.recordedUserTurns.push(args.text)
+  }
+
+  async createDocument(args: { sourceId: string; title: string; url?: string }): Promise<string> {
+    this.createdDocuments.push({ sourceId: args.sourceId, title: args.title, url: args.url })
+    return `fake-document-${this.createdDocuments.length}`
+  }
+
+  async insertChunks(args: {
+    documentId: string
+    chunks: { ordinal: number; content: string; embedding: number[] | null; embeddingModel: string }[]
+  }): Promise<void> {
+    for (const chunk of args.chunks) {
+      this.insertedChunks.push({ documentId: args.documentId, ...chunk })
+    }
+  }
+
+  async setSourceStatus(args: {
+    sourceId: string
+    status: "pending" | "indexing" | "ready" | "error"
+    error?: string
+  }): Promise<void> {
+    this.sourceStatuses.push({ sourceId: args.sourceId, status: args.status, error: args.error })
   }
 }
 

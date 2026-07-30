@@ -9,5 +9,6 @@
     "build": "tsdown src/index.ts --dts",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {}
+  "dependencies": { "@quidchat/core": "workspace:*" },
+  "devDependencies": { "@quidchat/db": "workspace:*", "drizzle-orm": "0.45.2" }
 }

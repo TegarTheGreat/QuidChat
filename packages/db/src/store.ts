@@ -183,5 +183,49 @@ export function createStore(db: QuidDb): Store {
         `)
       })
     },
+
+    async createDocument({ tenantId, sourceId, title, url }): Promise<string> {
+      return withTenant(db, tenantId, async (tx) => {
+        const res = await tx.execute(sql`
+          INSERT INTO documents (tenant_id, source_id, title, url)
+          VALUES (${tenantId}, ${sourceId}, ${title}, ${url ?? null})
+          RETURNING id
+        `)
+        return rowsOf(res)[0]!.id as string
+      })
+    },
+
+    async insertChunks({ tenantId, documentId, chunks }) {
+      await withTenant(db, tenantId, async (tx) => {
+        for (const chunk of chunks) {
+          // NULL for a missing embedding is deliberate — see the `insertChunks` doc
+          // comment on `Store`. `NULL::vector` is a valid cast in Postgres, so this
+          // does not need special-casing beyond skipping the `[...]` formatting.
+          const vec = chunk.embedding ? `[${chunk.embedding.join(",")}]` : null
+          await tx.execute(sql`
+            INSERT INTO chunks (tenant_id, document_id, ordinal, content, embedding, embedding_model)
+            VALUES (
+              ${tenantId}, ${documentId}, ${chunk.ordinal}, ${chunk.content},
+              ${vec}::vector, ${chunk.embeddingModel}
+            )
+          `)
+        }
+      })
+    },
+
+    async setSourceStatus({ tenantId, sourceId, status, error }) {
+      await withTenant(db, tenantId, async (tx) => {
+        // No `WHERE tenant_id` here, same as everywhere else in this file — RLS scopes
+        // the update via the transaction's tenant context. Filtering by `id` alone is
+        // not a tenant filter: it just selects the one row this call means to touch.
+        await tx.execute(sql`
+          UPDATE knowledge_sources
+          SET status = ${status},
+              error = ${error ?? null},
+              last_indexed_at = CASE WHEN ${status} = 'ready' THEN now() ELSE last_indexed_at END
+          WHERE id = ${sourceId}
+        `)
+      })
+    },
   }
 }

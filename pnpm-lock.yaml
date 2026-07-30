@@ -51,7 +51,18 @@ importers:
         specifier: 0.31.10
         version: 0.31.10
 
-  packages/ingest: {}
+  packages/ingest:
+    dependencies:
+      '@quidchat/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@quidchat/db':
+        specifier: workspace:*
+        version: link:../db
+      drizzle-orm:
+        specifier: 0.45.2
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(postgres@3.4.9)
 
   packages/providers:
     dependencies:
