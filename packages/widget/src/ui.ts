@@ -318,6 +318,10 @@ export function mountWidget(
   function closePanel(): void {
     panel.hidden = true
     launcher.setAttribute("aria-expanded", "false")
+    // Focus goes back to the button that opened it. Without this, closing with Escape drops
+    // focus to the document body, and a keyboard user is returned to the top of a stranger's
+    // website having lost their place entirely.
+    launcher.focus()
   }
 
   function appendBubble(role: "visitor" | "assistant" | "error"): HTMLElement {

@@ -225,3 +225,18 @@ describe("widget theming", () => {
     expect(styleText).toContain(DEFAULT_THEME.primaryColor)
   })
 })
+
+describe("keyboard use", () => {
+  it("returns focus to the launcher when the panel closes", () => {
+    const { shadow, launcher } = mount(async () => ({ kind: "refused" }) as never)
+
+    launcher.click()
+    // Opening moves focus into the conversation, which is what someone wants next.
+    expect(shadow.activeElement?.tagName).toBe("TEXTAREA")
+
+    shadow.querySelector<HTMLElement>('[aria-label="Close chat"]')!.click()
+    // Closing must give it back. Otherwise focus falls to the document body and a keyboard user
+    // is returned to the top of a stranger's website, having lost their place.
+    expect(shadow.activeElement).toBe(launcher)
+  })
+})
