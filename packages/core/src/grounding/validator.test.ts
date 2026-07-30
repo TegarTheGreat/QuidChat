@@ -53,18 +53,18 @@ describe("validateGrounding", () => {
       { kind: "business_claim", text: "Harganya Rp200.000.", citations: ["chunk-2", "chunk-1"] },
     ])
     expect(v.ok).toBe(true)
-    // `toSorted()` bukan `sort()`: yang kedua mengubah array di dalam verdict,
-    // jadi assertion berikutnya di test yang sama akan memeriksa data yang sudah
-    // teracak urutannya oleh assertion sebelumnya.
+    // `toSorted()` not `sort()`: the latter would mutate the array inside the
+    // verdict, so a later assertion in the same test would be checking data
+    // whose order was already scrambled by the earlier assertion.
     if (v.ok) expect(v.citedChunkIds.toSorted()).toEqual(["chunk-1", "chunk-2"])
   })
 
   it("menolak jawaban kosong", () => {
     const v = run([])
     expect(v.ok).toBe(false)
-    // Violation-nya ikut diperiksa. Tanpa ini, implementasi yang menolak jawaban
-    // kosong dengan label yang salah — misalnya `missing_citation` — tetap lolos,
-    // dan pemanggil yang membedakan penyebab penolakan jadi salah bercabang.
+    // The violation is checked too. Without this, an implementation that rejects an
+    // empty answer with the wrong label — `missing_citation`, say — would still pass,
+    // and a caller branching on the rejection reason would branch incorrectly.
     if (!v.ok) expect(v.violation).toBe("empty_answer")
   })
 })

@@ -2,12 +2,12 @@ import type { PromptParts } from "../provider.js"
 import type { Candidate, TenantConfig } from "../types.js"
 
 /**
- * Menyusun prompt agar cache LLM mengena. Urutan render adalah tools → system
- * → messages, dan cache berupa prefix match, jadi yang stabil harus di depan
- * dan yang volatil di belakang.
+ * Assembles the prompt so the LLM cache hits. Render order is tools → system
+ * → messages, and caching is a prefix match, so what's stable must come first
+ * and what's volatile must come last.
  *
- * Konteks hasil retrieve TIDAK BOLEH masuk `system` — ia berbeda tiap
- * pertanyaan dan akan membatalkan cache di setiap permintaan.
+ * Retrieved context must NEVER go into `system` — it differs per question and
+ * would invalidate the cache on every request, with no error and no log.
  */
 export function buildPrompt(args: {
   config: TenantConfig
@@ -15,9 +15,9 @@ export function buildPrompt(args: {
   candidates: Candidate[]
   question: string
   /**
-   * Alasan jawaban sebelumnya ditolak, kalau ini ronde perbaikan. Ditaruh di
-   * `currentTurn`, BUKAN di `system` — ia berubah per percobaan, dan menaruhnya di
-   * bagian stabil akan membatalkan cache prefix untuk setiap pesan.
+   * Why the previous answer was rejected, if this is a repair round. Placed in
+   * `currentTurn`, NOT in `system` — it changes per attempt, and putting it in the
+   * stable part would invalidate the prefix cache for every message.
    */
   feedback?: string
 }): PromptParts {
@@ -65,16 +65,16 @@ export function buildPrompt(args: {
     `Pertanyaan pelanggan: ${question}`,
   ].join("\n")
 
-  // Salinan dangkal: `history` yang dikembalikan tidak boleh berbagi referensi
-  // dengan array milik pemanggil, supaya mutasi di hilir tidak membatalkan
-  // kestabilan prefix.
+  // Shallow copy: the returned `history` must not share a reference with the
+  // caller's array, so a downstream mutation can't undo the prefix's
+  // stability.
   return { system, history: [...history], currentTurn }
 }
 
 /**
- * Bagian prompt yang wajib byte-stabil antar pertanyaan dalam percakapan yang
- * sama. Dipakai oleh test regresi cache; jangan memasukkan apa pun yang
- * berubah per permintaan.
+ * The part of the prompt that must be byte-stable across questions within the
+ * same conversation. Used by the cache regression test; don't include anything
+ * that changes per request.
  */
 export function prefixOf(parts: PromptParts): string {
   return JSON.stringify({ system: parts.system, history: parts.history })

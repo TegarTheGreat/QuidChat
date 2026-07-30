@@ -21,14 +21,14 @@ describe("answer", () => {
     expect(res.kind).toBe("refused")
     if (res.kind === "refused") expect(res.reason).toBe("no_source")
     expect(store.recordedEscalations).toEqual(["no_source"])
-    // Generate TIDAK BOLEH dipanggil: tanpa kandidat, apa pun yang dihasilkan
-    // model pasti gagal validasi, jadi memanggilnya hanya membuang biaya.
+    // Generate must NOT be called: without candidates, whatever the model produces
+    // is guaranteed to fail validation, so calling it would only waste money.
     expect(provider.calls).toHaveLength(0)
-    // Embedding memang terjadi — retrieval membutuhkannya untuk mengetahui
-    // bahwa hasilnya kosong. Dinyatakan eksplisit supaya batas klaim ini jelas.
+    // Embedding does happen — retrieval needs it to know the result is empty.
+    // Stated explicitly so the boundary of this claim is clear.
     expect(provider.embedCalls).toHaveLength(1)
     expect(store.recordedUserTurns).toEqual(["garansi berapa lama?"])
-    // Penolakan pun meninggalkan balasan di transkrip.
+    // A refusal still leaves a reply in the transcript.
     expect(store.recordedAnswers).toHaveLength(1)
     expect(store.recordedAnswers[0]!.citedChunkIds).toEqual([])
   })
@@ -54,11 +54,11 @@ describe("answer", () => {
     const res = await answer({ store, provider, ...ctx })
 
     expect(provider.calls).toHaveLength(2)
-    // Ronde kedua wajib membawa prompt yang BERBEDA. Assertion inilah yang gagal pada
-    // versi sebelumnya, ketika ronde 2 adalah resample byte-identik.
+    // Round two must carry a DIFFERENT prompt. This is the assertion that failed on
+    // the earlier version, when round 2 was a byte-identical resample.
     expect(provider.calls[1]!.currentTurn).not.toBe(provider.calls[0]!.currentTurn)
     expect(provider.calls[1]!.currentTurn).toContain("missing_citation")
-    // Tapi PREFIX-nya wajib tetap sama, kalau tidak cache-nya batal.
+    // But the PREFIX must stay the same, otherwise the cache is invalidated.
     expect(provider.calls[1]!.system).toBe(provider.calls[0]!.system)
     expect(res.kind).toBe("answered")
   })
@@ -72,7 +72,7 @@ describe("answer", () => {
     ])
     const res = await answer({ store, provider, ...ctx })
 
-    // Maksimum dua panggilan — panggilan ketiga tidak boleh terjadi.
+    // Maximum of two calls — a third call must not happen.
     expect(provider.calls).toHaveLength(2)
     expect(res.kind).toBe("refused")
     if (res.kind === "refused") expect(res.reason).toBe("ungrounded")
@@ -85,7 +85,7 @@ describe("answer", () => {
     }
     const provider = new FakeProvider([])
     await expect(answer({ store, provider, ...ctx })).rejects.toThrow("settings tidak terbaca")
-    // Tidak ada eskalasi yang tercatat: kegagalan infrastruktur bukan sinyal bisnis.
+    // No escalation is recorded: an infrastructure failure is not a business signal.
     expect(store.recordedEscalations).toEqual([])
   })
 
@@ -97,15 +97,15 @@ describe("answer", () => {
     const provider = new FakeProvider([])
     await expect(answer({ store, provider, ...ctx })).rejects.toThrow("database tidak terjangkau")
     expect(store.recordedEscalations).toEqual([])
-    // Embedding sudah terjadi sebelum store gagal — dinyatakan supaya batasnya jelas.
+    // Embedding already happened before the store failed — stated so the boundary is clear.
     expect(provider.embedCalls).toHaveLength(1)
   })
 
   it("memetakan setiap sebab kegagalan provider ke alasan eskalasi yang benar", async () => {
-    // Test lama hanya membuktikan bahwa provider yang melempar menghasilkan
-    // `schema_invalid`. Itu justru cacatnya: 429 dan 503 pun dicatat begitu, dan
-    // pemilik bisnis yang membaca "model tidak mematuhi schema" akan menulis ulang
-    // basis pengetahuan yang bukan masalahnya.
+    // The old test only proved that a throwing provider produces `schema_invalid`.
+    // That was exactly the flaw: 429 and 503 were recorded the same way, and a
+    // business owner reading "model didn't comply with the schema" would rewrite a
+    // knowledge base that was never the problem.
     const kasus: [ProviderErrorKind | "bukan-ProviderError", EscalationReason][] = [
       ["schema", "schema_invalid"],
       ["rate_limit", "provider_unavailable"],

@@ -11,9 +11,9 @@ export const DEFAULT_CONFIG: TenantConfig = {
 }
 
 /**
- * Beberapa method di bawah sengaja mendeklarasikan parameter lebih sedikit
- * daripada `Store` — TypeScript mengizinkannya, dan menuliskan parameter yang
- * tidak dipakai hanya menambah derau. Bentuk yang dipanggil pipeline tetap sama.
+ * Some methods below deliberately declare fewer parameters than `Store` —
+ * TypeScript allows it, and writing out unused parameters would only add
+ * noise. The shape the pipeline calls stays the same.
  */
 export class MemoryStore implements Store {
   recordedAnswers: { segments: Segment[]; citedChunkIds: string[] }[] = []
@@ -46,15 +46,15 @@ export class MemoryStore implements Store {
   }
 }
 
-/** Provider yang mengembalikan jawaban dari daftar yang disiapkan, satu per panggilan. */
+/** Provider that returns answers from a prepared list, one per call. */
 export class FakeProvider implements Provider {
   readonly id = "fake"
-  /** Panggilan generate. Dipisah dari `embedCalls` supaya test bisa menyatakan
-   *  dengan tepat biaya mana yang terjadi dan mana yang tidak. */
+  /** Generate calls. Kept separate from `embedCalls` so a test can assert
+   *  precisely which cost happened and which didn't. */
   calls: PromptParts[] = []
   embedCalls: string[] = []
   textCalls: { system: string; user: string }[] = []
-  /** Balasan yang dikembalikan `generateText`, bisa disetel test. */
+  /** The reply `generateText` returns, settable by a test. */
   textReply = "pertanyaan yang ditulis ulang"
 
   constructor(private answers: Answer[]) {}

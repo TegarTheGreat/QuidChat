@@ -25,7 +25,7 @@ export function validateGrounding(args: {
 
   for (const seg of answer.segments) {
     if (seg.kind === "general") {
-      // Label dari model tidak dipercaya untuk topik berisiko tinggi.
+      // The model's own labeling is not trusted for high-risk topics.
       const risky = detectHighRisk(seg.text, highRiskTopics)
       if (risky.length > 0) {
         return {
@@ -46,8 +46,8 @@ export function validateGrounding(args: {
     }
 
     for (const id of seg.citations) {
-      // Divalidasi terhadap candidateSet, bukan terhadap database. Model bisa
-      // mengarang id yang nyata tapi tidak pernah di-retrieve.
+      // Validated against the candidateSet, not against the database. The model
+      // could make up an id that's real but was never retrieved.
       if (!allowed.has(id)) {
         return {
           ok: false,

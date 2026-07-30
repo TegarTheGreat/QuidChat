@@ -14,9 +14,9 @@ export type TenantConfig = {
   chatModel: string
   rewriteModel: string
   /**
-   * Model embedding. TERPISAH dari `chatModel` — meng-embed dengan id model chat
-   * akan ditolak oleh provider sungguhan. Kolomnya sudah ada di `tenant_settings`
-   * sejak migrasi pertama; tipe ini yang tadinya tidak mengeksposnya.
+   * The embedding model. SEPARATE from `chatModel` — embedding with a chat model id
+   * would be rejected by a real provider. The column has existed in `tenant_settings`
+   * since the first migration; this type just didn't expose it until now.
    */
   embeddingModel: string
   refusalText: string

@@ -52,10 +52,10 @@ describe("buildPrompt", () => {
   it("system prompt memuat teks penolakan dan daftar topik berisiko tenant", () => {
     const p = buildPrompt({ config, history, candidates: [], question: "q" })
     expect(p.system).toContain("Maaf, saya belum punya info itu.")
-    // Assertion pada kalimat hasil interpolasi, BUKAN pada kata "garansi" saja.
-    // Kata itu juga muncul di teks aturan statis, jadi `toContain("garansi")`
-    // tetap lolos walau `config.highRiskTopics` tidak pernah dirender sama
-    // sekali — assertion yang tidak membuktikan apa pun.
+    // Assertion on the interpolated sentence, NOT just on the word "garansi".
+    // That word also appears in the static rules text, so `toContain("garansi")`
+    // would still pass even if `config.highRiskTopics` was never rendered at
+    // all — an assertion that proves nothing.
     expect(p.system).toContain("Topik yang selalu dianggap pernyataan bisnis: harga, garansi.")
   })
 
@@ -66,15 +66,16 @@ describe("buildPrompt", () => {
   })
 
   it("prefix tetap identik walau waktu berjalan di antara dua pemanggilan", () => {
-    // Inilah regresi yang spec §11.1 sebut sebagai alasan test ini ada: satu `new Date()`
-    // di system prompt membatalkan cache setiap pesan, tanpa error dan tanpa log.
-    // Test tanpa jam palsu TIDAK menangkapnya — dua pemanggilan jatuh di milidetik yang
-    // sama, jadi stempel waktunya kebetulan sama dan prefix-nya tetap cocok.
+    // This is the regression spec §11.1 cites as the reason this test exists: a single
+    // `new Date()` in the system prompt would invalidate the cache on every message,
+    // with no error and no log. A test without a fake clock would NOT catch it — two
+    // calls would land in the same millisecond, so the timestamps would coincidentally
+    // match and the prefix would still compare equal.
     vi.useFakeTimers()
     try {
       vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"))
       const a = buildPrompt({ config, history, candidates: [c("k1", "isi")], question: "q1" })
-      vi.advanceTimersByTime(60 * 60 * 1000) // satu jam
+      vi.advanceTimersByTime(60 * 60 * 1000) // one hour
       const b = buildPrompt({ config, history, candidates: [c("k2", "lain")], question: "q2" })
       expect(prefixOf(a)).toBe(prefixOf(b))
     } finally {

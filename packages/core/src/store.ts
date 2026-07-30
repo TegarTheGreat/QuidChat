@@ -3,16 +3,16 @@ import type { Candidate, EscalationReason, Segment, TenantConfig } from "./types
 export interface Store {
   getTenantConfig(tenantId: string): Promise<TenantConfig>
 
-  /** Hybrid search: RRF atas top-k jalur kata kunci dan jalur vektor. Dibatasi tenant oleh RLS. */
+  /** Hybrid search: RRF over the top-k keyword path and vector path. Scoped to the tenant by RLS. */
   searchChunks(args: {
     tenantId: string
     query: string
     embedding: number[]
     /**
-     * Model yang dipakai membuat `embedding`. Chunk yang di-embed dengan model LAIN
-     * dikecualikan: dua ruang vektor berbeda dalam satu pencarian tidak error, ia hanya
-     * mengembalikan hasil yang tidak relevan tapi terlihat masuk akal. Kolomnya ada di
-     * `chunks.embedding_model` justru untuk ini (spec §3.3).
+     * The model used to produce `embedding`. Chunks embedded with a DIFFERENT model are
+     * excluded: mixing two different vector spaces in one search doesn't error, it just
+     * returns results that are irrelevant but look plausible. The `chunks.embedding_model`
+     * column exists for exactly this reason (spec §3.3).
      */
     embeddingModel: string
     limit: number
@@ -31,8 +31,8 @@ export interface Store {
     reason: EscalationReason
   }): Promise<void>
 
-  /** Mencatat pesan pengunjung. Dipanggil sebelum retrieval supaya transkrip utuh
-   *  bahkan ketika turn-nya berakhir dengan penolakan. */
+  /** Records the visitor's message. Called before retrieval so the transcript stays
+   *  complete even when the turn ends in a refusal. */
   recordUserTurn(args: {
     tenantId: string
     conversationId: string

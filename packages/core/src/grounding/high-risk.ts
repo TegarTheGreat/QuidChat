@@ -3,19 +3,21 @@ function escapeRegex(s: string): string {
 }
 
 /**
- * Mengembalikan topik berisiko tinggi yang muncul di `text` sebagai AWAL kata.
+ * Returns the high-risk topics that appear in `text` at the START of a word.
  *
- * Penjaga hanya dipasang di DEPAN topik, bukan di belakang. Itu disengaja:
- * - di depan  -> "dilegalisir", "ilegal", "menghargai" TIDAK terdeteksi, karena
- *                topiknya didahului huruf lain;
- * - di belakang (tidak ada) -> "harganya", "stoknya", "garansinya" TETAP
- *                terdeteksi, dan dalam bahasa Indonesia bentuk bersufiks inilah
- *                yang paling sering dipakai pelanggan.
+ * The guard is only placed at the FRONT of the topic, not at the back. That's
+ * deliberate:
+ * - front guard -> "dilegalisir", "ilegal", "menghargai" are NOT detected, because
+ *                   the topic is preceded by other letters;
+ * - back guard (absent) -> "harganya", "stoknya", "garansinya" ARE STILL
+ *                   detected, and in Indonesian these suffixed forms are the
+ *                   ones customers use most often.
  *
- * Konsekuensinya kata seperti "hargai" ikut terdeteksi. Itu diterima secara
- * sadar: untuk guardrail, memicu berlebih hanya membuat bot meminta sumber untuk
- * kalimat yang tak memerlukannya, sedangkan kurang memicu meloloskan klaim bisnis
- * tanpa sumber ke pelanggan. Ketika ragu, condong ke arah mendeteksi.
+ * The consequence is that a word like "hargai" also gets detected. That's a
+ * conscious trade-off: for a guardrail, over-triggering only makes the bot ask
+ * for a source on a sentence that didn't need one, while under-triggering lets
+ * an unsourced business claim reach the customer. When in doubt, lean toward
+ * detecting.
  */
 export function detectHighRisk(text: string, topics: string[]): string[] {
   const found: string[] = []

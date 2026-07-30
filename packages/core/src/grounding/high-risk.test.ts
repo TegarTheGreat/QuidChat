@@ -22,7 +22,7 @@ describe("detectHighRisk", () => {
   })
 
   it("tidak cocok bila topik didahului huruf lain", () => {
-    // "legal" tidak boleh terpicu oleh "dilegalisir" atau "ilegal"
+    // "legal" must not be triggered by "dilegalisir" or "ilegal"
     expect(detectHighRisk("dokumen sudah dilegalisir", TOPICS)).toEqual([])
     expect(detectHighRisk("proses ilegal itu", TOPICS)).toEqual([])
     expect(detectHighRisk("saya menghargai bantuannya", TOPICS)).toEqual([])

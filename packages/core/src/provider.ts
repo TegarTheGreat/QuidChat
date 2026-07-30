@@ -1,11 +1,11 @@
 import type { Answer } from "./types.js"
 
 export type PromptParts = {
-  /** Stabil per tenant. Titik cache pertama diletakkan di akhir bagian ini. */
+  /** Stable per tenant. The first cache breakpoint is placed at the end of this part. */
   system: string
-  /** Riwayat percakapan, hanya bertambah di ujung. */
+  /** Conversation history, only ever appended to. */
   history: { role: "user" | "assistant"; content: string }[]
-  /** Turn sekarang: konteks hasil retrieve + pertanyaan. Paling volatil. */
+  /** The current turn: retrieved context + question. Most volatile. */
   currentTurn: string
 }
 
@@ -25,13 +25,13 @@ export type CompleteResult = {
 
 export interface Provider {
   readonly id: string
-  /** Menghasilkan jawaban terstruktur. Melempar `ProviderError` — lihat `ProviderErrorKind`. */
+  /** Produces a structured answer. Throws `ProviderError` — see `ProviderErrorKind`. */
   complete(args: { model: string; prompt: PromptParts }): Promise<CompleteResult>
   /**
-   * Penyelesaian teks biasa, tanpa schema. Dipakai untuk pekerjaan internal yang
-   * hasilnya bukan jawaban pelanggan — menulis ulang query pada ronde perbaikan,
-   * misalnya. Sengaja TIDAK mengembalikan `Answer`: keluarannya tidak pernah tayang
-   * ke pengunjung, jadi ia tidak perlu dan tidak boleh melewati validator grounding.
+   * Plain-text completion, no schema. Used for internal work whose output is not a
+   * customer-facing answer — rewriting the query on a repair round, for example.
+   * Deliberately does NOT return an `Answer`: its output never reaches a visitor, so
+   * it must not, and need not, pass through the grounding validator.
    */
   generateText(args: { model: string; system: string; user: string }): Promise<string>
   embed(args: { model: string; text: string }): Promise<number[]>

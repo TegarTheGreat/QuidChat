@@ -9,11 +9,11 @@ const MAX_ROUNDS = 2
 const CANDIDATE_LIMIT = 8
 
 /**
- * Menerjemahkan kegagalan provider ke alasan eskalasi. Bukan `schema_invalid` untuk
- * semuanya — lihat `ProviderErrorKind` untuk alasan mengapa perbedaannya penting.
- * Error yang BUKAN `ProviderError` diperlakukan sebagai tidak tersedia, bukan sebagai
- * pelanggaran schema: kita tidak tahu sebabnya, dan menuduh model lebih buruk daripada
- * mengakui ketidaktahuan.
+ * Maps a provider failure to an escalation reason. Not everything is `schema_invalid` —
+ * see `ProviderErrorKind` for why the distinction matters.
+ * An error that is NOT a `ProviderError` is treated as unavailable, not as a
+ * schema violation: we don't know the cause, and accusing the model is worse than
+ * admitting ignorance.
  */
 function escalationReasonFor(e: unknown): EscalationReason {
   if (e instanceof ProviderError) {
@@ -31,27 +31,27 @@ function escalationReasonFor(e: unknown): EscalationReason {
 }
 
 /**
- * Menjawab satu pertanyaan pelanggan, atau menolak.
+ * Answers a single customer question, or refuses.
  *
- * **Kontrak kegagalan — disengaja dan asimetris.**
+ * **Failure contract — deliberate and asymmetric.**
  *
- * Kegagalan PROVIDER ditangkap dan menjadi penolakan yang tercatat. Alasannya:
- * outage provider bersifat per-pesan, store-nya masih hidup jadi eskalasinya benar
- * tersimpan, dan "kami kehilangan N percakapan karena provider down" memang informasi
- * yang ingin dilihat pemilik bisnis.
+ * PROVIDER failures are caught and become a recorded refusal. Reason: a provider
+ * outage is per-message, the store is still alive so the escalation is correctly
+ * recorded, and "we lost N conversations because the provider was down" is exactly
+ * the information a business owner wants to see.
  *
- * Kegagalan STORE TIDAK ditangkap — ia dilempar ke pemanggil. Tiga alasan:
- *   1. Nilai `EscalationReason` adalah SINYAL BISNIS yang ditinjau tenant untuk
- *      memperbaiki basis pengetahuannya. Database yang tidak terjangkau bukan sinyal
- *      itu, dan mencatatnya akan mencemari metrik yang justru jadi dasar keputusan.
- *   2. `recordEscalation` sendiri lewat store. Kalau store mati, pencatatan eskalasi
- *      juga gagal — menelan error hanya mengubah satu kegagalan menjadi dua kegagalan
- *      yang sunyi.
- *   3. Lapisan server tetap WAJIB punya penangkap menyeluruh untuk bug dan OOM, jadi
- *      di sinilah tempatnya, bukan di sini.
+ * STORE failures are NOT caught — they propagate to the caller. Three reasons:
+ *   1. The `EscalationReason` value is a BUSINESS SIGNAL that the tenant reviews to
+ *      decide what content their knowledge base needs. An unreachable database is not
+ *      that signal, and recording it would pollute the metric that decisions are based on.
+ *   2. `recordEscalation` itself goes through the store. If the store is down, recording
+ *      the escalation would fail too — swallowing the error would just turn one failure
+ *      into two silent failures.
+ *   3. The server layer still needs a catch-all for bugs and OOM anyway, so that's
+ *      where this belongs, not here.
  *
- * Yang harus dilakukan lapisan server: tangkap, catat ke log operasional (bukan ke
- * `escalations`), balas pengunjung dengan pesan sopan, dan kembalikan 503.
+ * What the server layer should do: catch, log to operational logs (not to
+ * `escalations`), reply to the visitor with a polite message, and return 503.
  */
 export async function answer(args: {
   store: Store
@@ -68,9 +68,9 @@ export async function answer(args: {
 
   const refuse = async (reason: EscalationReason): Promise<PipelineResult> => {
     await store.recordEscalation({ tenantId, conversationId, reason })
-    // Teks penolakan ikut masuk transkrip. Tanpa ini, tenant yang membuka percakapan
-    // untuk mencari tahu mengapa bot eskalasi hanya melihat pertanyaan tanpa balasan,
-    // dan widget yang memutar ulang riwayat kehilangan separuh percakapan.
+    // The refusal text is recorded in the transcript too. Without this, a tenant who
+    // opens a conversation to find out why the bot escalated would just see a question
+    // with no reply, and a widget replaying the history would lose half the conversation.
     await store.recordAnswer({
       tenantId, conversationId,
       segments: [{ kind: "general", text: config.refusalText }],
@@ -92,8 +92,8 @@ export async function answer(args: {
     limit: CANDIDATE_LIMIT,
   })
 
-  // Tanpa kandidat, tidak ada yang bisa disitasi. Menolak di sini menghemat
-  // satu panggilan LLM yang pasti gagal validasi.
+  // Without candidates, there's nothing to cite. Refusing here saves one LLM
+  // call that's guaranteed to fail validation.
   if (candidates.length === 0) return refuse("no_source")
 
   let feedback: string | undefined
@@ -126,9 +126,9 @@ export async function answer(args: {
       }
     }
 
-    // Alasan penolakan dibawa ke ronde berikutnya. Tanpa ini ronde 2 mengirim prompt
-    // yang IDENTIK, dan model bertemperature 0 mengembalikan jawaban yang identik —
-    // biaya dua kali untuk duplikat yang terjamin.
+    // The rejection reason is carried into the next round. Without this, round 2 sends
+    // an IDENTICAL prompt, and a temperature-0 model returns an identical answer —
+    // paying twice for a guaranteed duplicate.
     feedback = `${verdict.violation} — ${verdict.detail}`
   }
 
