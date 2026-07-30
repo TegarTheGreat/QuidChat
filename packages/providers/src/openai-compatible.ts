@@ -1,6 +1,6 @@
 import { ProviderError, type Answer, type Capabilities, type CompleteResult, type Provider, type PromptParts } from "@quidchat/core"
 
-/** Memetakan status HTTP ke sebab kegagalan. Bukan semuanya `unavailable`. */
+/** Maps an HTTP status to a failure reason. Not everything is `unavailable`. */
 function reasonFromStatus(status: number): "auth" | "unknown_model" | "rate_limit" | "unavailable" {
   if (status === 401 || status === 403) return "auth"
   if (status === 404) return "unknown_model"
@@ -8,13 +8,13 @@ function reasonFromStatus(status: number): "auth" | "unknown_model" | "rate_limi
   return "unavailable"
 }
 
-/** Membuang garis miring di ujung supaya `baseUrl` dengan atau tanpa itu sama saja. */
+/** Strips a trailing slash so `baseUrl` with or without one behaves the same. */
 const trimTrailingSlash = (u: string) => u.replace(/\/+$/, "")
 
-/** Menyusun daftar messages dengan urutan STABIL -> VOLATIL. Cache LLM berbasis
- *  prefix, jadi urutan inilah yang menentukan apakah caching bekerja sama sekali.
- *  Membalik urutan ini membatalkan cache pada setiap pesan tanpa error dan tanpa
- *  log apa pun. */
+/** Builds the messages list in STABLE -> VOLATILE order. LLM caching is
+ *  prefix-based, so this order is what determines whether caching works at all.
+ *  Reversing this order invalidates the cache on every message, with no error
+ *  and no log of any kind. */
 function messagesFrom(prompt: PromptParts) {
   return [
     { role: "system", content: prompt.system },
@@ -23,8 +23,8 @@ function messagesFrom(prompt: PromptParts) {
   ]
 }
 
-/** Memeriksa bentuk `Answer` sebelum ia dipercaya. Model bisa membalas JSON yang
- *  sah tapi tetap bukan bentuk yang kita minta. */
+/** Checks the shape of `Answer` before it is trusted. A model can return
+ *  well-formed JSON that is still not the shape we asked for. */
 export function asAnswer(value: unknown): Answer {
   const o = value as { segments?: unknown }
   if (!Array.isArray(o.segments)) {
@@ -45,12 +45,12 @@ export function asAnswer(value: unknown): Answer {
 }
 
 /**
- * Adapter untuk layanan apa pun yang menerima format kabel OpenAI di
- * `POST {baseUrl}/chat/completions`. Itu mencakup OpenAI sendiri, OpenRouter, Groq,
- * Together, DeepSeek, Fireworks, dan runner lokal seperti Ollama, vLLM, llama.cpp,
- * dan LM Studio.
+ * Adapter for any service that accepts the OpenAI wire format at
+ * `POST {baseUrl}/chat/completions`. That covers OpenAI itself, OpenRouter, Groq,
+ * Together, DeepSeek, Fireworks, and local runners like Ollama, vLLM, llama.cpp,
+ * and LM Studio.
  *
- * `fetchImpl` bisa disuntik supaya test tidak pernah menyentuh jaringan.
+ * `fetchImpl` can be injected so tests never touch the network.
  */
 export function openAiCompatible(opts: {
   id: string
@@ -73,7 +73,7 @@ export function openAiCompatible(opts: {
         body: JSON.stringify(body),
       })
     } catch (cause) {
-      // Jaringan mati, DNS gagal, timeout. Bukan salah model.
+      // Dead network, DNS failure, timeout. Not the model's fault.
       throw new ProviderError("unavailable", `tidak bisa menghubungi ${opts.id}`, { cause })
     }
     if (!res.ok) {
@@ -112,8 +112,8 @@ export function openAiCompatible(opts: {
         usage: {
           inputTokens: usage.prompt_tokens ?? 0,
           outputTokens: usage.completion_tokens ?? 0,
-          // Field yang melaporkan token cache berbeda-beda letaknya antar layanan
-          // OpenAI-compatible; `null` berarti "tidak diketahui", bukan "nol".
+          // The field that reports cached tokens varies in location across
+          // OpenAI-compatible services; `null` means "unknown", not "zero".
           cachedTokens: usage.prompt_cache_hit_tokens ?? null,
         },
       }
@@ -145,9 +145,9 @@ export function openAiCompatible(opts: {
     },
 
     async capabilities(): Promise<Capabilities> {
-      // Konservatif dengan sengaja. Task berikutnya menambahkan registri kemampuan;
-      // sampai itu ada, angka yang terlalu optimistis lebih berbahaya daripada yang
-      // terlalu kecil — yang pertama menyebabkan permintaan ditolak di tengah jalan.
+      // Deliberately conservative. A future task will add a capabilities registry;
+      // until it exists, numbers that are too optimistic are more dangerous than
+      // numbers that are too small — the former causes requests to fail mid-flight.
       return {
         contextWindow: 128_000,
         maxOutput: 4_096,

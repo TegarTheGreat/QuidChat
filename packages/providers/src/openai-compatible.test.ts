@@ -44,9 +44,10 @@ describe("openAiCompatible", () => {
 
     expect(records[0]!.url).toBe("https://example.test/v1/chat/completions")
     const messages = records[0]!.body.messages as { role: string; content: string }[]
-    // Urutannya BUKAN selera: cache LLM berbasis prefix, jadi yang stabil wajib di depan
-    // dan yang volatil di belakang. Membalik ini membatalkan cache setiap pesan tanpa
-    // error apa pun — persis regresi yang test wajib #3 di packages/core menjaga.
+    // The order is NOT a matter of taste: LLM caching is prefix-based, so stable
+    // content must come first and volatile content last. Reversing this invalidates
+    // the cache on every message with no error at all — exactly the regression that
+    // mandatory test #3 in packages/core guards against.
     expect(messages.map((m) => m.role)).toEqual(["system", "user", "user"])
     expect(messages[0]!.content).toBe("kamu asisten")
     expect(messages[1]!.content).toBe("halo")
@@ -85,8 +86,9 @@ describe("openAiCompatible", () => {
   })
 
   it("balasan yang bukan JSON menjadi sebab `schema`, bukan `unavailable`", async () => {
-    // Bedanya penting: `schema` mencatat `schema_invalid` di escalations dan itu MEMANG
-    // sinyal bahwa model gagal mematuhi format. `unavailable` mencatat hal lain.
+    // The distinction matters: `schema` records `schema_invalid` in escalations, and
+    // that IS the correct signal that the model failed to comply with the format.
+    // `unavailable` records something else.
     const { impl } = fakeFetch({ json: { choices: [{ message: { content: "maaf, bukan JSON" } }] } })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
     await p.complete({ model: "m", prompt }).catch((e: unknown) => {

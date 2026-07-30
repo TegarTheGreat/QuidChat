@@ -138,7 +138,7 @@ CREATE TABLE usage_events (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
--- Role aplikasi. Bukan superuser, bukan pemilik tabel, sehingga RLS berlaku.
+-- Application role. Not a superuser, not a table owner, so RLS applies.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'quidchat_app') THEN
@@ -151,31 +151,32 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO quidchat_
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO quidchat_app;
 
--- Role aplikasi hanya boleh MEMBACA barisnya sendiri di `tenants`, tidak lebih.
--- `GRANT ... ON ALL TABLES` di atas memberinya UPDATE dan DELETE juga, dan keduanya
--- berbahaya: `DELETE FROM tenants` di dalam withTenant berhasil dan meng-cascade habis
--- seluruh data tenant itu; `UPDATE tenants SET slug=...` berhasil, dan karena indeks unik
--- slug bersifat GLOBAL ia menjadi oracle keberadaan lintas tenant — slug milik tenant
--- lain menghasilkan duplicate key, slug bebas menghasilkan sukses.
+-- The application role may only READ its own row in `tenants`, nothing more.
+-- The `GRANT ... ON ALL TABLES` above also gives it UPDATE and DELETE, and both are
+-- dangerous: `DELETE FROM tenants` inside withTenant succeeded and cascaded away all
+-- of that tenant's own data; `UPDATE tenants SET slug=...` succeeded, and because the
+-- unique index on slug is GLOBAL it becomes a cross-tenant existence oracle — a slug
+-- belonging to another tenant raises a duplicate key, a free slug succeeds.
 --
--- Onboarding memang memakai raw handle, karena policy `tenant_self` membuat INSERT
--- sebagai quidchat_app tidak mungkin berhasil. Jadi tidak ada yang hilang.
+-- Onboarding does use the raw handle, because the `tenant_self` policy makes an INSERT
+-- as quidchat_app impossible to succeed. So nothing is lost.
 REVOKE INSERT, UPDATE, DELETE ON tenants FROM quidchat_app;
 
--- Role yang dipakai aplikasi untuk konek WAJIB jadi anggota `quidchat_app`, kalau tidak
--- `SET LOCAL ROLE quidchat_app` di withTenant() gagal dengan "permission denied to set
--- role". `quidchat_app` sendiri NOLOGIN dengan sengaja: ia bukan role untuk konek, ia
--- role untuk DITURUNI setelah konek. Baris ini memberi keanggotaan itu ke role yang
--- sedang menjalankan migrasi, yang di tier 1 dan 2 memang role aplikasinya.
+-- The role the application uses to connect MUST be a member of `quidchat_app`, or
+-- `SET LOCAL ROLE quidchat_app` in withTenant() fails with "permission denied to set
+-- role". `quidchat_app` itself is NOLOGIN by design: it is not a role to connect as, it
+-- is a role to be DEMOTED INTO after connecting. This line grants that membership to
+-- the role currently running the migration, which on tier 1 and 2 is the application
+-- role.
 DO $grant$
 BEGIN
   BEGIN
     EXECUTE format('GRANT quidchat_app TO %I', current_user);
   EXCEPTION
-    WHEN insufficient_privilege THEN NULL;  -- mungkin sudah anggota lewat jalur lain
+    WHEN insufficient_privilege THEN NULL;  -- may already be a member via another path
   END;
-  -- Bukti, bukan harapan: kalau peran ini tidak bisa diturunkan ke quidchat_app,
-  -- SETIAP permintaan akan gagal di withTenant() — jauh lebih baik gagal di sini.
+  -- Proof, not hope: if this role cannot be demoted into quidchat_app, EVERY request
+  -- will fail in withTenant() — far better to fail here.
   BEGIN
     EXECUTE 'SET LOCAL ROLE quidchat_app';
     EXECUTE 'RESET ROLE';
@@ -186,7 +187,7 @@ BEGIN
   END;
 END $grant$;
 
--- Helper: konteks tenant transaksi saat ini.
+-- Helper: the current transaction's tenant context.
 CREATE OR REPLACE FUNCTION current_tenant_id() RETURNS uuid
 LANGUAGE sql STABLE
 SET search_path = pg_catalog, public
@@ -209,28 +210,30 @@ BEGIN
   END LOOP;
 END $$;
 
--- tenants sendiri: dibaca lewat id, bukan tenant_id.
+-- tenants itself: read via id, not tenant_id.
 ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenants FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_self ON tenants USING (id = current_tenant_id());
 
--- message_citations dan admin_sessions: composite FK menjamin tenant_id cocok dengan parent.
--- Kedua referensi parent mereka sekarang composite dan tidak bisa melintasi tenant.
+-- message_citations and admin_sessions: the composite FK guarantees tenant_id matches
+-- the parent. Both of their parent references are now composite and cannot cross tenants.
 
--- Guard isolasi tenant. SATU blok, mengenumerasi lewat RLS.
+-- Tenant isolation guard. ONE block, enumerating via RLS.
 --
--- Versi sebelumnya memilih tabel lewat `column_name = 'tenant_id'`, dan ITU
--- kesalahannya: `tenants` berkunci `id`, jadi ia luput dari SETIAP lapis pertahanan
--- sekaligus. Membocorkan policy-nya membuat `SELECT slug FROM tenants` mengembalikan
--- seluruh daftar pelanggan, dan tak satu pun test gagal.
+-- An earlier version selected tables via `column_name = 'tenant_id'`, and THAT was
+-- the mistake: `tenants` keys on `id`, so it escaped every layer of defence at once.
+-- Leaking its policy made `SELECT slug FROM tenants` return the entire customer
+-- list, and not a single test failed.
 --
--- Versi sebelumnya juga hanya memeriksa `qual`, yaitu jalur BACA. `WITH CHECK (true)`
--- membuka jalur TULIS sepenuhnya: terukur di PGlite, sebuah baris usage_events bernilai
--- 500.000 sen bisa ditulis ke buku besar tenant lain, dan pesan assistant palsu bisa
--- ditanam di transkrip bisnis lain. Guard-nya diam, 44 test tetap hijau.
+-- An earlier version also only inspected `qual`, which is the READ path. `WITH CHECK
+-- (true)` opened the WRITE path completely: measured against PGlite, a usage_events
+-- row worth 500,000 cents could be written to another tenant's ledger, and a
+-- fabricated assistant message could be planted in another business's transcript.
+-- The guard stayed silent, and 44 tests remained green.
 --
--- `with_check IS NULL` sah dan berarti Postgres menurunkannya dari `qual` — itu yang
--- terjadi pada `tenants`. Yang ditolak adalah `with_check` yang ADA tapi berbeda.
+-- `with_check IS NULL` is legitimate and means Postgres derives it from `qual` —
+-- that's what happens for `tenants`. What is rejected is a `with_check` that IS
+-- present but differs.
 DO $guard_isolasi$
 DECLARE bad text;
 BEGIN
@@ -238,8 +241,8 @@ BEGIN
   FROM (
     SELECT c.relname AS nama,
            n.nspname AS skema,
-           -- Kunci tenant tabel ini: `tenant_id` bila ada, kalau tidak `id`.
-           -- `tenants` memakai `id` karena ia SENDIRI adalah tenant-nya.
+           -- This table's tenant key: `tenant_id` if it exists, otherwise `id`.
+           -- `tenants` uses `id` because it IS the tenant itself.
            CASE WHEN EXISTS (
              SELECT 1 FROM information_schema.columns col
              WHERE col.table_schema = n.nspname AND col.table_name = c.relname
@@ -251,7 +254,7 @@ BEGIN
     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
       AND n.nspname NOT LIKE 'pg_temp%'
       AND n.nspname NOT LIKE 'pg_toast_temp%'
-      AND c.relkind IN ('r', 'p')   -- 'p' = tabel terpartisi; parent-nya BUKAN 'r'
+      AND c.relkind IN ('r', 'p')   -- 'p' = partitioned table; its parent is NOT 'r'
   ) t
   CROSS JOIN LATERAL (
     SELECT format('(%s = current_tenant_id())', t.kunci) AS harapan
@@ -291,12 +294,13 @@ BEGIN
   END IF;
 END $guard_isolasi$;
 
--- View dan matview TIDAK punya RLS sendiri. Sebuah view berjalan dengan hak PEMILIKNYA
--- kecuali dibuat `WITH (security_invoker = true)`, dan defaultnya MATI. Terukur: satu
--- view sederhana di atas `conversations` membuat tenant A melihat pesan tenant B.
+-- Views and matviews do NOT have RLS of their own. A view runs with its OWNER's
+-- privileges unless created `WITH (security_invoker = true)`, and that default is
+-- OFF. Measured: a plain view over `conversations` made tenant A see tenant B's
+-- messages.
 --
--- Matview lebih buruk: `security_invoker` tidak berlaku padanya sama sekali, jadi satu-
--- satunya cara aman adalah tidak memberi hak SELECT kepada role aplikasi.
+-- Matviews are worse: `security_invoker` does not apply to them at all, so the only
+-- safe posture is withholding SELECT from the application role.
 DO $guard_view$
 DECLARE bad text;
 BEGIN
@@ -330,12 +334,13 @@ BEGIN
   END IF;
 END $guard_matview$;
 
--- Fungsi SECURITY DEFINER berjalan sebagai pembuatnya, jadi ia menembus RLS. Dan
--- `EXECUTE` diberikan ke PUBLIC secara DEFAULT — tanpa GRANT apa pun, role aplikasi
--- sudah boleh memanggilnya. Terukur: satu fungsi dashboard mengembalikan hitungan pesan
--- kedua tenant.
+-- SECURITY DEFINER functions run as their creator, so they bypass RLS. And `EXECUTE`
+-- is granted to PUBLIC by DEFAULT — without any explicit GRANT, the application role
+-- can already call one. Measured: a dashboard function returned both tenants' message
+-- counts.
 --
--- `current_tenant_id()` sendiri dikecualikan: ia memang perlu ada dan ia INVOKER.
+-- `current_tenant_id()` itself is exempted: it genuinely needs to exist and it is
+-- INVOKER.
 DO $guard_secdef$
 DECLARE bad text;
 BEGIN
