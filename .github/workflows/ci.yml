@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch makes the first run's answer irrelevant, and a queue of
+# superseded runs is how a project ends up waiting twenty minutes for news about old code.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm before Node, so setup-node can cache the pnpm store it finds.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Pinned to the floor in engines.node, which is also what tsdown targets. A range would
+          # let the runner pick whatever is newest, so a Node release could turn CI red on a day
+          # nobody changed anything — and the bundles would have been built against a runtime
+          # nobody tested.
+          node-version: 22.22.3
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+      - run: pnpm typecheck
+
+      # The database tests run real Postgres compiled to WASM, one file at a time — see the note
+      # in vitest.config.ts. Several at once exhausts the runner's memory and the failure reads
+      # as "worker exited unexpectedly", which mentions neither memory nor the database.
+      - run: pnpm test
+
+      - run: pnpm build
+
+      # Everything above passes on a repository whose built binary does not start. This runs the
+      # artifact: the CLI, the API, the admin panel's forms and a customer asking a question from
+      # a separate origin, against a local stub provider — no key, no network. Ubuntu runners
+      # ship Chrome, so the browser halves run here rather than skipping.
+      - run: pnpm smoke
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+
+      # A migration edited without regenerating the embedded copy is a server that starts and
+      # then fails on the first query. The test suite covers the drift; this makes the fix
+      # obvious by leaving the regenerated file in the diff.
+      - run: pnpm generate:migrations
+      - run: git diff --exit-code packages/db/src/migrations.generated.ts
