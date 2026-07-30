@@ -127,7 +127,8 @@ describe("crawlSite", () => {
   it("carries on when one page cannot be read", async () => {
     const withBroken = (async (url: string) => {
       if (url === "https://shop.example/returns") throw new Error("is application/pdf")
-      return fetchPageImpl(url)
+      if (!(url in site)) throw new Error(`404 ${url}`)
+      return page(url, site[url]!)
     }) as never
 
     const result = await crawlSite({

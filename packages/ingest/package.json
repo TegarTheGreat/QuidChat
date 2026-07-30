@@ -3,12 +3,22 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.22.3" },
-  "exports": { ".": "./src/index.ts" },
+  "engines": {
+    "node": ">=22.22.3"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "build": "tsdown src/index.ts --dts",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": { "@quidchat/core": "workspace:*" },
-  "devDependencies": { "@quidchat/db": "workspace:*", "drizzle-orm": "0.45.2" }
+  "dependencies": {
+    "@quidchat/core": "workspace:*",
+    "unpdf": "^1.8.0"
+  },
+  "devDependencies": {
+    "@quidchat/db": "workspace:*",
+    "drizzle-orm": "0.45.2"
+  }
 }

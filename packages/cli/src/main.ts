@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs"
 import { runAddText } from "./add-text.js"
+import { runAddPdf } from "./add-pdf.js"
 import { runAddSite } from "./add-site.js"
 import { runAddUrl } from "./add-url.js"
 import { runInit } from "./init.js"
@@ -32,6 +33,10 @@ const USAGE = `Usage:
       Read a whole site and index every page. Follows the site's own links, stays
       on its origin, obeys robots.txt, and stops at --max-pages (default 25).
       Give it a sitemap.xml and it reads exactly what the sitemap lists.
+
+  quidchat add-pdf <slug> <file.pdf> [--title "<title>"]
+      Index a PDF. A scan with no text in it is refused with a reason rather
+      than indexed as nothing.
 
   quidchat prune
       Delete conversations past each tenant's retention window, then exit. The
@@ -164,6 +169,16 @@ async function main(): Promise<void> {
 
   if (command === "prune") {
     await runPrune({ env: process.env })
+    await finish()
+  }
+
+  if (command === "add-pdf") {
+    const slug = positional[0]
+    if (!slug) throw new Error(`a tenant slug is required\n\n${USAGE}`)
+    const path = positional[1]
+    if (!path) throw new Error(`a path to a PDF is required\n\n${USAGE}`)
+    const title = firstOf(named, "title")
+    await runAddPdf({ env: process.env, slug, path, ...(title ? { title } : {}) })
     await finish()
   }
 

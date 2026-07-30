@@ -82,12 +82,18 @@ Nothing reaches your customer unvalidated, which is why answers are not streamed
 
 ## Giving it knowledge
 
-Four ways in, all equivalent once the text is chunked: paste it in the panel, pipe it through `add-text`, point at a page with `add-url` or **Knowledge → Read a page from your site**, or point at the whole site with `add-site`.
+Five ways in, all equivalent once the text is chunked: paste it in the panel, pipe it through `add-text`, point at a page with `add-url` or **Knowledge → Read a page from your site**, or point at the whole site with `add-site`.
 
 ```bash
 node packages/cli/dist/main.mjs add-site my-shop https://myshop.example --max-pages 25
 node packages/cli/dist/main.mjs add-site my-shop https://myshop.example/sitemap.xml
 ```
+
+```bash
+node packages/cli/dist/main.mjs add-pdf my-shop price-list.pdf --title "Price list"
+```
+
+Price lists, warranty terms and delivery policies live in PDFs at most businesses, and pasting one in by hand is the step where an owner gives up — after which the assistant refuses questions the business has answered in writing for years. A scan is refused with a reason rather than indexed as nothing: it draws its letters as pictures, so it needs OCR first, and "0 chunks indexed" would leave someone believing the file was read.
 
 `add-site` follows the site's own links, stays on its origin, and obeys `robots.txt`. Each page becomes its own source under its own title, because a citation reading "Delivery terms" is worth something to a customer and one reading "My Shop" is not. Give it a sitemap and it reads exactly what the sitemap lists, without following links — the owner already said what they wanted found. Pages it could not read are named with the reason rather than counted, and one unreadable page never ends the crawl: a site with a PDF in its menu is completely ordinary.
 
