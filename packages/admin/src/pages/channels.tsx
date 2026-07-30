@@ -8,33 +8,7 @@ import { MutationError } from "../components/mutation-error"
 import { Skeleton } from "../components/ui/skeleton"
 import { useFetch } from "../hooks/use-fetch"
 import { formatDateTime } from "../lib/format"
-import { api, type ChannelId, type ChannelsResponse } from "../lib/api"
-
-/** Plain names, and the webhook path each platform has to be pointed at — the one thing an
- *  owner cannot work out from the form alone. */
-const CHANNELS: { id: ChannelId; title: string; hint: string }[] = [
-  { id: "telegram", title: "Telegram", hint: "Create a bot with @BotFather, then set its webhook to the URL below." },
-  { id: "whatsapp", title: "WhatsApp (Cloud API)", hint: "From Meta's WhatsApp Business setup: the phone number id and a permanent access token." },
-  { id: "waha", title: "WhatsApp (self-hosted WAHA)", hint: "The address of your own WAHA server." },
-  { id: "discord", title: "Discord", hint: "From your Discord application: the bot token and its public key." },
-  { id: "slack", title: "Slack", hint: "From your Slack app: the bot token (xoxb-…) and the signing secret. Subscribe it to message events and point them at the URL below." },
-  { id: "line", title: "LINE", hint: "From the LINE Developers console: the channel access token and the channel secret." },
-]
-
-/** Human labels for credential fields, so a form does not read like a database. */
-const FIELD_LABELS: Record<string, string> = {
-  botToken: "Bot token",
-  secretToken: "Webhook secret",
-  phoneNumberId: "Phone number ID",
-  accessToken: "Access token",
-  appSecret: "App secret",
-  baseUrl: "Server address",
-  session: "Session name",
-  apiKey: "API key",
-  publicKey: "Public key",
-  signingSecret: "Signing secret",
-  channelSecret: "Channel secret",
-}
+import { api, type ChannelForm, type ChannelId, type ChannelsResponse } from "../lib/api"
 
 /**
  * Channels — connecting WhatsApp, Telegram or Discord without touching the environment.
@@ -98,17 +72,26 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
             </Card>
           )}
 
-          {CHANNELS.map((channel) => (
+          {data.data.forms.map((form) => (
             <ChannelCard
-              key={channel.id}
+              key={form.id}
               tenantSlug={tenantSlug}
-              meta={channel}
+              form={form}
               data={data.data}
               busy={busy || !data.data.secretKeyConfigured}
               onSave={(secrets, enabled) =>
-                act(() => api.saveChannel({ tenantSlug, channel: channel.id, enabled, secrets }))
+                act(() =>
+                  api.saveChannel({
+                    tenantSlug,
+                    channel: form.id as ChannelId,
+                    enabled,
+                    secrets,
+                  }),
+                )
               }
-              onDisconnect={() => act(() => api.deleteChannel({ tenantSlug, channel: channel.id }))}
+              onDisconnect={() =>
+                act(() => api.deleteChannel({ tenantSlug, channel: form.id as ChannelId }))
+              }
             />
           ))}
         </>
@@ -119,25 +102,26 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
 
 function ChannelCard({
   tenantSlug,
-  meta,
+  form,
   data,
   busy,
   onSave,
   onDisconnect,
 }: {
   tenantSlug: string
-  meta: { id: ChannelId; title: string; hint: string }
+  form: ChannelForm
   data: ChannelsResponse
   busy: boolean
   onSave: (secrets: Record<string, string>, enabled: boolean) => void
   onDisconnect: () => void
 }) {
-  const spec = data.fields[meta.id] ?? { required: [], optional: [] }
-  const status = data.channels.find((c) => c.channel === meta.id)
+  const meta = form
+  const status = data.channels.find((c) => c.channel === form.id)
   const [values, setValues] = React.useState<Record<string, string>>({})
 
-  const allFields = [...spec.required, ...spec.optional]
-  const missingRequired = spec.required.filter((f) => (values[f] ?? "").trim() === "")
+  const allFields = form.fields
+  const requiredFields = form.fields.filter((f) => f.required)
+  const missingRequired = requiredFields.filter((f) => (values[f.name] ?? "").trim() === "")
 
   return (
     <Card>
@@ -163,7 +147,10 @@ function ChannelCard({
         <div className="space-y-1">
           {status && (
             <p className="text-muted-foreground">
-              Stored: {status.configuredFields.map((f) => FIELD_LABELS[f] ?? f).join(", ") || "nothing"}
+              Stored:{" "}
+              {status.configuredFields
+                .map((name) => form.fields.find((f) => f.name === name)?.label ?? name)
+                .join(", ") || "nothing"}
               {status.updatedAt ? ` · updated ${formatDateTime(status.updatedAt)}` : ""}
             </p>
           )}
@@ -190,22 +177,24 @@ function ChannelCard({
         >
           <div className="grid gap-3 sm:grid-cols-2">
             {allFields.map((field) => (
-              <div key={field} className="space-y-1">
-                <Label htmlFor={`${meta.id}-${field}`}>
-                  {FIELD_LABELS[field] ?? field}
-                  {spec.optional.includes(field) && (
+              <div key={field.name} className="space-y-1">
+                <Label htmlFor={`${form.id}-${field.name}`}>
+                  {field.label}
+                  {!field.required && (
                     <span className="ml-1 text-xs text-muted-foreground">(optional)</span>
                   )}
                 </Label>
                 <Input
-                  id={`${meta.id}-${field}`}
-                  // A password field, not because it is a password, but because a browser
-                  // should not offer to remember it and a shoulder should not read it.
-                  type={field === "baseUrl" || field === "session" ? "text" : "password"}
+                  id={`${form.id}-${field.name}`}
+                  // Hidden for a credential, plain for an address or a session name: masking
+                  // something that is not a secret only makes it harder to check.
+                  type={field.secret ? "password" : "text"}
                   autoComplete="off"
-                  value={values[field] ?? ""}
-                  onChange={(e) => setValues((v) => ({ ...v, [field]: e.target.value }))}
-                  placeholder={status?.configuredFields.includes(field) ? "stored — type to replace" : ""}
+                  value={values[field.name] ?? ""}
+                  onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.value }))}
+                  placeholder={
+                    status?.configuredFields.includes(field.name) ? "stored — type to replace" : ""
+                  }
                 />
               </div>
             ))}
@@ -231,10 +220,10 @@ function ChannelCard({
               </>
             )}
           </div>
-          {spec.required.length > 0 && (
+          {requiredFields.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              {spec.required.map((f) => FIELD_LABELS[f] ?? f).join(" and ")}{" "}
-              {spec.required.length === 1 ? "is" : "are"} required. Set the
+              {requiredFields.map((f) => f.label).join(" and ")}{" "}
+              {requiredFields.length === 1 ? "is" : "are"} required. Set the
               webhook secret too where the platform offers one: without it, anyone who learns the
               URL above can put words in your conversation history and spend your budget.
             </p>

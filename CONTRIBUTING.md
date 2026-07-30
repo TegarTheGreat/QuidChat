@@ -48,6 +48,12 @@ Product copy is written for the person reading it. The message a shop's customer
 
 Everything in the codebase is in professional English: identifiers, comments, tests, error messages, column names. The only exception is product copy a business writes for its own customers, which is theirs to write in whatever language they serve.
 
+## Adding a channel
+
+One entry in `packages/channels/src/registry.ts` — id, title, hint, credential fields with their labels and environment variable names, and a factory — plus a line in a migration widening the `channel_configs` CHECK constraint.
+
+Nothing else. The server reads credentials from the environment and from a tenant's stored secrets using the same definition, the admin API serves the field list from it, and the panel renders whatever the API says. It was six places before, five of which were the same information written five ways, with nothing to notice when they disagreed.
+
 ## Commits
 
 Present tense, and say why rather than what. The diff already says what.

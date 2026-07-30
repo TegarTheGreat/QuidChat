@@ -233,11 +233,21 @@ export interface ChannelStatus {
   error: string | null
 }
 
+export interface ChannelForm {
+  id: string
+  title: string
+  hint: string
+  fields: { name: string; label: string; required: boolean; secret: boolean }[]
+}
+
 export interface ChannelsResponse {
   /** False when QUIDCHAT_SECRET_KEY is unset. Nothing can be saved without it, so the panel
    *  says so instead of offering a form that will fail. */
   secretKeyConfigured: boolean
   fields: Record<string, { required: string[]; optional: string[] }>
+  /** Every channel this server supports, with its labels. Rendered from here rather than from a
+   *  list in the panel, which could fall behind the server it is talking to. */
+  forms: ChannelForm[]
   channels: ChannelStatus[]
 }
 

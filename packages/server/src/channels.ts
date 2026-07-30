@@ -2,16 +2,11 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Provider, Store } from "@quidchat/core"
 import { answer } from "@quidchat/core"
 import {
-  discordAdapter,
+  adapterFromEnv,
+  adapterFromStoredSecrets,
   handleChannelMessage,
   isDiscordPing,
-  lineAdapter,
-  slackAdapter,
   slackChallenge,
-  telegramAdapter,
-  wahaAdapter,
-  whatsappCloudAdapter,
-  type ChannelAdapter,
 } from "@quidchat/channels"
 import { sql } from "drizzle-orm"
 import { withTenant, type QuidDb } from "@quidchat/db"
@@ -35,88 +30,6 @@ export type ChannelDeps = {
   /** The same limiter the web routes use. A customer spamming a Telegram bot spends the
    *  tenant's budget exactly as fast as one spamming the widget. */
   rateLimiter: ChatRateLimiter
-}
-
-/**
- * Builds the adapter for a channel from the environment, or null when it is not
- * configured.
- *
- * Each channel is opt-in: a business that only uses the website widget should not have a
- * live WhatsApp webhook sitting unauthenticated on its server. Absent credentials mean the
- * route returns `404`, which is the honest answer — the endpoint genuinely is not there.
- *
- * The tenant slug comes from the URL rather than the environment, so one deployment can
- * serve many businesses on the same bot. That is also why the credentials are per-channel
- * and not per-tenant for now: sharing one bot across tenants is the common small-scale
- * shape, and per-tenant credentials belong in the admin panel where a business can enter
- * their own.
- */
-function adapterFor(
-  channel: string,
-  tenantSlug: string,
-  env: Record<string, string | undefined>,
-): ChannelAdapter | null {
-  switch (channel) {
-    case "telegram": {
-      const botToken = env.TELEGRAM_BOT_TOKEN
-      if (!botToken) return null
-      return telegramAdapter({
-        tenantSlug,
-        botToken,
-        ...(env.TELEGRAM_SECRET_TOKEN ? { secretToken: env.TELEGRAM_SECRET_TOKEN } : {}),
-      })
-    }
-    case "whatsapp": {
-      const phoneNumberId = env.WHATSAPP_PHONE_NUMBER_ID
-      const accessToken = env.WHATSAPP_ACCESS_TOKEN
-      if (!phoneNumberId || !accessToken) return null
-      return whatsappCloudAdapter({
-        tenantSlug,
-        phoneNumberId,
-        accessToken,
-        ...(env.WHATSAPP_APP_SECRET ? { appSecret: env.WHATSAPP_APP_SECRET } : {}),
-      })
-    }
-    case "waha": {
-      const baseUrl = env.WAHA_BASE_URL
-      if (!baseUrl) return null
-      return wahaAdapter({
-        tenantSlug,
-        baseUrl,
-        ...(env.WAHA_SESSION ? { session: env.WAHA_SESSION } : {}),
-        ...(env.WAHA_API_KEY ? { apiKey: env.WAHA_API_KEY } : {}),
-      })
-    }
-    case "discord": {
-      const botToken = env.DISCORD_BOT_TOKEN
-      if (!botToken) return null
-      return discordAdapter({
-        tenantSlug,
-        botToken,
-        ...(env.DISCORD_PUBLIC_KEY ? { publicKey: env.DISCORD_PUBLIC_KEY } : {}),
-      })
-    }
-    case "slack": {
-      const botToken = env.SLACK_BOT_TOKEN
-      if (!botToken) return null
-      return slackAdapter({
-        tenantSlug,
-        botToken,
-        ...(env.SLACK_SIGNING_SECRET ? { signingSecret: env.SLACK_SIGNING_SECRET } : {}),
-      })
-    }
-    case "line": {
-      const accessToken = env.LINE_ACCESS_TOKEN
-      if (!accessToken) return null
-      return lineAdapter({
-        tenantSlug,
-        accessToken,
-        ...(env.LINE_CHANNEL_SECRET ? { channelSecret: env.LINE_CHANNEL_SECRET } : {}),
-      })
-    }
-    default:
-      return null
-  }
 }
 
 /**
@@ -158,75 +71,6 @@ async function storedChannelSecrets(args: {
   } catch (cause) {
     logError(`could not read stored ${channel} credentials`, cause)
     return null
-  }
-}
-
-/**
- * Builds the adapter from a tenant's stored credentials.
- *
- * A separate function from `adapterFor` rather than a branch inside it, because the two read
- * from different places and only this one can fail per tenant. Missing required fields return
- * null and let the environment answer — the admin API already refuses to save an incomplete
- * channel, so a row that reaches here without them predates that check or was written directly.
- */
-function adapterFromSecrets(
-  channel: string,
-  tenantSlug: string,
-  secrets: Record<string, string>,
-): ChannelAdapter | null {
-  switch (channel) {
-    case "telegram": {
-      if (!secrets.botToken) return null
-      return telegramAdapter({
-        tenantSlug,
-        botToken: secrets.botToken,
-        ...(secrets.secretToken ? { secretToken: secrets.secretToken } : {}),
-      })
-    }
-    case "whatsapp": {
-      if (!secrets.phoneNumberId || !secrets.accessToken) return null
-      return whatsappCloudAdapter({
-        tenantSlug,
-        phoneNumberId: secrets.phoneNumberId,
-        accessToken: secrets.accessToken,
-        ...(secrets.appSecret ? { appSecret: secrets.appSecret } : {}),
-      })
-    }
-    case "waha": {
-      if (!secrets.baseUrl) return null
-      return wahaAdapter({
-        tenantSlug,
-        baseUrl: secrets.baseUrl,
-        ...(secrets.session ? { session: secrets.session } : {}),
-        ...(secrets.apiKey ? { apiKey: secrets.apiKey } : {}),
-      })
-    }
-    case "discord": {
-      if (!secrets.botToken) return null
-      return discordAdapter({
-        tenantSlug,
-        botToken: secrets.botToken,
-        ...(secrets.publicKey ? { publicKey: secrets.publicKey } : {}),
-      })
-    }
-    case "slack": {
-      if (!secrets.botToken) return null
-      return slackAdapter({
-        tenantSlug,
-        botToken: secrets.botToken,
-        ...(secrets.signingSecret ? { signingSecret: secrets.signingSecret } : {}),
-      })
-    }
-    case "line": {
-      if (!secrets.accessToken) return null
-      return lineAdapter({
-        tenantSlug,
-        accessToken: secrets.accessToken,
-        ...(secrets.channelSecret ? { channelSecret: secrets.channelSecret } : {}),
-      })
-    }
-    default:
-      return null
   }
 }
 
@@ -360,8 +204,8 @@ export async function handleChannelWebhook(
     logError: deps.logError,
   })
   const adapter =
-    (stored ? adapterFromSecrets(channel, tenantSlug, stored) : null) ??
-    adapterFor(channel, tenantSlug, deps.env)
+    (stored ? adapterFromStoredSecrets(channel, tenantSlug, stored) : null) ??
+    adapterFromEnv(channel, tenantSlug, deps.env)
   if (!adapter) {
     res.writeHead(404, { "content-type": "application/json" })
     res.end(JSON.stringify({ error: `channel "${channel}" is not configured` }))

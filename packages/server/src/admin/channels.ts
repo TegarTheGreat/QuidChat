@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
+import { channelDefinitions } from "@quidchat/channels"
 import { withTenant } from "@quidchat/db"
 import { sql } from "drizzle-orm"
 import {
@@ -14,20 +15,35 @@ import { readJsonBody, resolveTenantOr404, rowsOf, sendJson, type AdminDeps } fr
 // Part of the admin API. The router and the shared helpers live in `../admin.ts`.
 
 /**
- * Which credentials each channel needs.
+ * The credential list every channel needs, taken from the one definition of that channel.
  *
- * Declared here rather than inferred, so the API can reject a half-configured channel. A
- * Telegram row without a bot token is a row that looks connected in the panel and silently
- * fails on the first customer message.
+ * This used to be a second copy, written here by hand: the same information as the adapter's own,
+ * with nothing to notice when the two disagreed. A field named one thing here and another in the
+ * adapter produces a form that saves a credential the adapter never reads.
  */
-export const CHANNEL_FIELDS: Record<string, { required: string[]; optional: string[] }> = {
-  telegram: { required: ["botToken"], optional: ["secretToken"] },
-  whatsapp: { required: ["phoneNumberId", "accessToken"], optional: ["appSecret"] },
-  waha: { required: ["baseUrl"], optional: ["session", "apiKey"] },
-  discord: { required: ["botToken"], optional: ["publicKey"] },
-  slack: { required: ["botToken"], optional: ["signingSecret"] },
-  line: { required: ["accessToken"], optional: ["channelSecret"] },
-}
+export const CHANNEL_FIELDS: Record<string, { required: string[]; optional: string[] }> =
+  Object.fromEntries(
+    channelDefinitions.map((definition) => [
+      definition.id,
+      {
+        required: definition.fields.filter((f) => f.required).map((f) => f.name),
+        optional: definition.fields.filter((f) => !f.required).map((f) => f.name),
+      },
+    ]),
+  )
+
+/** What the panel needs to render a card: the heading, the sentence, and each field's label. */
+export const CHANNEL_FORMS = channelDefinitions.map((definition) => ({
+  id: definition.id,
+  title: definition.title,
+  hint: definition.hint,
+  fields: definition.fields.map((f) => ({
+    name: f.name,
+    label: f.label,
+    required: f.required,
+    secret: f.secret ?? false,
+  })),
+}))
 
 /**
  * `GET /admin/channels` — which channels this tenant has configured.
@@ -66,6 +82,9 @@ export async function listChannels(
     // The panel needs to know whether saving is even possible before it offers a form.
     secretKeyConfigured: hasSecretKey(deps.env ?? {}),
     fields: CHANNEL_FIELDS,
+    // The whole form, so the panel renders what this server actually supports rather than a list
+    // of its own that can fall behind it.
+    forms: CHANNEL_FORMS,
     channels: rows.map((r) => {
       const channel = r.channel as string
       let configuredFields: string[] = []
