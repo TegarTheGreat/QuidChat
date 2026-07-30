@@ -4,7 +4,7 @@
 
 **Goal:** Membangun monorepo, lapisan database dengan isolasi tenant yang ditegakkan Postgres, dan pipeline menjawab satu-skill yang menolak menjawab klaim bisnis tanpa sumber.
 
-**Architecture:** `@quidchat/db` memegang skema Drizzle, migrasi, dan pabrik koneksi tiga tier (PGlite / embedded-postgres / managed). `@quidchat/core` adalah library murni tanpa HTTP dan tanpa akses `process.env`; ia menerima `Store` dan `Provider` sebagai injeksi sehingga bisa dites tanpa database dan tanpa jaringan. Pipeline berjalan sebagai tahap tetap — retrieve, generate, validasi — dengan maksimum dua ronde retrieval.
+**Architecture:** `@quidchat/db` memegang skema Drizzle, migrasi, dan pabrik koneksi dua tier (PGlite / postgres); tier embedded-postgres adalah urusan siklus-hidup proses yang masuk rencana `quidchat serve` dan akan memakai ulang `kind: "postgres"` setelah proses berjalan. `@quidchat/core` adalah library murni tanpa HTTP dan tanpa akses `process.env`; ia menerima `Store` dan `Provider` sebagai injeksi sehingga bisa dites tanpa database dan tanpa jaringan. Pipeline berjalan sebagai tahap tetap — retrieve, generate, validasi — dengan maksimum dua ronde retrieval.
 
 **Tech Stack:** TypeScript 5.7+, Node 22+, pnpm workspaces, Drizzle ORM, PGlite + pgvector, vitest 4, oxlint + oxfmt, tsdown.
 

@@ -768,6 +768,18 @@ Kalau dicampur, regresi retrieval tersembunyi di balik model yang cukup pintar m
 
 Performa di bawah beban, kualitas crawler terhadap situs tidak lazim, dan kompatibilitas widget dengan CMS tertentu. Ketiganya nyata tapi ditangani reaktif; dicatat di sini supaya jadi kelalaian yang diakui, bukan lubang yang tidak disadari.
 
+### 11.5 Utang yang diakui, dengan pemiliknya
+
+| Utang | Pemilik | Mengapa belum sekarang |
+|---|---|---|
+| Typed error di `Provider` supaya 429/503/timeout tidak tercatat sebagai `schema_invalid` | Rencana lapisan provider | Butuh perubahan interface `Provider`; sekarang setiap throw `complete()` jadi `schema_invalid` dan mencemari sinyal bisnis |
+| Ronde perbaikan versi rewrite-query memakai `rewriteModel` | Rencana lapisan provider | Butuh method penyelesaian teks; sementara ini umpan balik verdict yang dipakai |
+| Job CI terhadap Postgres sungguhan (tier 3) | Rencana server | Sandbox memblokir `spawn initdb`; `rowsOf` dan cabang `client.unsafe` belum pernah dieksekusi di tier yang paling penting |
+| Tier `embedded-postgres` | Rencana `quidchat serve` | Urusan siklus-hidup proses; memakai ulang `kind: "postgres"` |
+| Query CI: `messages` LEFT JOIN `message_citations` untuk menemukan jawaban tanpa sitasi | Rencana ingestion/eval | Jalur terakhir menuju kegagalan yang produk ini definisikan sebagai lawannya: jawaban ber-segmen `general` saja yang katanya luput dari daftar `high_risk_topics` |
+| Onboarding tenant baru WAJIB memakai raw handle | Rencana admin/signup | Policy `tenant_self` ber-`USING` saja juga berlaku sebagai `WITH CHECK`, jadi `INSERT` tenant baru sebagai `quidchat_app` selalu gagal: `id` yang baru dibuat tidak mungkin sama dengan `current_tenant_id()` |
+| `answer()` membuka 3–4 transaksi terpisah per turn | Rencana akuntansi biaya | Retrieval dan pencatatan tidak atomik satu sama lain; belum ada yang rusak, tapi perlu diketahui sebelum akuntansi budget mendarat |
+
 ---
 
 ## 12. Tooling
