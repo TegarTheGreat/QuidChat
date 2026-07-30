@@ -58,25 +58,28 @@ const readBody = (req) =>
   })
 
 /**
+ * A deterministic pseudo-embedding: word hashing into a fixed-width vector, so texts sharing
+ * words land near each other and retrieval has something real to rank rather than a constant.
+ */
+function embed(text) {
+  const v = Array.from({ length: 1536 }, () => 0)
+  for (const word of String(text).toLowerCase().match(/[a-z0-9]+/g) ?? []) {
+    let h = 0
+    for (const ch of word) h = (h * 31 + ch.charCodeAt(0)) % 1536
+    v[h] += 1
+  }
+  const norm = Math.hypot(...v) || 1
+  return v.map((x) => x / norm)
+}
+
+/**
  * A deterministic stand-in for OpenAI.
  *
- * Embeddings hash words into a fixed-width vector, so texts sharing words land near each other
- * and retrieval has something real to rank rather than a constant. The chat completion quotes
+ * The chat completion quotes
  * the first context chunk and cites its id, which is what a grounded answer looks like on the
  * wire — enough for the validator to accept or reject it for the right reasons.
  */
 function startProvider() {
-  const embed = (text) => {
-    const v = Array.from({ length: 1536 }, () => 0)
-    for (const word of String(text).toLowerCase().match(/[a-z0-9]+/g) ?? []) {
-      let h = 0
-      for (const ch of word) h = (h * 31 + ch.charCodeAt(0)) % 1536
-      v[h] += 1
-    }
-    const norm = Math.hypot(...v) || 1
-    return v.map((x) => x / norm)
-  }
-
   const server = createServer(async (req, res) => {
     const raw = await readBody(req)
     res.setHeader("content-type", "application/json")
