@@ -1,10 +1,10 @@
-# QuidChat Rencana 1 — Fondasi & Pipeline Inti
+# QuidChat Plan 1 — Foundation & Core Pipeline
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Membangun monorepo, lapisan database dengan isolasi tenant yang ditegakkan Postgres, dan pipeline menjawab satu-skill yang menolak menjawab klaim bisnis tanpa sumber.
+**Goal:** Build the monorepo, a database layer with tenant isolation enforced by Postgres, and a single-skill answering pipeline that refuses to answer unsourced business claims.
 
-**Architecture:** `@quidchat/db` memegang skema Drizzle, migrasi, dan pabrik koneksi dua tier (PGlite / postgres); tier embedded-postgres adalah urusan siklus-hidup proses yang masuk rencana `quidchat serve` dan akan memakai ulang `kind: "postgres"` setelah proses berjalan. `@quidchat/core` adalah library murni tanpa HTTP dan tanpa akses `process.env`; ia menerima `Store` dan `Provider` sebagai injeksi sehingga bisa dites tanpa database dan tanpa jaringan. Pipeline berjalan sebagai tahap tetap — retrieve, generate, validasi — dengan maksimum dua ronde retrieval.
+**Architecture:** `@quidchat/db` holds the Drizzle schema, migrations, and a two-tier connection factory (PGlite / postgres); the embedded-postgres tier is a process-lifecycle concern that belongs to the `quidchat serve` plan and will reuse `kind: "postgres"` once the process is running. `@quidchat/core` is a pure library with no HTTP and no access to `process.env`; it receives `Store` and `Provider` as injected dependencies so it can be tested without a database and without a network. The pipeline runs as fixed stages — retrieve, generate, validate — with a maximum of two retrieval rounds.
 
 **Tech Stack:** TypeScript 5.7+, Node 22+, pnpm workspaces, Drizzle ORM, PGlite + pgvector, vitest 4, oxlint + oxfmt, tsdown.
 
@@ -12,50 +12,50 @@
 
 ## Global Constraints
 
-- Node `>=22.22.3`. Deklarasikan di `engines` setiap paket.
-- **Setiap dependency langsung di-pin ke versi persis** (`"drizzle-orm": "0.45.2"`, bukan `"^0.45.2"`). Alasan di spec §10.1. **Satu pengecualian:** dependency antar-paket di dalam monorepo memakai `"workspace:*"` — itu bukan versi dari registry, jadi tidak ada permukaan serang supply chain.
-- `pnpm-lock.yaml` wajib di-commit. CI memakai `--frozen-lockfile`.
-- **`@quidchat/core` tidak boleh meng-import `@quidchat/server`, menyentuh HTTP, membaca `process.env`, atau memulai proses.** Ia hanya boleh meng-import `@quidchat/db` untuk tipe, bukan untuk koneksi.
-- Dimensi embedding **1536** di seluruh skema dan test.
-- Setiap tabel ber-`tenant_id` wajib `ENABLE ROW LEVEL SECURITY` **dan** `FORCE ROW LEVEL SECURITY`.
-- Semua identifier database, nama tabel, nama kolom, dan pesan commit dalam **bahasa Inggris**. Komentar kode dan dokumen boleh Indonesia.
-- Commit tanpa trailer atribusi apa pun.
+- Node `>=22.22.3`. Declare it in `engines` for every package.
+- **Every direct dependency is pinned to an exact version** (`"drizzle-orm": "0.45.2"`, not `"^0.45.2"`). Rationale in spec §10.1. **One exception:** inter-package dependencies within the monorepo use `"workspace:*"` — that isn't a registry version, so there's no supply-chain attack surface there.
+- `pnpm-lock.yaml` must be committed. CI uses `--frozen-lockfile`.
+- **`@quidchat/core` must not import `@quidchat/server`, touch HTTP, read `process.env`, or start a process.** It may only import `@quidchat/db` for types, never for a connection.
+- Embedding dimension **1536** throughout the schema and tests.
+- Every table with a `tenant_id` must have both `ENABLE ROW LEVEL SECURITY` **and** `FORCE ROW LEVEL SECURITY`.
+- All database identifiers, table names, column names, and commit messages are in **English**. Code comments and documents may be in Indonesian.
+- Commits carry no attribution trailer of any kind.
 
 ---
 
 ## File Structure
 
 **Root**
-- `package.json` — workspace root, script agregat
-- `pnpm-workspace.yaml` — daftar paket
-- `tsconfig.base.json` — compiler option bersama
-- `.oxlintrc.json` — aturan lint
-- `vitest.config.ts` — konfigurasi test workspace
+- `package.json` — workspace root, aggregate scripts
+- `pnpm-workspace.yaml` — package listing
+- `tsconfig.base.json` — shared compiler options
+- `.oxlintrc.json` — lint rules
+- `vitest.config.ts` — workspace test configuration
 
-**`packages/db`** — satu-satunya paket yang tahu cara terhubung ke Postgres
-- `src/schema.ts` — seluruh tabel Drizzle
-- `src/client.ts` — `createDb()`, memilih driver per tier
-- `src/tenant.ts` — `withTenant()`, menyetel role + konteks tenant per transaksi
-- `src/migrate.ts` — penerap migrasi
-- `src/testing.ts` — `freshPglite()` untuk test
-- `migrations/0001_init.sql` — tabel, index, role, policy RLS
+**`packages/db`** — the only package that knows how to connect to Postgres
+- `src/schema.ts` — all Drizzle tables
+- `src/client.ts` — `createDb()`, picks the driver per tier
+- `src/tenant.ts` — `withTenant()`, sets the role + tenant context per transaction
+- `src/migrate.ts` — migration runner
+- `src/testing.ts` — `freshPglite()` for tests
+- `migrations/0001_init.sql` — tables, indexes, role, RLS policies
 
-**`packages/core`** — library murni
-- `src/types.ts` — tipe bersama
+**`packages/core`** — pure library
+- `src/types.ts` — shared types
 - `src/store.ts` — `interface Store`
 - `src/provider.ts` — `interface Provider`
 - `src/grounding/high-risk.ts` — `detectHighRisk()`
 - `src/grounding/validator.ts` — `validateGrounding()`
 - `src/prompt/builder.ts` — `buildPrompt()`
-- `src/retrieval/hybrid.ts` — SQL hybrid search
+- `src/retrieval/hybrid.ts` — hybrid search SQL
 - `src/pipeline.ts` — `answer()`
 - `src/testing/fakes.ts` — `FakeProvider`, `MemoryStore`
 
-Pemisahan `grounding/` dari `pipeline.ts` disengaja: validator adalah bagian paling penting untuk dites dan paling sering diubah, jadi ia berdiri sendiri tanpa perlu memuat pipeline.
+Separating `grounding/` from `pipeline.ts` is deliberate: the validator is the single most important thing to test and the thing most often changed, so it stands on its own without needing to load the pipeline.
 
 ---
 
-## Task 1: Scaffold monorepo
+## Task 1: Scaffold the monorepo
 
 **Files:**
 - Create: `package.json`
@@ -67,16 +67,16 @@ Pemisahan `grounding/` dari `pipeline.ts` disengaja: validator adalah bagian pal
 
 **Interfaces:**
 - Consumes: nothing
-- Produces: perintah `pnpm test`, `pnpm typecheck`, `pnpm lint` yang berjalan di seluruh workspace
+- Produces: `pnpm test`, `pnpm typecheck`, `pnpm lint` commands that run across the whole workspace
 
-- [ ] **Step 1: Buat `pnpm-workspace.yaml`**
+- [ ] **Step 1: Create `pnpm-workspace.yaml`**
 
 ```yaml
 packages:
   - "packages/*"
 ```
 
-- [ ] **Step 2: Buat `package.json` root**
+- [ ] **Step 2: Create root `package.json`**
 
 ```json
 {
@@ -104,13 +104,13 @@ packages:
 }
 ```
 
-- [ ] **Step 3: Buat `.npmrc`**
+- [ ] **Step 3: Create `.npmrc`**
 
 ```
 engine-strict=true
 ```
 
-- [ ] **Step 4: Buat `tsconfig.base.json`**
+- [ ] **Step 4: Create `tsconfig.base.json`**
 
 ```json
 {
@@ -130,9 +130,9 @@ engine-strict=true
 }
 ```
 
-`noUncheckedIndexedAccess` dinyalakan sengaja: pipeline banyak mengindeks array hasil retrieval, dan tanpa opsi ini `candidateSet[0]` bertipe non-nullable padahal bisa `undefined`.
+`noUncheckedIndexedAccess` is turned on deliberately: the pipeline indexes into retrieval-result arrays a lot, and without this option `candidateSet[0]` would type as non-nullable even though it can be `undefined`.
 
-- [ ] **Step 5: Buat `.oxlintrc.json`**
+- [ ] **Step 5: Create `.oxlintrc.json`**
 
 ```json
 {
@@ -142,7 +142,7 @@ engine-strict=true
 }
 ```
 
-- [ ] **Step 6: Buat `vitest.config.ts`**
+- [ ] **Step 6: Create `vitest.config.ts`**
 
 ```ts
 import { defineConfig } from "vitest/config"
@@ -150,27 +150,23 @@ import { defineConfig } from "vitest/config"
 export default defineConfig({
   test: {
     include: ["packages/*/src/**/*.test.ts"],
-    // Membangun Postgres WASM lalu menerapkan migrasi butuh sekitar 7 detik.
+    // Building the Postgres WASM binary and then applying migrations takes about 7 seconds.
     testTimeout: 20_000,
-    // `hookTimeout` TIDAK mewarisi `testTimeout` — defaultnya tetap 10 detik.
-    // Test yang menyiapkan satu database bersama di `beforeAll` melampauinya
-    // (bangun + seed), dan gagalnya muncul sebagai "Hook timed out in 10000ms"
-    // yang tidak menyebut database sama sekali.
+    // `hookTimeout` does NOT inherit `testTimeout` — its default stays 10 seconds.
+    // A test that sets up one shared database in `beforeAll` blows past that
+    // (build + seed), and the failure shows up as "Hook timed out in 10000ms"
+    // which never mentions the database at all.
     hookTimeout: 60_000,
   },
 })
 ```
 
-`testTimeout` dinaikkan dari default 5 detik karena test yang menyalakan PGlite perlu
-memuat WASM pada pemanggilan pertama. `hookTimeout` dinaikkan terpisah karena vitest
-**tidak** menurunkannya dari `testTimeout`: keduanya independen, dan `beforeAll` yang
-membangun database akan kehabisan waktu di 10 detik meski `testTimeout` 20 detik.
-Gejalanya menyesatkan — pesannya hanya "Hook timed out", tanpa menyebut database.
+`testTimeout` is raised from the default 5 seconds because tests that start PGlite need to load WASM on the first call. `hookTimeout` is raised separately because vitest does **not** derive it from `testTimeout`: the two are independent, and a `beforeAll` that builds a database will time out at 10 seconds even with `testTimeout` at 20 seconds. The symptom is misleading — the message only says "Hook timed out", with no mention of the database.
 
-- [ ] **Step 7: Install dan verifikasi**
+- [ ] **Step 7: Install and verify**
 
 Run: `pnpm install && pnpm test`
-Expected: install sukses; vitest keluar dengan "No test files found" (bukan error konfigurasi).
+Expected: install succeeds; vitest exits with "No test files found" (not a configuration error).
 
 - [ ] **Step 8: Commit**
 
@@ -181,7 +177,7 @@ git commit -m "chore: scaffold pnpm workspace with vitest, oxlint and strict typ
 
 ---
 
-## Task 2: Skema database dan migrasi awal
+## Task 2: Database schema and initial migration
 
 **Files:**
 - Create: `packages/db/package.json`
@@ -190,10 +186,10 @@ git commit -m "chore: scaffold pnpm workspace with vitest, oxlint and strict typ
 - Create: `packages/db/migrations/0001_init.sql`
 
 **Interfaces:**
-- Consumes: workspace dari Task 1
-- Produces: `tenants`, `tenantSettings`, `knowledgeSources`, `documents`, `chunks`, `conversations`, `messages`, `messageCitations`, `escalations`, `usageEvents` — objek tabel Drizzle yang diekspor dari `@quidchat/db`
+- Consumes: workspace from Task 1
+- Produces: `tenants`, `tenantSettings`, `knowledgeSources`, `documents`, `chunks`, `conversations`, `messages`, `messageCitations`, `escalations`, `usageEvents` — Drizzle table objects exported from `@quidchat/db`
 
-- [ ] **Step 1: Buat `packages/db/package.json`**
+- [ ] **Step 1: Create `packages/db/package.json`**
 
 ```json
 {
@@ -219,7 +215,7 @@ git commit -m "chore: scaffold pnpm workspace with vitest, oxlint and strict typ
 }
 ```
 
-- [ ] **Step 2: Buat `packages/db/tsconfig.json`**
+- [ ] **Step 2: Create `packages/db/tsconfig.json`**
 
 ```json
 {
@@ -228,7 +224,7 @@ git commit -m "chore: scaffold pnpm workspace with vitest, oxlint and strict typ
 }
 ```
 
-- [ ] **Step 3: Tulis `packages/db/src/schema.ts`**
+- [ ] **Step 3: Write `packages/db/src/schema.ts`**
 
 ```ts
 import {
@@ -350,9 +346,9 @@ export const adminSessions = pgTable("admin_sessions", {
 })
 ```
 
-Tabel `skills`, `skill_sources`, `skill_handoff_edges`, `routing_rules`, dan `handoffs` sengaja **belum** ada di sini — semuanya ditambahkan di Rencana 3 bersama migrasi `0002`. Rencana 1 memakai satu skill implisit.
+The `skills`, `skill_sources`, `skill_handoff_edges`, `routing_rules`, and `handoffs` tables are deliberately **not** here yet — they are all added in Plan 3 together with migration `0002`. Plan 1 works with a single implicit skill.
 
-- [ ] **Step 4: Tulis `packages/db/migrations/0001_init.sql`**
+- [ ] **Step 4: Write `packages/db/migrations/0001_init.sql`**
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -481,23 +477,23 @@ CREATE TABLE usage_events (
 );
 ```
 
-`tsv` dibuat sebagai kolom `GENERATED ALWAYS AS ... STORED` supaya tidak mungkin desinkron dari `content` — tidak ada trigger yang bisa lupa dijalankan.
+`tsv` is created as a `GENERATED ALWAYS AS ... STORED` column precisely so it can never drift out of sync from `content` — there is no trigger that could be forgotten.
 
-**Versi `@electric-sql/pglite` wajib `0.5.4`, bukan lebih rendah.** `@electric-sql/pglite-pgvector@0.0.5` menyatakan `peerDependencies: {"@electric-sql/pglite": "0.5.4"}` — persyaratan persis, bukan rentang. Ekstensi pgvector adalah WASM yang dibangun terhadap internal pglite versi itu; memasangkannya dengan versi lain lolos `pnpm install` tapi gagal saat runtime di `CREATE EXTENSION vector`, yaitu saat Task 4 pertama kali menyalakan database.
+**`@electric-sql/pglite` must be exactly `0.5.4`, not lower.** `@electric-sql/pglite-pgvector@0.0.5` declares `peerDependencies: {"@electric-sql/pglite": "0.5.4"}` — an exact requirement, not a range. The pgvector extension is WASM built against that version's pglite internals; pairing it with a different version passes `pnpm install` but fails at runtime on `CREATE EXTENSION vector`, which is exactly when Task 4 first starts the database.
 
-**Ekstensi contrib butuh import eksplisit.** `pg_trgm`, `fuzzystrmatch`, dan `unaccent` memang ikut dalam paket utama, tapi tidak otomatis tersedia — `CREATE EXTENSION pg_trgm` gagal dengan `parse_extension_control_file` kecuali ekstensinya diimpor dan diregistrasi seperti `vector`:
+**Contrib extensions need an explicit import.** `pg_trgm`, `fuzzystrmatch`, and `unaccent` do ship inside the main package, but they are not automatically available — `CREATE EXTENSION pg_trgm` fails with `parse_extension_control_file` unless the extension is imported and registered just like `vector`:
 
 ```ts
 import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm"
 await PGlite.create({ extensions: { vector, pg_trgm } })
 ```
 
-Task 2 belum membutuhkannya (hanya `vector`), tapi dicatat di sini karena mode statis di rencana berikutnya bergantung padanya.
+Task 2 doesn't need it yet (only `vector`), but it's noted here because the static mode in a later plan depends on it.
 
-- [ ] **Step 5: Verifikasi migrasi bisa di-parse**
+- [ ] **Step 5: Verify the migration parses**
 
 Run: `pnpm install && pnpm --filter @quidchat/db typecheck`
-Expected: PASS tanpa error tipe.
+Expected: PASS with no type errors.
 
 - [ ] **Step 6: Commit**
 
@@ -508,21 +504,21 @@ git commit -m "feat(db): add initial schema and migration"
 
 ---
 
-## Task 3: Role aplikasi dan policy RLS
+## Task 3: Application role and RLS policies
 
 **Files:**
-- Modify: `packages/db/migrations/0001_init.sql` (tambahkan di akhir berkas)
+- Modify: `packages/db/migrations/0001_init.sql` (append to the end of the file)
 
 **Interfaces:**
-- Consumes: tabel dari Task 2
-- Produces: role `quidchat_app`, policy RLS di setiap tabel ber-`tenant_id`
+- Consumes: tables from Task 2
+- Produces: role `quidchat_app`, RLS policy on every table with a `tenant_id`
 
-**Kenapa task ini berdiri sendiri:** ada satu jebakan yang akan membuang berjam-jam kalau tidak ditangani eksplisit. **PGlite berjalan sebagai `postgres`, yaitu superuser — dan superuser melewati RLS sepenuhnya.** Pemilik tabel juga melewati RLS kecuali tabelnya di-`FORCE`. Jadi tanpa role aplikasi terpisah, test isolasi akan mengembalikan baris dari semua tenant dan RLS terlihat "tidak bekerja" padahal policy-nya benar.
+**Why this task stands on its own:** there is one trap that will burn hours if it isn't handled explicitly. **PGlite runs as `postgres`, i.e. a superuser — and a superuser bypasses RLS entirely.** A table's owner also bypasses RLS unless the table is `FORCE`d. So without a separate application role, isolation tests will return rows from every tenant and RLS will look "broken" even though the policy itself is correct.
 
-- [ ] **Step 1: Tambahkan role dan grant ke akhir `0001_init.sql`**
+- [ ] **Step 1: Append the role and grants to `0001_init.sql`**
 
 ```sql
--- Role aplikasi. Bukan superuser, bukan pemilik tabel, sehingga RLS berlaku.
+-- Application role. Not a superuser, not a table owner, so RLS actually applies.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'quidchat_app') THEN
@@ -536,10 +532,10 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO quidchat_app;
 ```
 
-- [ ] **Step 2: Tambahkan RLS dan policy ke akhir `0001_init.sql`**
+- [ ] **Step 2: Append RLS and policies to `0001_init.sql`**
 
 ```sql
--- Helper: konteks tenant transaksi saat ini.
+-- Helper: the current transaction's tenant context.
 CREATE OR REPLACE FUNCTION current_tenant_id() RETURNS uuid
 LANGUAGE sql STABLE AS $$
   SELECT NULLIF(current_setting('quidchat.tenant_id', true), '')::uuid
@@ -560,12 +556,12 @@ BEGIN
   END LOOP;
 END $$;
 
--- tenants sendiri: dibaca lewat id, bukan tenant_id.
+-- tenants itself: read via id, not tenant_id.
 ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenants FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_self ON tenants USING (id = current_tenant_id());
 
--- message_citations tidak punya tenant_id; ikut induknya.
+-- message_citations has no tenant_id; it follows its parent.
 ALTER TABLE message_citations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE message_citations FORCE ROW LEVEL SECURITY;
 CREATE POLICY citations_via_message ON message_citations
@@ -575,7 +571,7 @@ CREATE POLICY citations_via_message ON message_citations
       AND m.tenant_id = current_tenant_id()
   ));
 
--- admin_sessions juga ikut induknya.
+-- admin_sessions also follows its parent.
 ALTER TABLE admin_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_sessions FORCE ROW LEVEL SECURITY;
 CREATE POLICY sessions_via_user ON admin_sessions
@@ -586,11 +582,11 @@ CREATE POLICY sessions_via_user ON admin_sessions
   ));
 ```
 
-`current_setting('quidchat.tenant_id', true)` memakai argumen kedua `true` sehingga mengembalikan `NULL` alih-alih melempar error saat konteks belum disetel. Dengan `NULLIF(...)::uuid` jadi `NULL`, dan `tenant_id = NULL` selalu `false` — artinya **lupa menyetel konteks menghasilkan nol baris, bukan seluruh tabel.** Itu arah kegagalan yang benar.
+`current_setting('quidchat.tenant_id', true)` passes `true` as the second argument so it returns `NULL` instead of raising when the context hasn't been set. With `NULLIF(...)::uuid` that becomes `NULL`, and `tenant_id = NULL` is always `false` — meaning **forgetting to set the context yields zero rows, not the whole table.** That's the correct failure direction.
 
-- [ ] **Step 3: Verifikasi SQL valid dengan menerapkannya ke PGlite**
+- [ ] **Step 3: Verify the SQL is valid by applying it to PGlite**
 
-Buat berkas sementara `packages/db/scratch-verify.mjs`:
+Create a scratch file `packages/db/scratch-verify.mjs`:
 
 ```js
 import { PGlite } from "@electric-sql/pglite"
@@ -601,13 +597,13 @@ const db = await PGlite.create({ extensions: { vector } })
 await db.exec(readFileSync("packages/db/migrations/0001_init.sql", "utf8"))
 const r = await db.query(
   "SELECT count(*)::int AS n FROM pg_policies WHERE schemaname = 'public'")
-console.log("policy terpasang:", r.rows[0].n)
+console.log("policies installed:", r.rows[0].n)
 ```
 
 Run: `node packages/db/scratch-verify.mjs`
-Expected: `policy terpasang: 12`
+Expected: `policies installed: 12`
 
-- [ ] **Step 4: Hapus berkas sementara**
+- [ ] **Step 4: Delete the scratch file**
 
 Run: `rm packages/db/scratch-verify.mjs`
 
@@ -620,7 +616,7 @@ git commit -m "feat(db): add application role and row level security policies"
 
 ---
 
-## Task 4: Pabrik koneksi dan konteks tenant
+## Task 4: Connection factory and tenant context
 
 **Files:**
 - Create: `packages/db/src/client.ts`
@@ -631,17 +627,17 @@ git commit -m "feat(db): add application role and row level security policies"
 - Test: `packages/db/src/tenant.test.ts`
 
 **Interfaces:**
-- Consumes: skema dari Task 2, policy dari Task 3
+- Consumes: schema from Task 2, policies from Task 3
 - Produces:
-  - `type QuidDb` — handle Drizzle
-  - `createDb(config: DbConfig): Promise<QuidDb>` di mana `DbConfig = { kind: "pglite"; dataDir?: string } | { kind: "postgres"; url: string }`
+  - `type QuidDb` — Drizzle handle
+  - `createDb(config: DbConfig): Promise<QuidDb>` where `DbConfig = { kind: "pglite"; dataDir?: string } | { kind: "postgres"; url: string }`
   - `withTenant<T>(db: QuidDb, tenantId: string, fn: (tx: QuidDb) => Promise<T>): Promise<T>`
   - `applyMigrations(db: QuidDb): Promise<void>`
-  - `freshPglite(): Promise<QuidDb>` dari `@quidchat/db/testing`
+  - `freshPglite(): Promise<QuidDb>` from `@quidchat/db/testing`
 
-- [ ] **Step 1: Tulis test isolasi tenant yang gagal**
+- [ ] **Step 1: Write a failing tenant isolation test**
 
-Buat `packages/db/src/tenant.test.ts`:
+Create `packages/db/src/tenant.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest"
@@ -662,8 +658,8 @@ async function seedTenant(db: Awaited<ReturnType<typeof freshPglite>>, slug: str
   return t!.id
 }
 
-describe("isolasi tenant", () => {
-  it("tenant hanya melihat chunk miliknya sendiri", async () => {
+describe("tenant isolation", () => {
+  it("a tenant only sees its own chunks", async () => {
     const db = await freshPglite()
     const a = await seedTenant(db, "tenant-a")
     const b = await seedTenant(db, "tenant-b")
@@ -678,7 +674,7 @@ describe("isolasi tenant", () => {
     expect(rowsB[0]!.tenantId).toBe(b)
   })
 
-  it("tanpa konteks tenant mengembalikan nol baris, bukan semuanya", async () => {
+  it("with no tenant context returns zero rows, not all of them", async () => {
     const db = await freshPglite()
     await seedTenant(db, "tenant-a")
     await seedTenant(db, "tenant-b")
@@ -690,14 +686,14 @@ describe("isolasi tenant", () => {
 })
 ```
 
-Test kedua itu penting: ia membuktikan arah kegagalannya aman. Kalau suatu saat seseorang mengubah policy dan lupa konteks jadi berarti "lihat semua", test ini yang menangkapnya.
+That second test matters: it proves the failure direction is safe. If someone ever changes a policy and forgets the context ends up meaning "see everything", this is the test that catches it.
 
-- [ ] **Step 2: Jalankan test untuk memastikan gagal**
+- [ ] **Step 2: Run the test to confirm it fails**
 
 Run: `pnpm vitest run packages/db/src/tenant.test.ts`
 Expected: FAIL — `Cannot find module './testing.js'`
 
-- [ ] **Step 3: Tulis `packages/db/src/client.ts`**
+- [ ] **Step 3: Write `packages/db/src/client.ts`**
 
 ```ts
 import { PGlite } from "@electric-sql/pglite"
@@ -726,23 +722,23 @@ export async function createDb(config: DbConfig): Promise<QuidDb> {
 }
 ```
 
-- [ ] **Step 4: Tulis `packages/db/src/tenant.ts`**
+- [ ] **Step 4: Write `packages/db/src/tenant.ts`**
 
 ```ts
 import { sql } from "drizzle-orm"
 import type { QuidDb } from "./client.js"
 
 /**
- * Menjalankan `fn` di dalam satu transaksi dengan role aplikasi dan konteks
- * tenant terpasang. Keduanya `SET LOCAL`, jadi otomatis lepas saat transaksi
- * selesai — tidak ada kebocoran konteks ke query berikutnya di koneksi yang sama.
+ * Runs `fn` inside a single transaction with the application role and tenant
+ * context set. Both are `SET LOCAL`, so they automatically drop off once the
+ * transaction ends — no context leaks to the next query on the same connection.
  */
 export async function withTenant<T>(
   db: QuidDb,
   tenantId: string,
   fn: (tx: QuidDb) => Promise<T>,
 ): Promise<T> {
-  // @ts-expect-error kedua varian driver punya .transaction dengan bentuk sama
+  // @ts-expect-error both driver variants have a .transaction with the same shape
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL ROLE quidchat_app`)
     await tx.execute(sql`SELECT set_config('quidchat.tenant_id', ${tenantId}, true)`)
@@ -751,9 +747,9 @@ export async function withTenant<T>(
 }
 ```
 
-`set_config(..., true)` dipakai alih-alih `SET LOCAL quidchat.tenant_id = ...` karena nilainya berasal dari parameter — `SET LOCAL` tidak menerima placeholder, dan menyisipkannya lewat string membuka celah injeksi.
+`set_config(..., true)` is used instead of `SET LOCAL quidchat.tenant_id = ...` because the value comes from a parameter — `SET LOCAL` doesn't accept a placeholder, and splicing it in via string concatenation would open an injection hole.
 
-- [ ] **Step 5: Tulis `packages/db/src/migrate.ts`**
+- [ ] **Step 5: Write `packages/db/src/migrate.ts`**
 
 ```ts
 import { readFileSync, readdirSync } from "node:fs"
@@ -773,13 +769,13 @@ export async function applyMigrations(db: QuidDb): Promise<void> {
 }
 ```
 
-- [ ] **Step 6: Tulis `packages/db/src/testing.ts`**
+- [ ] **Step 6: Write `packages/db/src/testing.ts`**
 
 ```ts
 import { createDb, type QuidDb } from "./client.js"
 import { applyMigrations } from "./migrate.js"
 
-/** Database PGlite bersih di memori, migrasi sudah diterapkan. */
+/** A clean in-memory PGlite database with migrations already applied. */
 export async function freshPglite(): Promise<QuidDb> {
   const db = await createDb({ kind: "pglite" })
   await applyMigrations(db)
@@ -787,7 +783,7 @@ export async function freshPglite(): Promise<QuidDb> {
 }
 ```
 
-- [ ] **Step 7: Tulis `packages/db/src/index.ts`**
+- [ ] **Step 7: Write `packages/db/src/index.ts`**
 
 ```ts
 export * from "./client.js"
@@ -796,12 +792,12 @@ export * from "./schema.js"
 export * from "./tenant.js"
 ```
 
-`testing.ts` sengaja tidak diekspor dari `index.ts` — ia punya entry point sendiri (`@quidchat/db/testing`) supaya helper test tidak ikut masuk bundle produksi.
+`testing.ts` is deliberately not re-exported from `index.ts` — it has its own entry point (`@quidchat/db/testing`) so test helpers don't end up in the production bundle.
 
-- [ ] **Step 8: Jalankan test**
+- [ ] **Step 8: Run the test**
 
 Run: `pnpm vitest run packages/db/src/tenant.test.ts`
-Expected: PASS, kedua test hijau.
+Expected: PASS, both tests green.
 
 - [ ] **Step 9: Commit**
 
@@ -812,7 +808,7 @@ git commit -m "feat(db): add connection factory, tenant context and isolation te
 
 ---
 
-## Task 5: Tipe inti dan interface
+## Task 5: Core types and interfaces
 
 **Files:**
 - Create: `packages/core/package.json`
@@ -823,16 +819,16 @@ git commit -m "feat(db): add connection factory, tenant context and isolation te
 - Create: `packages/core/src/index.ts`
 
 **Interfaces:**
-- Consumes: nothing di runtime; hanya tipe
+- Consumes: nothing at runtime; types only
 - Produces:
   - `type Segment = { text: string; kind: "general" } | { text: string; kind: "business_claim"; citations: string[] }`
   - `type Answer = { segments: Segment[] }`
   - `type Candidate = { id: string; content: string; documentTitle: string }`
   - `type TenantConfig = { chatModel: string; rewriteModel: string; embeddingModel: string; refusalText: string; highRiskTopics: string[] }`
-  - `interface Store` dengan `getTenantConfig`, `searchChunks`, `recordAnswer`, `recordEscalation`
-  - `interface Provider` dengan `complete`, `capabilities`
+  - `interface Store` with `getTenantConfig`, `searchChunks`, `recordAnswer`, `recordEscalation`
+  - `interface Provider` with `complete`, `capabilities`
 
-- [ ] **Step 1: Buat `packages/core/package.json`**
+- [ ] **Step 1: Create `packages/core/package.json`**
 
 ```json
 {
@@ -850,11 +846,11 @@ git commit -m "feat(db): add connection factory, tenant context and isolation te
 }
 ```
 
-**Entry point `./testing` sengaja BELUM didaftarkan di sini.** Berkasnya (`src/testing/fakes.ts`) dibuat di Task 10, dan mendeklarasikan export atau entri build untuk berkas yang belum ada membuat `pnpm build` gagal — `tsdown` menolak input yang tidak ditemukan. Task 10 yang menambahkan keduanya bersamaan dengan berkasnya. Aturan umumnya: **setiap task hanya mendeklarasikan apa yang ia buat.**
+**The `./testing` entry point is deliberately NOT registered here yet.** Its file (`src/testing/fakes.ts`) is created in Task 10, and declaring a package export or a build entry for a file that doesn't exist yet breaks `pnpm build` — `tsdown` refuses input it can't find. Task 10 adds both together with the file itself. The general rule: **each task declares only what it creates.**
 
-`dependencies` kosong bukan kelalaian — `core` adalah library murni. Kalau nanti ada yang menambahkan dependency runtime ke sini, itu sinyal batas arsitektur sedang dilanggar.
+The empty `dependencies` isn't an oversight — `core` is a pure library. If a runtime dependency ever gets added here, that's a signal the architectural boundary is being violated.
 
-- [ ] **Step 2: Buat `packages/core/tsconfig.json`**
+- [ ] **Step 2: Create `packages/core/tsconfig.json`**
 
 ```json
 {
@@ -863,7 +859,7 @@ git commit -m "feat(db): add connection factory, tenant context and isolation te
 }
 ```
 
-- [ ] **Step 3: Tulis `packages/core/src/types.ts`**
+- [ ] **Step 3: Write `packages/core/src/types.ts`**
 
 ```ts
 export type Segment =
@@ -881,8 +877,8 @@ export type Candidate = {
 export type TenantConfig = {
   chatModel: string
   rewriteModel: string
-  /** Model embedding. TERPISAH dari `chatModel` — meng-embed dengan id model
-   *  chat akan ditolak oleh provider sungguhan. */
+  /** Embedding model. Kept SEPARATE from `chatModel` — embedding with the
+   *  chat model's id will be rejected by a real provider. */
   embeddingModel: string
   refusalText: string
   highRiskTopics: string[]
@@ -902,7 +898,7 @@ export type PipelineResult =
   | { kind: "refused"; text: string; reason: EscalationReason }
 ```
 
-- [ ] **Step 4: Tulis `packages/core/src/store.ts`**
+- [ ] **Step 4: Write `packages/core/src/store.ts`**
 
 ```ts
 import type { Candidate, EscalationReason, Segment, TenantConfig } from "./types.js"
@@ -910,7 +906,7 @@ import type { Candidate, EscalationReason, Segment, TenantConfig } from "./types
 export interface Store {
   getTenantConfig(tenantId: string): Promise<TenantConfig>
 
-  /** Hybrid search: vector + full text, sudah di-rerank, dibatasi tenant. */
+  /** Hybrid search: vector + full text, already reranked, scoped to the tenant. */
   searchChunks(args: {
     tenantId: string
     query: string
@@ -933,17 +929,17 @@ export interface Store {
 }
 ```
 
-- [ ] **Step 5: Tulis `packages/core/src/provider.ts`**
+- [ ] **Step 5: Write `packages/core/src/provider.ts`**
 
 ```ts
 import type { Answer } from "./types.js"
 
 export type PromptParts = {
-  /** Stabil per tenant. Titik cache pertama diletakkan di akhir bagian ini. */
+  /** Stable per tenant. The first cache breakpoint sits at the end of this part. */
   system: string
-  /** Riwayat percakapan, hanya bertambah di ujung. */
+  /** Conversation history, only ever grows at the tail. */
   history: { role: "user" | "assistant"; content: string }[]
-  /** Turn sekarang: konteks hasil retrieve + pertanyaan. Paling volatil. */
+  /** The current turn: retrieved context + question. Most volatile. */
   currentTurn: string
 }
 
@@ -963,14 +959,14 @@ export type CompleteResult = {
 
 export interface Provider {
   readonly id: string
-  /** Menghasilkan jawaban terstruktur. Melempar bila model gagal mematuhi schema. */
+  /** Produces a structured answer. Throws if the model fails to comply with the schema. */
   complete(args: { model: string; prompt: PromptParts }): Promise<CompleteResult>
   embed(args: { model: string; text: string }): Promise<number[]>
   capabilities(model: string): Promise<Capabilities>
 }
 ```
 
-- [ ] **Step 6: Tulis `packages/core/src/index.ts`**
+- [ ] **Step 6: Write `packages/core/src/index.ts`**
 
 ```ts
 export * from "./provider.js"
@@ -978,7 +974,7 @@ export * from "./store.js"
 export * from "./types.js"
 ```
 
-- [ ] **Step 7: Verifikasi tipe**
+- [ ] **Step 7: Verify types**
 
 Run: `pnpm install && pnpm --filter @quidchat/core typecheck`
 Expected: PASS.
@@ -992,7 +988,7 @@ git commit -m "feat(core): add shared types and Store/Provider interfaces"
 
 ---
 
-## Task 6: Deteksi topik berisiko tinggi
+## Task 6: High-risk topic detection
 
 **Files:**
 - Create: `packages/core/src/grounding/high-risk.ts`
@@ -1000,11 +996,11 @@ git commit -m "feat(core): add shared types and Store/Provider interfaces"
 
 **Interfaces:**
 - Consumes: nothing
-- Produces: `detectHighRisk(text: string, topics: string[]): string[]` — mengembalikan topik yang terdeteksi, array kosong bila tidak ada
+- Produces: `detectHighRisk(text: string, topics: string[]): string[]` — returns the topics detected, an empty array if none
 
-- [ ] **Step 1: Tulis test yang gagal**
+- [ ] **Step 1: Write a failing test**
 
-Buat `packages/core/src/grounding/high-risk.test.ts`:
+Create `packages/core/src/grounding/high-risk.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest"
@@ -1013,31 +1009,31 @@ import { detectHighRisk } from "./high-risk.js"
 const TOPICS = ["harga", "diskon", "garansi", "refund", "stok", "legal"]
 
 describe("detectHighRisk", () => {
-  it("mendeteksi topik yang muncul apa adanya", () => {
+  it("detects a topic that appears verbatim", () => {
     expect(detectHighRisk("Harga produk ini 200 ribu", TOPICS)).toEqual(["harga"])
   })
 
-  it("tidak peduli huruf besar-kecil", () => {
+  it("is case-insensitive", () => {
     expect(detectHighRisk("GARANSI resmi 1 tahun", TOPICS)).toEqual(["garansi"])
   })
 
-  it("mengembalikan beberapa topik sekaligus", () => {
+  it("returns several topics at once", () => {
     expect(detectHighRisk("ada diskon dan stok masih banyak", TOPICS).toSorted())
       .toEqual(["diskon", "stok"])
   })
 
-  it("kosong untuk sapaan biasa", () => {
+  it("is empty for an ordinary greeting", () => {
     expect(detectHighRisk("Halo, terima kasih banyak", TOPICS)).toEqual([])
   })
 
-  it("tidak cocok bila topik didahului huruf lain", () => {
-    // "legal" tidak boleh terpicu oleh "dilegalisir" atau "ilegal"
+  it("does not match when the topic is preceded by other letters", () => {
+    // "legal" must not be triggered by "dilegalisir" or "ilegal"
     expect(detectHighRisk("dokumen sudah dilegalisir", TOPICS)).toEqual([])
     expect(detectHighRisk("proses ilegal itu", TOPICS)).toEqual([])
     expect(detectHighRisk("saya menghargai bantuannya", TOPICS)).toEqual([])
   })
 
-  it("TETAP cocok bila topik diberi sufiks — kritis untuk bahasa Indonesia", () => {
+  it("STILL matches when the topic carries a suffix — critical for Indonesian", () => {
     expect(detectHighRisk("harganya berapa?", TOPICS)).toEqual(["harga"])
     expect(detectHighRisk("stoknya habis", TOPICS)).toEqual(["stok"])
     expect(detectHighRisk("garansinya berapa lama", TOPICS)).toEqual(["garansi"])
@@ -1045,28 +1041,28 @@ describe("detectHighRisk", () => {
     expect(detectHighRisk("diskonnya ada?", TOPICS)).toEqual(["diskon"])
   })
 
-  it("menghormati daftar topik kustom per tenant", () => {
+  it("honors a per-tenant custom topic list", () => {
     expect(detectHighRisk("dosis yang dianjurkan", ["dosis"])).toEqual(["dosis"])
   })
 })
 ```
 
-Dua kelompok kasus itu menarik batas dari arah berlawanan, dan **keduanya wajib lulus bersamaan** — itulah yang menentukan bentuk regex-nya.
+The two groups of cases draw the boundary from opposite directions, and **both must pass simultaneously** — that is exactly what shapes the regex.
 
-Kelompok pertama menuntut penjaga **di depan** topik: pencocokan substring polos akan menandai "dilegalisir" sebagai klaim legal dan menolak jawaban yang sah, sehingga bot menolak hal-hal wajar.
+The first group demands a guard **in front of** the topic: plain substring matching would flag "dilegalisir" as a legal claim and reject a legitimate answer, so the bot would refuse perfectly ordinary things.
 
-Kelompok kedua melarang penjaga **di belakang**. Dalam bahasa Indonesia sufiks `-nya` menempel langsung ke kata, dan *"harganya berapa?"* kemungkinan cara paling umum pelanggan menanyakan harga. Batas kata di belakang akan melewatkannya — dan konsekuensinya persis kegagalan yang guardrail ini ada untuk mencegah: model menjawab harga dengan label `general`, detektor diam, jawaban tanpa sitasi terkirim ke pelanggan.
+The second group forbids a guard **behind** the topic. In Indonesian the suffix `-nya` attaches directly to the word, and *"harganya berapa?"* ("what's the price?") is probably the single most common way a customer asks about price. A trailing word boundary would miss it — and the consequence is exactly the failure this guardrail exists to prevent: the model answers the price with a `general` label, the detector stays silent, and an uncited answer reaches the customer.
 
-Asimetri inilah yang menyelesaikan pilihannya. Untuk sebuah guardrail, **memicu berlebih itu aman** — paling buruk bot meminta sumber untuk kalimat yang tidak memerlukannya. **Kurang memicu tidak aman** — klaim bisnis tanpa sumber lolos ke pelanggan. Jadi ketika ragu, condongkan ke arah mendeteksi.
+That asymmetry is what settles the design. For a guardrail, **over-triggering is safe** — worst case the bot asks for a source for a sentence that didn't need one. **Under-triggering is not safe** — an unsourced business claim slips through to the customer. So when in doubt, lean toward detecting.
 
-- [ ] **Step 2: Jalankan test untuk memastikan gagal**
+- [ ] **Step 2: Run the test to confirm it fails**
 
 Run: `pnpm vitest run packages/core/src/grounding/high-risk.test.ts`
 Expected: FAIL — `Cannot find module './high-risk.js'`
 
-- [ ] **Step 3: Implementasi minimal**
+- [ ] **Step 3: Minimal implementation**
 
-Buat `packages/core/src/grounding/high-risk.ts`:
+Create `packages/core/src/grounding/high-risk.ts`:
 
 ```ts
 function escapeRegex(s: string): string {
@@ -1074,19 +1070,21 @@ function escapeRegex(s: string): string {
 }
 
 /**
- * Mengembalikan topik berisiko tinggi yang muncul di `text` sebagai AWAL kata.
+ * Returns the high-risk topics that appear in `text` as the START of a word.
  *
- * Penjaga hanya dipasang di DEPAN topik, bukan di belakang. Itu disengaja:
- * - di depan  -> "dilegalisir", "ilegal", "menghargai" TIDAK terdeteksi, karena
- *                topiknya didahului huruf lain;
- * - di belakang (tidak ada) -> "harganya", "stoknya", "garansinya" TETAP
- *                terdeteksi, dan dalam bahasa Indonesia bentuk bersufiks inilah
- *                yang paling sering dipakai pelanggan.
+ * The guard is only placed in FRONT of the topic, never behind it. That's
+ * deliberate:
+ * - in front  -> "dilegalisir", "ilegal", "menghargai" are NOT detected, because
+ *                the topic is preceded by other letters;
+ * - behind (absent) -> "harganya", "stoknya", "garansinya" ARE STILL detected,
+ *                and in Indonesian this suffixed form is the one customers use
+ *                most often.
  *
- * Konsekuensinya kata seperti "hargai" ikut terdeteksi. Itu diterima secara
- * sadar: untuk guardrail, memicu berlebih hanya membuat bot meminta sumber untuk
- * kalimat yang tak memerlukannya, sedangkan kurang memicu meloloskan klaim bisnis
- * tanpa sumber ke pelanggan. Ketika ragu, condong ke arah mendeteksi.
+ * The consequence is that a word like "hargai" ("to appreciate") also gets
+ * flagged. That's accepted knowingly: for a guardrail, over-triggering only
+ * makes the bot ask for a source for a sentence that didn't need one, while
+ * under-triggering lets an unsourced business claim through to the customer.
+ * When in doubt, lean toward detecting.
  */
 export function detectHighRisk(text: string, topics: string[]): string[] {
   const found: string[] = []
@@ -1098,12 +1096,12 @@ export function detectHighRisk(text: string, topics: string[]): string[] {
 }
 ```
 
-Lookbehind memakai kelas Unicode `\p{L}\p{N}` alih-alih `\b`, karena `\b` di JavaScript berbasis ASCII dan berperilaku salah pada huruf beraksen.
+The lookbehind uses the Unicode classes `\p{L}\p{N}` instead of `\b`, because JavaScript's `\b` is ASCII-based and behaves incorrectly on accented letters.
 
-- [ ] **Step 4: Jalankan test**
+- [ ] **Step 4: Run the test**
 
 Run: `pnpm vitest run packages/core/src/grounding/high-risk.test.ts`
-Expected: PASS, keenam test hijau.
+Expected: PASS, all six tests green.
 
 - [ ] **Step 5: Commit**
 
@@ -1114,15 +1112,15 @@ git commit -m "feat(core): add word-boundary high risk topic detection"
 
 ---
 
-## Task 7: Validator grounding — test wajib #1
+## Task 7: Grounding validator — mandatory test #1
 
 **Files:**
 - Create: `packages/core/src/grounding/validator.ts`
 - Test: `packages/core/src/grounding/validator.test.ts`
 
 **Interfaces:**
-- Consumes: `detectHighRisk` dari Task 6; `Segment`, `Candidate` dari Task 5
-- Produces: `validateGrounding(args: { answer: Answer; candidates: Candidate[]; highRiskTopics: string[] }): GroundingVerdict` di mana
+- Consumes: `detectHighRisk` from Task 6; `Segment`, `Candidate` from Task 5
+- Produces: `validateGrounding(args: { answer: Answer; candidates: Candidate[]; highRiskTopics: string[] }): GroundingVerdict` where
   ```ts
   type GroundingVerdict =
     | { ok: true; citedChunkIds: string[] }
@@ -1132,9 +1130,9 @@ git commit -m "feat(core): add word-boundary high risk topic detection"
         detail: string }
   ```
 
-- [ ] **Step 1: Tulis test yang gagal — tabel kasus dari spec §9.1**
+- [ ] **Step 1: Write a failing test — the case table from spec §9.1**
 
-Buat `packages/core/src/grounding/validator.test.ts`:
+Create `packages/core/src/grounding/validator.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest"
@@ -1151,13 +1149,13 @@ const run = (segments: Parameters<typeof validateGrounding>[0]["answer"]["segmen
   validateGrounding({ answer: { segments }, candidates, highRiskTopics: TOPICS })
 
 describe("validateGrounding", () => {
-  it("menolak klaim bisnis tanpa sitasi", () => {
+  it("rejects a business claim with no citation", () => {
     const v = run([{ kind: "business_claim", text: "Garansi 12 bulan.", citations: [] }])
     expect(v.ok).toBe(false)
     if (!v.ok) expect(v.violation).toBe("missing_citation")
   })
 
-  it("menolak sitasi di luar candidateSet", () => {
+  it("rejects a citation outside the candidate set", () => {
     const v = run([
       { kind: "business_claim", text: "Garansi 12 bulan.", citations: ["chunk-99"] },
     ])
@@ -1165,13 +1163,13 @@ describe("validateGrounding", () => {
     if (!v.ok) expect(v.violation).toBe("unknown_citation")
   })
 
-  it("menolak segmen general yang menyebut topik berisiko tinggi", () => {
+  it("rejects a general segment that mentions a high-risk topic", () => {
     const v = run([{ kind: "general", text: "Harga kami paling murah kok." }])
     expect(v.ok).toBe(false)
     if (!v.ok) expect(v.violation).toBe("unlabelled_high_risk")
   })
 
-  it("meloloskan klaim bisnis dengan sitasi valid", () => {
+  it("passes a business claim with a valid citation", () => {
     const v = run([
       { kind: "business_claim", text: "Garansi 12 bulan.", citations: ["chunk-1"] },
     ])
@@ -1179,44 +1177,45 @@ describe("validateGrounding", () => {
     if (v.ok) expect(v.citedChunkIds).toEqual(["chunk-1"])
   })
 
-  it("meloloskan sapaan berlabel general", () => {
+  it("passes a greeting labelled general", () => {
     const v = run([{ kind: "general", text: "Halo! Tentu saya bantu." }])
     expect(v.ok).toBe(true)
     if (v.ok) expect(v.citedChunkIds).toEqual([])
   })
 
-  it("mengumpulkan sitasi unik dari beberapa segmen", () => {
+  it("collects unique citations across several segments", () => {
     const v = run([
       { kind: "general", text: "Halo!" },
       { kind: "business_claim", text: "Garansi 12 bulan.", citations: ["chunk-1"] },
       { kind: "business_claim", text: "Harganya Rp200.000.", citations: ["chunk-2", "chunk-1"] },
     ])
     expect(v.ok).toBe(true)
-    // `toSorted()` bukan `sort()`: yang kedua mengubah array di dalam verdict,
-    // jadi assertion berikutnya di test yang sama akan memeriksa data yang sudah
-    // teracak urutannya oleh assertion sebelumnya.
+    // `toSorted()`, not `sort()`: the latter mutates the array inside the
+    // verdict, so the next assertion in the same test would inspect data
+    // already shuffled by the previous assertion.
     if (v.ok) expect(v.citedChunkIds.toSorted()).toEqual(["chunk-1", "chunk-2"])
   })
 
-  it("menolak jawaban kosong", () => {
+  it("rejects an empty answer", () => {
     const v = run([])
     expect(v.ok).toBe(false)
-    // Violation-nya ikut diperiksa. Tanpa ini, implementasi yang menolak jawaban
-    // kosong dengan label yang salah — misalnya `missing_citation` — tetap lolos,
-    // dan pemanggil yang membedakan penyebab penolakan jadi salah bercabang.
+    // The violation is checked too. Without this, an implementation that
+    // rejects an empty answer with the wrong label — say, `missing_citation`
+    // — would still pass, and a caller that branches on the rejection reason
+    // would branch incorrectly.
     if (!v.ok) expect(v.violation).toBe("empty_answer")
   })
 })
 ```
 
-- [ ] **Step 2: Jalankan test untuk memastikan gagal**
+- [ ] **Step 2: Run the test to confirm it fails**
 
 Run: `pnpm vitest run packages/core/src/grounding/validator.test.ts`
 Expected: FAIL — `Cannot find module './validator.js'`
 
-- [ ] **Step 3: Implementasi minimal**
+- [ ] **Step 3: Minimal implementation**
 
-Buat `packages/core/src/grounding/validator.ts`:
+Create `packages/core/src/grounding/validator.ts`:
 
 ```ts
 import type { Answer, Candidate } from "../types.js"
@@ -1238,7 +1237,7 @@ export function validateGrounding(args: {
   const { answer, candidates, highRiskTopics } = args
 
   if (answer.segments.length === 0) {
-    return { ok: false, violation: "empty_answer", detail: "tidak ada segmen" }
+    return { ok: false, violation: "empty_answer", detail: "no segments" }
   }
 
   const allowed = new Set(candidates.map((c) => c.id))
@@ -1246,13 +1245,13 @@ export function validateGrounding(args: {
 
   for (const seg of answer.segments) {
     if (seg.kind === "general") {
-      // Label dari model tidak dipercaya untuk topik berisiko tinggi.
+      // The model's own label isn't trusted for high-risk topics.
       const risky = detectHighRisk(seg.text, highRiskTopics)
       if (risky.length > 0) {
         return {
           ok: false,
           violation: "unlabelled_high_risk",
-          detail: `segmen general menyebut: ${risky.join(", ")}`,
+          detail: `general segment mentions: ${risky.join(", ")}`,
         }
       }
       continue
@@ -1262,18 +1261,18 @@ export function validateGrounding(args: {
       return {
         ok: false,
         violation: "missing_citation",
-        detail: `klaim bisnis tanpa sitasi: ${seg.text.slice(0, 60)}`,
+        detail: `business claim with no citation: ${seg.text.slice(0, 60)}`,
       }
     }
 
     for (const id of seg.citations) {
-      // Divalidasi terhadap candidateSet, bukan terhadap database. Model bisa
-      // mengarang id yang nyata tapi tidak pernah di-retrieve.
+      // Validated against the candidate set, not against the database. The
+      // model could make up an id that's real but was never retrieved.
       if (!allowed.has(id)) {
         return {
           ok: false,
           violation: "unknown_citation",
-          detail: `sitasi di luar candidateSet: ${id}`,
+          detail: `citation outside the candidate set: ${id}`,
         }
       }
       cited.add(id)
@@ -1284,10 +1283,10 @@ export function validateGrounding(args: {
 }
 ```
 
-- [ ] **Step 4: Jalankan test**
+- [ ] **Step 4: Run the test**
 
 Run: `pnpm vitest run packages/core/src/grounding/validator.test.ts`
-Expected: PASS, ketujuh test hijau.
+Expected: PASS, all seven tests green.
 
 - [ ] **Step 5: Commit**
 
@@ -1298,21 +1297,21 @@ git commit -m "feat(core): add grounding validator with candidate-set citation c
 
 ---
 
-## Task 8: Prompt builder — test wajib #3
+## Task 8: Prompt builder — mandatory test #3
 
 **Files:**
 - Create: `packages/core/src/prompt/builder.ts`
 - Test: `packages/core/src/prompt/builder.test.ts`
 
 **Interfaces:**
-- Consumes: `Candidate`, `TenantConfig` dari Task 5; `PromptParts` dari Task 5
+- Consumes: `Candidate`, `TenantConfig` from Task 5; `PromptParts` from Task 5
 - Produces:
   - `buildPrompt(args: { config: TenantConfig; history: {role:"user"|"assistant";content:string}[]; candidates: Candidate[]; question: string }): PromptParts`
-  - `prefixOf(parts: PromptParts): string` — bagian yang wajib byte-stabil antar pertanyaan
+  - `prefixOf(parts: PromptParts): string` — the part that must be byte-stable across questions
 
-- [ ] **Step 1: Tulis test yang gagal**
+- [ ] **Step 1: Write a failing test**
 
-Buat `packages/core/src/prompt/builder.test.ts`:
+Create `packages/core/src/prompt/builder.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest"
@@ -1336,13 +1335,13 @@ const c = (id: string, content: string): Candidate =>
   ({ id, content, documentTitle: "Katalog" })
 
 describe("buildPrompt", () => {
-  it("prefix byte-identik untuk pertanyaan berbeda", () => {
+  it("prefix is byte-identical for different questions", () => {
     const a = buildPrompt({ config, history, candidates: [c("k1", "Garansi 12 bulan")], question: "garansi?" })
     const b = buildPrompt({ config, history, candidates: [c("k2", "Harga 200rb")], question: "harga?" })
     expect(prefixOf(a)).toBe(prefixOf(b))
   })
 
-  it("prefix berubah bila konfigurasi tenant berubah", () => {
+  it("prefix changes when tenant configuration changes", () => {
     const a = buildPrompt({ config, history, candidates: [], question: "x" })
     const b = buildPrompt({
       config: { ...config, refusalText: "beda" },
@@ -1351,7 +1350,7 @@ describe("buildPrompt", () => {
     expect(prefixOf(a)).not.toBe(prefixOf(b))
   })
 
-  it("konteks hasil retrieve masuk turn sekarang, bukan system", () => {
+  it("retrieved context goes into the current turn, not system", () => {
     const p = buildPrompt({
       config, history,
       candidates: [c("k1", "Garansi resmi 12 bulan")],
@@ -1361,22 +1360,22 @@ describe("buildPrompt", () => {
     expect(p.currentTurn).toContain("Garansi resmi 12 bulan")
   })
 
-  it("menyertakan id chunk agar model bisa menyitasinya", () => {
+  it("includes chunk ids so the model can cite them", () => {
     const p = buildPrompt({ config, history, candidates: [c("k1", "isi")], question: "q" })
     expect(p.currentTurn).toContain("k1")
   })
 
-  it("system prompt memuat teks penolakan dan daftar topik berisiko tenant", () => {
+  it("system prompt carries the refusal text and the tenant's high-risk topic list", () => {
     const p = buildPrompt({ config, history, candidates: [], question: "q" })
     expect(p.system).toContain("Maaf, saya belum punya info itu.")
-    // Assertion pada kalimat hasil interpolasi, BUKAN pada kata "garansi" saja.
-    // Kata itu juga muncul di teks aturan statis, jadi `toContain("garansi")`
-    // tetap lolos walau `config.highRiskTopics` tidak pernah dirender sama
-    // sekali — assertion yang tidak membuktikan apa pun.
+    // Asserting on the interpolated sentence, NOT just the word "garansi".
+    // That word also appears in the static rules text, so `toContain("garansi")`
+    // would still pass even if `config.highRiskTopics` were never rendered at
+    // all — an assertion that proves nothing.
     expect(p.system).toContain("Topik yang selalu dianggap pernyataan bisnis: harga, garansi.")
   })
 
-  it("riwayat diteruskan apa adanya, tapi bukan array milik pemanggil", () => {
+  it("history is passed through as-is, but not the caller's own array", () => {
     const p = buildPrompt({ config, history, candidates: [], question: "q" })
     expect(p.history).toEqual(history)
     expect(p.history).not.toBe(history)
@@ -1384,39 +1383,33 @@ describe("buildPrompt", () => {
 })
 ```
 
-Test pertama itu **test wajib #3** dari spec §9.1. Ia menangkap masalah yang tanpa test hanya muncul sebagai tagihan membengkak tanpa penjelasan.
+The first test is **mandatory test #3** from spec §9.1. It catches a problem that, without a test, only ever shows up as an inflated bill with no explanation.
 
-Dua assertion terakhir itu sengaja lebih ketat daripada yang tampak perlu:
+The last two assertions are deliberately stricter than they look like they need to be:
 
-- **Daftar topik** diuji sebagai kalimat utuh hasil interpolasi. Menguji satu kata
-  saja tidak membedakan antara "daftar topik tenant dirender" dan "kata itu
-  kebetulan ada di teks aturan statis".
-- **`not.toBe(history)`** mewajibkan salinan dangkal. `PromptParts.history`
-  dijanjikan "hanya bertambah di ujung"; kalau builder mengembalikan array milik
-  pemanggil, satu `push` di hilir ikut mengubah state pemanggil dan membatalkan
-  kestabilan prefix yang menjadi seluruh alasan task ini ada. Salinannya satu
-  spread; mode gagalnya sunyi dan mahal.
+- **The topic list** is checked as the full interpolated sentence. Testing for a single word wouldn't distinguish "the tenant's topic list is rendered" from "that word happens to be in the static rules text".
+- **`not.toBe(history)`** requires a shallow copy. `PromptParts.history` is promised to "only ever grow at the tail"; if the builder returned the caller's own array, one downstream `push` would mutate the caller's state too and break the prefix stability that is this task's entire reason for existing. The fix is one spread; the failure mode it prevents is silent and expensive.
 
-- [ ] **Step 2: Jalankan test untuk memastikan gagal**
+- [ ] **Step 2: Run the test to confirm it fails**
 
 Run: `pnpm vitest run packages/core/src/prompt/builder.test.ts`
 Expected: FAIL — `Cannot find module './builder.js'`
 
-- [ ] **Step 3: Implementasi minimal**
+- [ ] **Step 3: Minimal implementation**
 
-Buat `packages/core/src/prompt/builder.ts`:
+Create `packages/core/src/prompt/builder.ts`:
 
 ```ts
 import type { PromptParts } from "../provider.js"
 import type { Candidate, TenantConfig } from "../types.js"
 
 /**
- * Menyusun prompt agar cache LLM mengena. Urutan render adalah tools → system
- * → messages, dan cache berupa prefix match, jadi yang stabil harus di depan
- * dan yang volatil di belakang.
+ * Assembles the prompt so the LLM cache actually hits. Render order is tools
+ * → system → messages, and the cache is a prefix match, so what's stable must
+ * come first and what's volatile must come last.
  *
- * Konteks hasil retrieve TIDAK BOLEH masuk `system` — ia berbeda tiap
- * pertanyaan dan akan membatalkan cache di setiap permintaan.
+ * Retrieved context MUST NOT go into `system` — it differs on every question
+ * and would invalidate the cache on every request.
  */
 export function buildPrompt(args: {
   config: TenantConfig
@@ -1458,26 +1451,25 @@ export function buildPrompt(args: {
     `Pertanyaan pelanggan: ${question}`,
   ].join("\n")
 
-  // Salinan dangkal: `history` yang dikembalikan tidak boleh berbagi referensi
-  // dengan array milik pemanggil, supaya mutasi di hilir tidak membatalkan
-  // kestabilan prefix.
+  // Shallow copy: the returned `history` must not share a reference with the
+  // caller's own array, so a downstream mutation can't break prefix stability.
   return { system, history: [...history], currentTurn }
 }
 
 /**
- * Bagian prompt yang wajib byte-stabil antar pertanyaan dalam percakapan yang
- * sama. Dipakai oleh test regresi cache; jangan memasukkan apa pun yang
- * berubah per permintaan.
+ * The part of the prompt that must be byte-stable across questions within the
+ * same conversation. Used by the cache regression test; don't put anything in
+ * here that changes per request.
  */
 export function prefixOf(parts: PromptParts): string {
   return JSON.stringify({ system: parts.system, history: parts.history })
 }
 ```
 
-- [ ] **Step 4: Jalankan test**
+- [ ] **Step 4: Run the test**
 
 Run: `pnpm vitest run packages/core/src/prompt/builder.test.ts`
-Expected: PASS, keenam test hijau.
+Expected: PASS, all six tests green.
 
 - [ ] **Step 5: Commit**
 
@@ -1488,29 +1480,29 @@ git commit -m "feat(core): add cache-aware prompt builder with prefix stability 
 
 ---
 
-## Task 9: Hybrid search di Store
+## Task 9: Hybrid search in the Store
 
 **Files:**
 - Create: `packages/db/src/store.ts`
 - Test: `packages/db/src/store.test.ts`
 
 **Interfaces:**
-- Consumes: `withTenant` dari Task 4; `interface Store` dari Task 5
-- Produces: `createStore(db: QuidDb): Store` — implementasi `Store` di atas Postgres
+- Consumes: `withTenant` from Task 4; `interface Store` from Task 5
+- Produces: `createStore(db: QuidDb): Store` — a `Store` implementation on top of Postgres
 
-Paket `db` yang mengimplementasikan `Store`, bukan `core`, karena SQL adalah urusan database. `core` hanya tahu interface-nya. `@quidchat/db` menambahkan `@quidchat/core` sebagai dependency untuk tipe.
+The `db` package implements `Store`, not `core`, because SQL is a database concern. `core` only knows the interface. `@quidchat/db` adds `@quidchat/core` as a dependency for types.
 
-- [ ] **Step 1: Tambahkan dependency core ke db**
+- [ ] **Step 1: Add the core dependency to db**
 
-Modify `packages/db/package.json`, tambahkan ke `dependencies`:
+Modify `packages/db/package.json`, add to `dependencies`:
 
 ```json
 "@quidchat/core": "workspace:*"
 ```
 
-- [ ] **Step 2: Tulis test yang gagal**
+- [ ] **Step 2: Write a failing test**
 
-Buat `packages/db/src/store.test.ts`:
+Create `packages/db/src/store.test.ts`:
 
 ```ts
 import { sql } from "drizzle-orm"
@@ -1522,16 +1514,17 @@ import {
 } from "./schema.js"
 import { withTenant } from "./tenant.js"
 
-// Parameternya `offset`, bukan `seed` — nama `seed` sudah dipakai fungsi seeding
-// di bawah, dan menaunginya membuat lint mengeluh serta pembaca ragu.
+// The parameter is `offset`, not `seed` — `seed` is already used by the
+// seeding function below, and shadowing it makes lint complain and a reader
+// pause.
 function fakeEmbedding(offset: number): number[] {
   return Array.from({ length: 1536 }, (_, i) => Math.sin(offset + i) * 0.01)
 }
 
 /**
- * Menyiapkan satu tenant lengkap. `garansiText` dibuat berbeda antar tenant supaya
- * test isolasi bisa membuktikan tenant MANA yang datanya terlihat — bukan sekadar
- * bahwa hasilnya kosong.
+ * Sets up one complete tenant. `garansiText` is made different across tenants
+ * so the isolation test can prove WHICH tenant's data is visible — not merely
+ * that the result is empty.
  */
 async function seed(
   db: Awaited<ReturnType<typeof freshPglite>>,
@@ -1557,17 +1550,17 @@ async function seed(
   return { tenantId: t!.id, chunkId: rows[0]!.id, conversationId: cv!.id }
 }
 
-// SATU database dipakai bersama oleh seluruh test di file ini, lewat `beforeAll`.
-// Dua alasan:
-//   1. `freshPglite()` membangun Postgres WASM lengkap dan menerapkan migrasi —
-//      sekitar 7 detik dan beberapa ratus MB per instance. EMPAT instance dalam
-//      satu file membuat worker vitest mati dengan "Worker exited unexpectedly".
-//      Itu terukur, bukan dugaan.
-//   2. Test di bawah ini aman berbagi: tiga yang pertama hanya membaca, dan yang
-//      terakhir hanya menulis ke `messages`, `message_citations`, dan
-//      `escalations` — tabel yang tidak dibaca test lain. Kalau nanti ada test
-//      yang membaca tabel tulis itu, urutan test mulai berpengaruh dan file ini
-//      harus dipecah, bukan ditambahi.
+// A SINGLE database is shared by all tests in this file, via `beforeAll`.
+// Two reasons:
+//   1. `freshPglite()` builds a whole Postgres WASM binary and applies
+//      migrations — about 7 seconds and a few hundred MB per instance. FOUR
+//      instances in one file kills the vitest worker with "Worker exited
+//      unexpectedly". That's measured, not a guess.
+//   2. The tests below are safe to share: the first three only read, and the
+//      last one only writes to `messages`, `message_citations`, and
+//      `escalations` — tables no other test reads. If a future test reads
+//      those written-to tables, test order starts to matter and this file
+//      needs to be split, not just appended to.
 const GARANSI_TOKO = "Garansi resmi berlaku 12 bulan sejak pembelian."
 const GARANSI_WARUNG = "Garansi warung hanya 3 bulan."
 
@@ -1582,14 +1575,14 @@ describe("createStore", () => {
     warung = await seed(db, "warung", GARANSI_WARUNG)
   })
 
-  it("mengembalikan konfigurasi tenant", async () => {
+  it("returns the tenant's configuration", async () => {
     const cfg = await createStore(db).getTenantConfig(toko.tenantId)
     expect(cfg.chatModel).toBe("claude-opus-5")
     expect(cfg.embeddingModel).toBe("text-embedding-3-small")
     expect(cfg.highRiskTopics).toContain("garansi")
   })
 
-  it("menemukan chunk lewat kata kunci", async () => {
+  it("finds a chunk via keyword", async () => {
     const hits = await createStore(db).searchChunks({
       tenantId: toko.tenantId, query: "garansi", embedding: fakeEmbedding(1), limit: 5,
     })
@@ -1598,11 +1591,11 @@ describe("createStore", () => {
     expect(hits[0]!.documentTitle).toBe("Kebijakan")
   })
 
-  it("setiap tenant hanya melihat chunk miliknya sendiri", async () => {
-    // DUA tenant sungguhan, masing-masing punya chunk yang bisa dibedakan.
-    // Menanyai satu uuid acak yang tidak punya data hanya membuktikan "kosong", dan
-    // itu tidak membedakan "RLS menyaring" dari "tenant ini memang tak punya apa-apa".
-    // Di sini kedua tenant punya isi, jadi kalau RLS bocor, test ini gagal.
+  it("each tenant only sees its own chunks", async () => {
+    // TWO real tenants, each with distinguishable chunks. Asking about a
+    // single random uuid with no data only proves "empty", and that doesn't
+    // distinguish "RLS is filtering" from "this tenant genuinely has nothing".
+    // Here both tenants have content, so if RLS leaks, this test fails.
     const store = createStore(db)
     const args = { query: "garansi", embedding: fakeEmbedding(1), limit: 5 }
 
@@ -1616,14 +1609,14 @@ describe("createStore", () => {
     expect(isiWarung).toContain(GARANSI_WARUNG)
     expect(isiWarung).not.toContain(GARANSI_TOKO)
 
-    // Tenant yang sama sekali tidak ada tetap harus kosong.
+    // A tenant that doesn't exist at all must still come back empty.
     const isiAsing = await store.searchChunks({
       tenantId: "00000000-0000-0000-0000-000000000000", ...args,
     })
     expect(isiAsing).toEqual([])
   })
 
-  it("menyimpan jawaban beserta sitasinya, dan menyimpan eskalasi", async () => {
+  it("records an answer with its citations, and records an escalation", async () => {
     const store = createStore(db)
     await store.recordAnswer({
       tenantId: toko.tenantId,
@@ -1657,26 +1650,18 @@ describe("createStore", () => {
 })
 ```
 
-Test keempat itu **wajib**, dan bukan sekadar kelengkapan. `recordAnswer` menulis ke
-`message_citations`, yang punya `tenant_id uuid NOT NULL` tanpa default — kolom itu
-ditambahkan waktu lima foreign key diubah menjadi kunci komposit demi isolasi tenant.
-Kalau `INSERT`-nya lupa menyertakan `tenant_id`, fungsinya gagal **setiap kali
-dipanggil**, sementara ketiga test pertama tetap hijau karena tak satu pun memanggil
-`recordAnswer`. Jalur yang paling penting untuk jejak audit grounding justru yang
-paling mudah lolos tanpa terdeteksi.
+That fourth test is **mandatory**, not just for completeness. `recordAnswer` writes to `message_citations`, which has a `tenant_id uuid NOT NULL` with no default — that column was added when the five foreign keys were turned into composite keys for tenant isolation. If the `INSERT` forgets to include `tenant_id`, the function fails **every single time it's called**, while the first three tests stay green because none of them call `recordAnswer`. The single most important path for the grounding audit trail is exactly the one most likely to slip through undetected.
 
-Import tambahan yang diperlukan di kepala berkas test: `beforeAll` dari `vitest`,
-`sql` dari `drizzle-orm`, `conversations` dari `./schema.js`, dan `withTenant` dari
-`./tenant.js`.
+Additional imports needed at the top of the test file: `beforeAll` from `vitest`, `sql` from `drizzle-orm`, `conversations` from `./schema.js`, and `withTenant` from `./tenant.js`.
 
-- [ ] **Step 3: Jalankan test untuk memastikan gagal**
+- [ ] **Step 3: Run the test to confirm it fails**
 
 Run: `pnpm install && pnpm vitest run packages/db/src/store.test.ts`
 Expected: FAIL — `Cannot find module './store.js'`
 
-- [ ] **Step 4: Implementasi minimal**
+- [ ] **Step 4: Minimal implementation**
 
-Buat `packages/db/src/store.ts`:
+Create `packages/db/src/store.ts`:
 
 ```ts
 import type { Candidate, Segment, Store, TenantConfig } from "@quidchat/core"
@@ -1685,14 +1670,15 @@ import type { QuidDb } from "./client.js"
 import { withTenant } from "./tenant.js"
 
 /**
- * Menyeragamkan hasil `execute()` yang bentuknya BERBEDA antar driver:
- * driver PGlite mengembalikan objek ber-`rows`, sedangkan driver postgres-js
- * mengembalikan hasil `client.unsafe()` yang berupa Array (dengan properti
- * tambahan seperti `count` dan `command`, tapi TANPA `.rows`).
+ * Normalizes the shape of `execute()` results, which DIFFERS between drivers:
+ * the PGlite driver returns an object with `.rows`, while the postgres-js
+ * driver returns the result of `client.unsafe()`, which is itself an Array
+ * (with extra properties like `count` and `command`, but NO `.rows`).
  *
- * Tanpa penyeragaman ini, mengakses `.rows` langsung akan bekerja di seluruh
- * test — yang memakai PGlite — lalu menghasilkan `undefined` di tier 3 yang
- * memakai postgres-js. Bug yang lolos setiap test dan hanya muncul di produksi.
+ * Without this normalization, accessing `.rows` directly would work across
+ * the whole test suite — which uses PGlite — and then yield `undefined` in
+ * tier 3, which uses postgres-js. A bug that survives every test and only
+ * shows up in production.
  */
 function rowsOf(res: unknown): Record<string, unknown>[] {
   return Array.isArray(res)
@@ -1709,7 +1695,7 @@ export function createStore(db: QuidDb): Store {
           FROM tenant_settings WHERE tenant_id = ${tenantId}
         `)
         const row = rowsOf(res)[0]
-        if (!row) throw new Error(`tenant_settings tidak ditemukan: ${tenantId}`)
+        if (!row) throw new Error(`tenant_settings not found: ${tenantId}`)
         return {
           chatModel: row.chat_model as string,
           rewriteModel: row.rewrite_model as string,
@@ -1723,8 +1709,9 @@ export function createStore(db: QuidDb): Store {
     async searchChunks({ tenantId, query, embedding, limit }): Promise<Candidate[]> {
       const vec = `[${embedding.join(",")}]`
       return withTenant(db, tenantId, async (tx) => {
-        // Hybrid: skor keyword (ts_rank) dan skor semantik (1 - cosine distance)
-        // dijumlahkan dengan bobot setara, lalu diambil top-k.
+        // Hybrid: the keyword score (ts_rank) and the semantic score
+        // (1 - cosine distance) are summed with equal weight, then top-k
+        // is taken.
         const res = await tx.execute(sql`
           SELECT c.id, c.content, d.title,
                  ts_rank(c.tsv, plainto_tsquery('simple', ${query})) AS kw,
@@ -1756,11 +1743,11 @@ export function createStore(db: QuidDb): Store {
         `)
         const messageId = rowsOf(res)[0]!.id as string
         for (const chunkId of citedChunkIds) {
-          // `tenant_id` WAJIB disertakan. Kolomnya `NOT NULL` tanpa default, dan
-          // dua foreign key komposit tabel ini — (tenant_id, message_id) dan
-          // (tenant_id, chunk_id) — memakainya untuk memastikan sebuah sitasi
-          // tidak pernah bisa menunjuk baris milik tenant lain. Menghilangkannya
-          // membuat setiap pemanggilan recordAnswer gagal.
+          // `tenant_id` MUST be included. The column is `NOT NULL` with no
+          // default, and this table's two composite foreign keys —
+          // (tenant_id, message_id) and (tenant_id, chunk_id) — rely on it to
+          // guarantee that a citation can never point at another tenant's
+          // row. Omitting it makes every call to recordAnswer fail.
           await tx.execute(sql`
             INSERT INTO message_citations (tenant_id, message_id, chunk_id)
             VALUES (${tenantId}, ${messageId}, ${chunkId})
@@ -1781,20 +1768,20 @@ export function createStore(db: QuidDb): Store {
 }
 ```
 
-Tidak ada `WHERE c.tenant_id = ...` di query pencarian — dan itu **disengaja**. RLS yang melakukannya. Menambahkan filter manual akan menyembunyikan kegagalan RLS: kalau policy suatu saat rusak, test tenant lain tetap lulus karena filter aplikasi menutupinya, dan kebocoran baru terlihat di produksi.
+There is no `WHERE c.tenant_id = ...` in the search query — and that's **deliberate**. RLS does that job. Adding a manual filter would hide an RLS failure: if a policy ever breaks, the cross-tenant test would still pass because the application filter papers over it, and the leak would only surface in production.
 
-- [ ] **Step 5: Ekspor dari index**
+- [ ] **Step 5: Export from index**
 
-Modify `packages/db/src/index.ts`, tambahkan:
+Modify `packages/db/src/index.ts`, add:
 
 ```ts
 export * from "./store.js"
 ```
 
-- [ ] **Step 6: Jalankan test**
+- [ ] **Step 6: Run the test**
 
 Run: `pnpm vitest run packages/db/src/store.test.ts`
-Expected: PASS, keempat test hijau.
+Expected: PASS, all four tests green.
 
 - [ ] **Step 7: Commit**
 
@@ -1805,7 +1792,7 @@ git commit -m "feat(db): implement Store with hybrid search relying on RLS for s
 
 ---
 
-## Task 10: Pipeline menjawab — test wajib #2
+## Task 10: Answer pipeline — mandatory test #2
 
 **Files:**
 - Create: `packages/core/src/testing/fakes.ts`
@@ -1813,14 +1800,14 @@ git commit -m "feat(db): implement Store with hybrid search relying on RLS for s
 - Test: `packages/core/src/pipeline.test.ts`
 
 **Interfaces:**
-- Consumes: `Store`, `Provider` dari Task 5; `validateGrounding` dari Task 7; `buildPrompt` dari Task 8
+- Consumes: `Store`, `Provider` from Task 5; `validateGrounding` from Task 7; `buildPrompt` from Task 8
 - Produces:
   - `answer(args: { store: Store; provider: Provider; tenantId: string; conversationId: string; history: {role:"user"|"assistant";content:string}[]; question: string }): Promise<PipelineResult>`
-  - `MemoryStore`, `FakeProvider` dari `@quidchat/core/testing`
+  - `MemoryStore`, `FakeProvider` from `@quidchat/core/testing`
 
-- [ ] **Step 0: Daftarkan entry point `./testing` yang Task 5 sengaja tunda**
+- [ ] **Step 0: Register the `./testing` entry point that Task 5 deliberately deferred**
 
-Task 5 tidak mendeklarasikan export ini karena berkasnya belum ada dan `tsdown` menolak input yang tidak ditemukan. Sekarang berkasnya dibuat, jadi daftarkan bersamaan.
+Task 5 didn't declare this export because its file didn't exist yet and `tsdown` refuses input it can't find. Now that the file exists, register it at the same time.
 
 Modify `packages/core/package.json`:
 
@@ -1830,11 +1817,11 @@ Modify `packages/core/package.json`:
     "build": "tsdown src/index.ts src/testing/fakes.ts --dts",
 ```
 
-Jalankan `pnpm build` setelah Step 1 selesai untuk memastikan input barunya ditemukan.
+Run `pnpm build` after Step 1 is done to confirm the new input is found.
 
-- [ ] **Step 1: Tulis fake untuk test**
+- [ ] **Step 1: Write the test fakes**
 
-Buat `packages/core/src/testing/fakes.ts`:
+Create `packages/core/src/testing/fakes.ts`:
 
 ```ts
 import type { Capabilities, CompleteResult, Provider, PromptParts } from "../provider.js"
@@ -1850,9 +1837,9 @@ export const DEFAULT_CONFIG: TenantConfig = {
 }
 
 /**
- * Beberapa method di bawah sengaja mendeklarasikan parameter lebih sedikit
- * daripada `Store` — TypeScript mengizinkannya, dan menuliskan parameter yang
- * tidak dipakai hanya menambah derau. Bentuk yang dipanggil pipeline tetap sama.
+ * Some methods below deliberately declare fewer parameters than `Store` does
+ * — TypeScript allows it, and writing out unused parameters would only add
+ * noise. The shape the pipeline actually calls stays the same.
  */
 export class MemoryStore implements Store {
   recordedAnswers: { segments: Segment[]; citedChunkIds: string[] }[] = []
@@ -1880,11 +1867,11 @@ export class MemoryStore implements Store {
   }
 }
 
-/** Provider yang mengembalikan jawaban dari daftar yang disiapkan, satu per panggilan. */
+/** A provider that returns answers from a prepared list, one per call. */
 export class FakeProvider implements Provider {
   readonly id = "fake"
-  /** Panggilan generate. Dipisah dari `embedCalls` supaya test bisa menyatakan
-   *  dengan tepat biaya mana yang terjadi dan mana yang tidak. */
+  /** Generate calls. Kept separate from `embedCalls` so a test can assert
+   *  precisely which cost occurred and which didn't. */
   calls: PromptParts[] = []
   embedCalls: string[] = []
 
@@ -1893,7 +1880,7 @@ export class FakeProvider implements Provider {
   async complete(args: { model: string; prompt: PromptParts }): Promise<CompleteResult> {
     this.calls.push(args.prompt)
     const next = this.answers[this.calls.length - 1] ?? this.answers.at(-1)
-    if (!next) throw new Error("FakeProvider kehabisan jawaban")
+    if (!next) throw new Error("FakeProvider ran out of answers")
     return {
       answer: next,
       usage: { inputTokens: 10, outputTokens: 5, cachedTokens: null },
@@ -1915,9 +1902,9 @@ export class FakeProvider implements Provider {
 }
 ```
 
-- [ ] **Step 2: Tulis test yang gagal**
+- [ ] **Step 2: Write a failing test**
 
-Buat `packages/core/src/pipeline.test.ts`:
+Create `packages/core/src/pipeline.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest"
@@ -1932,7 +1919,7 @@ const candidate: Candidate = {
 }
 
 describe("answer", () => {
-  it("KB kosong menghasilkan penolakan, bukan jawaban", async () => {
+  it("an empty knowledge base produces a refusal, not an answer", async () => {
     const store = new MemoryStore([])
     const provider = new FakeProvider([
       { segments: [{ kind: "business_claim", text: "Garansi 2 tahun.", citations: [] }] },
@@ -1942,15 +1929,17 @@ describe("answer", () => {
     expect(res.kind).toBe("refused")
     if (res.kind === "refused") expect(res.reason).toBe("no_source")
     expect(store.recordedEscalations).toEqual(["no_source"])
-    // Generate TIDAK BOLEH dipanggil: tanpa kandidat, apa pun yang dihasilkan
-    // model pasti gagal validasi, jadi memanggilnya hanya membuang biaya.
+    // Generate must NOT be called: with no candidates, anything the model
+    // produces is guaranteed to fail validation, so calling it would only
+    // waste money.
     expect(provider.calls).toHaveLength(0)
-    // Embedding memang terjadi — retrieval membutuhkannya untuk mengetahui
-    // bahwa hasilnya kosong. Dinyatakan eksplisit supaya batas klaim ini jelas.
+    // Embedding does happen — retrieval needs it to know the result is
+    // empty in the first place. Stated explicitly so the boundary of this
+    // claim is clear.
     expect(provider.embedCalls).toHaveLength(1)
   })
 
-  it("menjawab dengan sitasi saat sumbernya ada", async () => {
+  it("answers with citations when a source exists", async () => {
     const store = new MemoryStore([candidate])
     const provider = new FakeProvider([
       { segments: [{ kind: "business_claim", text: "Garansi 12 bulan.", citations: ["chunk-1"] }] },
@@ -1962,7 +1951,7 @@ describe("answer", () => {
     expect(store.recordedAnswers).toHaveLength(1)
   })
 
-  it("mencoba ronde kedua saat validasi gagal, lalu berhasil", async () => {
+  it("tries a second round when validation fails, then succeeds", async () => {
     const store = new MemoryStore([candidate])
     const provider = new FakeProvider([
       { segments: [{ kind: "business_claim", text: "Garansi 12 bulan.", citations: [] }] },
@@ -1974,7 +1963,7 @@ describe("answer", () => {
     expect(res.kind).toBe("answered")
   })
 
-  it("berhenti setelah dua ronde dan menolak", async () => {
+  it("stops after two rounds and refuses", async () => {
     const store = new MemoryStore([candidate])
     const provider = new FakeProvider([
       { segments: [{ kind: "business_claim", text: "x", citations: [] }] },
@@ -1983,24 +1972,24 @@ describe("answer", () => {
     ])
     const res = await answer({ store, provider, ...ctx })
 
-    // Maksimum dua panggilan — panggilan ketiga tidak boleh terjadi.
+    // A maximum of two calls — a third call must never happen.
     expect(provider.calls).toHaveLength(2)
     expect(res.kind).toBe("refused")
     if (res.kind === "refused") expect(res.reason).toBe("ungrounded")
   })
 
-  it("meneruskan kegagalan getTenantConfig, tidak mengubahnya jadi penolakan", async () => {
+  it("propagates a getTenantConfig failure, does not turn it into a refusal", async () => {
     const store = new MemoryStore([])
     store.getTenantConfig = async () => {
       throw new Error("settings tidak terbaca")
     }
     const provider = new FakeProvider([])
     await expect(answer({ store, provider, ...ctx })).rejects.toThrow("settings tidak terbaca")
-    // Tidak ada eskalasi yang tercatat: kegagalan infrastruktur bukan sinyal bisnis.
+    // No escalation recorded: an infrastructure failure is not a business signal.
     expect(store.recordedEscalations).toEqual([])
   })
 
-  it("meneruskan kegagalan searchChunks, tidak mengubahnya jadi penolakan", async () => {
+  it("propagates a searchChunks failure, does not turn it into a refusal", async () => {
     const store = new MemoryStore([candidate])
     store.searchChunks = async () => {
       throw new Error("database tidak terjangkau")
@@ -2008,11 +1997,11 @@ describe("answer", () => {
     const provider = new FakeProvider([])
     await expect(answer({ store, provider, ...ctx })).rejects.toThrow("database tidak terjangkau")
     expect(store.recordedEscalations).toEqual([])
-    // Embedding sudah terjadi sebelum store gagal — dinyatakan supaya batasnya jelas.
+    // The embedding already happened before the store failed — stated so the boundary is clear.
     expect(provider.embedCalls).toHaveLength(1)
   })
 
-  it("menolak dengan schema_invalid saat provider melempar", async () => {
+  it("refuses with schema_invalid when the provider throws", async () => {
     const store = new MemoryStore([candidate])
     const provider: Provider = {
       id: "broken",
@@ -2030,20 +2019,20 @@ describe("answer", () => {
 })
 ```
 
-Test pertama itu **test wajib #2** dari spec §9.1, dan yang dijaganya adalah regresi paling berbahaya di seluruh pipeline: implementasi yang "berbaik hati" menjawab dari pengetahuan umum model saat basis pengetahuan tidak punya jawabannya.
+The first test is **mandatory test #2** from spec §9.1, and what it guards is the most dangerous regression in the whole pipeline: an implementation that "helpfully" answers from the model's general knowledge when the knowledge base has no answer.
 
-Dua assertion terakhirnya menarik batas klaim dengan presisi, dan itu disengaja. **Generate tidak boleh dipanggil** — tanpa kandidat, apa pun yang model hasilkan pasti gagal validasi grounding, jadi memanggilnya hanya membuang uang. **Tapi embedding tetap terjadi**, karena retrieval memerlukannya justru untuk mengetahui bahwa hasilnya kosong. Menyatakan keduanya membuat test ini membuktikan apa yang benar-benar bisa dibuktikannya, alih-alih menyiratkan "nol biaya" yang tidak akurat.
+The last two assertions draw the claim's boundary with precision, and that's deliberate. **Generate must not be called** — with no candidates, anything the model produces is guaranteed to fail grounding validation, so calling it would only waste money. **But embedding still happens**, because retrieval needs it precisely to find out the result is empty. Stating both makes this test prove exactly what it can actually prove, instead of implying an inaccurate "zero cost".
 
-Biaya satu embedding hanya muncul saat tenant belum punya konten terindeks — kondisi sementara di masa setup. Menghindarinya butuh query pengecekan tambahan di setiap pesan, dan itu tidak sebanding.
+The cost of one embedding call only comes up while a tenant has no indexed content yet — a transient condition during setup. Avoiding it would require an extra check query on every single message, and that isn't worth it.
 
-- [ ] **Step 3: Jalankan test untuk memastikan gagal**
+- [ ] **Step 3: Run the test to confirm it fails**
 
 Run: `pnpm vitest run packages/core/src/pipeline.test.ts`
 Expected: FAIL — `Cannot find module './pipeline.js'`
 
-- [ ] **Step 4: Implementasi minimal**
+- [ ] **Step 4: Minimal implementation**
 
-Buat `packages/core/src/pipeline.ts`:
+Create `packages/core/src/pipeline.ts`:
 
 ```ts
 import { validateGrounding } from "./grounding/validator.js"
@@ -2056,27 +2045,28 @@ const MAX_ROUNDS = 2
 const CANDIDATE_LIMIT = 8
 
 /**
- * Menjawab satu pertanyaan pelanggan, atau menolak.
+ * Answers one customer question, or refuses.
  *
- * **Kontrak kegagalan — disengaja dan asimetris.**
+ * **Failure contract — deliberate and asymmetric.**
  *
- * Kegagalan PROVIDER ditangkap dan menjadi penolakan yang tercatat. Alasannya:
- * outage provider bersifat per-pesan, store-nya masih hidup jadi eskalasinya benar
- * tersimpan, dan "kami kehilangan N percakapan karena provider down" memang informasi
- * yang ingin dilihat pemilik bisnis.
+ * PROVIDER failures are caught and turned into a recorded refusal. Reasoning:
+ * a provider outage is per-message, the store is still alive so the
+ * escalation is recorded correctly, and "we lost N conversations because the
+ * provider was down" is genuinely information the business owner wants to see.
  *
- * Kegagalan STORE TIDAK ditangkap — ia dilempar ke pemanggil. Tiga alasan:
- *   1. Nilai `EscalationReason` adalah SINYAL BISNIS yang ditinjau tenant untuk
- *      memperbaiki basis pengetahuannya. Database yang tidak terjangkau bukan sinyal
- *      itu, dan mencatatnya akan mencemari metrik yang justru jadi dasar keputusan.
- *   2. `recordEscalation` sendiri lewat store. Kalau store mati, pencatatan eskalasi
- *      juga gagal — menelan error hanya mengubah satu kegagalan menjadi dua kegagalan
- *      yang sunyi.
- *   3. Lapisan server tetap WAJIB punya penangkap menyeluruh untuk bug dan OOM, jadi
- *      di sinilah tempatnya, bukan di sini.
+ * STORE failures are NOT caught — they propagate to the caller. Three reasons:
+ *   1. `EscalationReason` values are a BUSINESS SIGNAL that the tenant reviews
+ *      to improve their knowledge base. An unreachable database is not that
+ *      signal, and recording it would pollute the very metric that decisions
+ *      get made from.
+ *   2. `recordEscalation` itself goes through the store. If the store is down,
+ *      recording the escalation fails too — swallowing the error would just
+ *      turn one failure into two silent ones.
+ *   3. The server layer must have a catch-all for bugs and OOM anyway, so
+ *      that's the right place for this, not here.
  *
- * Yang harus dilakukan lapisan server: tangkap, catat ke log operasional (bukan ke
- * `escalations`), balas pengunjung dengan pesan sopan, dan kembalikan 503.
+ * What the server layer must do: catch it, log it to operational logging (not
+ * to `escalations`), reply to the visitor with a polite message, and return 503.
  */
 export async function answer(args: {
   store: Store
@@ -2105,8 +2095,8 @@ export async function answer(args: {
     tenantId, query: question, embedding, limit: CANDIDATE_LIMIT,
   })
 
-  // Tanpa kandidat, tidak ada yang bisa disitasi. Menolak di sini menghemat
-  // satu panggilan LLM yang pasti gagal validasi.
+  // With no candidates, there's nothing to cite. Refusing here saves one
+  // LLM call that's guaranteed to fail validation anyway.
   if (candidates.length === 0) return refuse("no_source")
 
   for (let round = 1; round <= MAX_ROUNDS; round++) {
@@ -2143,9 +2133,9 @@ export async function answer(args: {
 }
 ```
 
-- [ ] **Step 5: Ekspor pipeline dari index**
+- [ ] **Step 5: Export the pipeline from index**
 
-Modify `packages/core/src/index.ts`, tambahkan:
+Modify `packages/core/src/index.ts`, add:
 
 ```ts
 export * from "./grounding/high-risk.js"
@@ -2154,20 +2144,20 @@ export * from "./pipeline.js"
 export * from "./prompt/builder.js"
 ```
 
-- [ ] **Step 6: Jalankan seluruh test**
+- [ ] **Step 6: Run the whole test suite**
 
 Run: `pnpm test`
-Expected: PASS semua — **6 berkas test, 34 test** hijau (`tenant` 3, `high-risk` 7, `validator` 7, `builder` 6, `store` 4, `pipeline` 7). Jumlah ini dihitung dari berkas yang sudah ada, bukan diperkirakan; kalau totalmu berbeda, cari tahu berkas mana yang menyimpang sebelum melanjutkan.
+Expected: everything PASSes — **6 test files, 34 tests** green (`tenant` 3, `high-risk` 7, `validator` 7, `builder` 6, `store` 4, `pipeline` 7). These counts are tallied from the files as they now exist, not estimated; if your total differs, find out which file diverged before continuing.
 
-- [ ] **Step 7: Verifikasi batas arsitektur ditegakkan**
+- [ ] **Step 7: Verify the architectural boundary is enforced**
 
 Run: `grep -rn "process.env\|require('http')\|from \"http\"\|from \"node:http\"" packages/core/src`
-Expected: nol hasil. `core` tidak boleh menyentuh env atau HTTP.
+Expected: zero hits. `core` must not touch env or HTTP.
 
-- [ ] **Step 8: Typecheck dan lint**
+- [ ] **Step 8: Typecheck and lint**
 
 Run: `pnpm typecheck && pnpm lint`
-Expected: keduanya PASS.
+Expected: both PASS.
 
 - [ ] **Step 9: Commit**
 
@@ -2178,34 +2168,35 @@ git commit -m "feat(core): add answer pipeline with two-round retrieval limit"
 
 ---
 
-## Definition of Done untuk Rencana 1
+## Definition of Done for Plan 1
 
-Kriteria dari spec §11 yang tercapai di rencana ini:
+Criteria from spec §11 met by this plan:
 
-- **Isolasi tenant** — Dua tenant di satu instalasi tidak bisa melihat data satu sama
-  lain, dibuktikan test RLS (Task 4) dan test hybrid search dua tenant (Task 9).
-- **§11.1 sebagian — TIGA dari DELAPAN test wajib hijau:**
+- **Tenant isolation** — Two tenants on one installation cannot see each other's
+  data, proven by the RLS test (Task 4) and the two-tenant hybrid search test
+  (Task 9).
+- **§11.1 partially — THREE of EIGHT mandatory tests green:**
 
-| # | Test wajib | Status | Pemilik |
+| # | Mandatory test | Status | Owner |
 |---|---|---|---|
-| 1 | Validator grounding, tabel kasus lengkap | ✅ hijau | Task 7 (rencana ini) |
-| 2 | KB kosong → penolakan | ✅ hijau | Task 10 (rencana ini) |
-| 3 | Stabilitas prefix prompt | ✅ hijau | Task 8 (rencana ini) |
-| 4 | Scoping pengetahuan per skill | ⏳ belum | Rencana 3 — butuh tabel `skills` + `skill_sources` |
-| 5 | Batas handoff | ⏳ belum | Rencana 3 — butuh routing & handoff |
-| 6 | Mode `static` tidak memanggil provider | ⏳ belum | Rencana 4 — butuh `answer_mode` |
-| 7 | Draft tidak pernah sampai ke pelanggan | ⏳ belum | Rencana 4 — butuh canned answer |
-| 8 | Pewarisan mode | ⏳ belum | Rencana 4 — butuh `answer_mode` di dua tingkat |
+| 1 | Grounding validator, full case table | ✅ green | Task 7 (this plan) |
+| 2 | Empty KB → refusal | ✅ green | Task 10 (this plan) |
+| 3 | Prompt prefix stability | ✅ green | Task 8 (this plan) |
+| 4 | Per-skill knowledge scoping | ⏳ pending | Plan 3 — needs `skills` + `skill_sources` tables |
+| 5 | Handoff limit | ⏳ pending | Plan 3 — needs routing & handoff |
+| 6 | `static` mode never calls the provider | ⏳ pending | Plan 4 — needs `answer_mode` |
+| 7 | A draft never reaches the customer | ⏳ pending | Plan 4 — needs canned answers |
+| 8 | Mode inheritance | ⏳ pending | Plan 4 — needs `answer_mode` at two levels |
 
-**Catatan pembukuan.** Versi rencana ini sebelumnya menulis "tiga dari **lima** test
-wajib" dan hanya menyebut #4 dan #5 sebagai sisa. Spec §11.1 berjudul "Delapan test
-wajib sejak commit pertama" — jadi tiga test (#6 mode `static`, #7 draft, #8 pewarisan
-mode) tidak terhitung sama sekali. Ketiganya justru menyangkut fitur yang diminta
-eksplisit: QuidChat yang bisa dipakai tanpa AI, dan janji bahwa tidak ada teks buatan
-AI tayang tanpa persetujuan manusia. Tabel di atas ada supaya tak satu pun bisa hilang
-di antara rencana.
+**Bookkeeping note.** An earlier version of this plan wrote "three of **five**
+mandatory tests" and named only #4 and #5 as remaining. Spec §11.1 is titled
+"Eight mandatory tests since the first commit" — so three tests (#6 `static`
+mode, #7 draft, #8 mode inheritance) weren't being counted at all. All three
+concern features that were explicitly requested: QuidChat usable without AI,
+and the promise that no AI-generated text ships without human approval. The
+table above exists so that none of them can get lost between plans.
 
-Perintah verifikasi akhir:
+Final verification commands:
 
 ```bash
 pnpm install
@@ -2214,4 +2205,4 @@ pnpm lint
 pnpm test
 ```
 
-Semua harus hijau sebelum Rencana 2 dimulai.
+All must be green before Plan 2 begins.
