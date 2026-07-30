@@ -82,6 +82,20 @@ Set the signature secret. Verification runs before anything is parsed or stored,
 
 Every channel goes through the identical pipeline. Routing, retrieval, grounding, refusal and spend behave exactly as they do on the website, because the promise the product makes does not change with the transport.
 
+## One assistant, several jobs
+
+A shop's sales questions and its repair questions want different sources and a different voice. A **skill** is one job: a name, optional extra instructions, and the documents it may read. A **routing rule** decides which skill takes a question — rules are evaluated in order and the first match wins.
+
+Set both up in **Skills & routing** in the admin panel. Nothing needs a config file, and nothing needs a restart.
+
+- A skill with **no rule pointing at it** is never selected. The panel says so on the card rather than letting you wonder.
+- A skill with **no linked sources** reads everything the tenant has, not nothing — otherwise a half-configured skill would refuse every question.
+- **No skills at all** is a valid setup: every question is answered from all of the tenant's documents. That is the default, and for most businesses it is the right one.
+- The skill that answered is recorded on every turn, refusals included, so `Escalations` shows *which* job fell short.
+- Marking a skill **handoff target** makes it the fallback when the selected skill finds nothing — bounded by `max_handoffs_per_turn` and `max_handoffs_per_conversation`, because two skills each deciding the other should answer is a loop that bills for every lap.
+
+A skill's instructions are added to the grounding rules, never in place of them. A skill can set voice and scope; it cannot grant permission to answer without a source.
+
 ## Providers
 
 Set one key. QuidChat finds it, tells you what it picked, and refuses to start if nothing usable is configured — rather than failing later on a customer's question.
@@ -111,6 +125,8 @@ Anthropic has no embeddings endpoint, and retrieval needs one. Set `ANTHROPIC_AP
 | `QUIDCHAT_DATA_DIR` | `./.quidchat/data` | Where PGlite stores data. `memory` for ephemeral |
 | `QUIDCHAT_ADMIN_TOKEN` | — | Required by the admin API; unset means admin routes refuse |
 
+`GET /health` answers `{"status":"ok"}` without touching Postgres — a liveness probe that failed while the database was briefly unreachable would make an orchestrator kill a process that was about to recover, turning a blip into an outage.
+
 ## Storage
 
 Postgres, at every scale, from one schema and one set of migrations.
@@ -132,6 +148,7 @@ Nothing reaches your customer unvalidated, which is why answers are not streamed
 
 ## Cost control
 
+- **A rate limit, not only a budget.** The budget bounds what a tenant spends in total and says nothing about how fast. Two token buckets guard every route — per visitor (10 in a burst, then one every four seconds) and per tenant (60, then two a second) — so a script with a valid slug cannot burn a month of budget in a minute. It is in-memory and therefore per process; the budget guard is the shared backstop, because that one lives in the database.
 - **Answer modes.** `full` generates. `thrifty` retrieves and quotes, without generation. `static` answers only from approved canned text and never calls the model at all.
 - **Prompt caching.** The prompt is ordered stable-to-volatile so the cacheable prefix stays byte-identical between questions. Retrieved context goes last, never into the system prompt.
 - **A real spend limit.** `monthly_budget_cents` is enforced *before* the provider is called, and every turn's real token usage is recorded — including refusals, which is where the expensive failures hide.

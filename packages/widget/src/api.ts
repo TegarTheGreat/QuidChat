@@ -95,6 +95,19 @@ export async function sendMessage(cfg: WidgetConfig, input: SendMessageInput): P
     )
   }
 
+  if (res.status === 429) {
+    // Distinct from an outage on purpose. "Temporarily unavailable" tells a visitor that
+    // something is broken and invites them to retry immediately, which is precisely the
+    // behaviour the limit exists to stop; "too quickly, wait a moment" tells them what
+    // actually happened and what to do. The server's `Retry-After` is turned into a number
+    // of seconds so the wait named here is the real one rather than a guess.
+    const retryAfter = Number(res.headers.get("retry-after") ?? "")
+    const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : 5
+    throw new Error(
+      `You are sending messages too quickly. Please wait ${seconds} second${seconds === 1 ? "" : "s"} and try again.`,
+    )
+  }
+
   // 503, and anything else unexpected (400, 405, 500, ...): a neutral message.
   // Never the server's own error text — it already refuses to leak internals, and
   // echoing whatever comes back would just relay that leak one hop further.

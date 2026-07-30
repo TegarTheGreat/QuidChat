@@ -139,3 +139,30 @@ describe("sendMessage", () => {
     await expect(sendMessage(cfg, { message: "Hi" })).rejects.toThrow(/temporarily unavailable/i)
   })
 })
+
+describe("rate limiting", () => {
+  it("names the wait from Retry-After instead of reporting an outage", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ error: "too many requests" }), {
+        status: 429,
+        headers: { "retry-after": "4" },
+      }),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      sendMessage(cfg, { message: "hi" }),
+    ).rejects.toThrow("wait 4 seconds")
+  })
+
+  it("falls back to a stated wait when the header is missing or nonsense", async () => {
+    for (const headers of [{}, { "retry-after": "Wed, 21 Oct 2026 07:28:00 GMT" }]) {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 429, headers })))
+      // An HTTP-date is legal in Retry-After but Number() makes it NaN. A NaN in the copy
+      // would read as "wait NaN seconds", so the fallback has to catch it as well as absence.
+      await expect(
+        sendMessage(cfg, { message: "hi" }),
+      ).rejects.toThrow("wait 5 seconds")
+    }
+  })
+})
