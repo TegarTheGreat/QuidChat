@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { sendMessage } from "./api.js"
+import { sendMessage, sendMessageWithProgress } from "./api.js"
 import type { WidgetConfig } from "./config.js"
 
 /** Token counts are irrelevant to these tests; the shape just has to be present. */
@@ -164,5 +164,97 @@ describe("rate limiting", () => {
         sendMessage(cfg, { message: "hi" }),
       ).rejects.toThrow("wait 5 seconds")
     }
+  })
+})
+
+describe("streaming progress", () => {
+  /** Builds a Response whose body streams the given SSE text in the given pieces, so a payload
+   *  split mid-event is exercised rather than assumed to arrive whole. */
+  function sseResponse(chunks: string[], status = 200): Response {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder()
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
+        controller.close()
+      },
+    })
+    return new Response(status === 200 ? stream : null, {
+      status,
+      headers: { "content-type": "text/event-stream" },
+    })
+  }
+
+  const answered = {
+    conversationId: "c1",
+    kind: "answered",
+    segments: [{ kind: "general", text: "Open daily." }],
+    citations: [],
+    usage: ZERO_USAGE,
+  }
+
+  it("reports each stage and returns the result, even when an event arrives split", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        sseResponse([
+          'event: progress\ndata: {"stage":"retrieving"}\n\n',
+          'event: progress\ndata: {"stage":"generating"}\n\nevent: progress\ndata: {"stage":"vali',
+          'dating"}\n\nevent: result\ndata: ' + JSON.stringify(answered) + "\n\n",
+        ]),
+      ),
+    )
+
+    const stages: string[] = []
+    const result = await sendMessageWithProgress(cfg, { message: "hours?" }, (s) => stages.push(s))
+
+    // A stage lost to a chunk boundary would be a silently missing step, so all three are
+    // asserted rather than just the first.
+    expect(stages).toEqual(["retrieving", "generating", "validating"])
+    expect(result.kind).toBe("answered")
+    expect(result.conversationId).toBe("c1")
+  })
+
+  it("falls back to the plain route when the stream route is absent", async () => {
+    const calls: string[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(url)
+        return url.endsWith("/stream")
+          ? new Response(JSON.stringify({ error: "not found" }), { status: 404 })
+          : new Response(JSON.stringify(answered), { status: 200 })
+      }),
+    )
+
+    const result = await sendMessageWithProgress(cfg, { message: "hours?" }, () => {})
+    expect(result.kind).toBe("answered")
+    expect(calls).toHaveLength(2)
+  })
+
+  it("reports a rate limit without asking the question a second time", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response("", { status: 429, headers: { "retry-after": "3" } }),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      sendMessageWithProgress(cfg, { message: "hours?" }, () => {}),
+    ).rejects.toThrow("wait 3 seconds")
+    // One request. Retrying a 429 on a route that bills per answer is not a harmless retry.
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it("does not re-ask when the stream ends without a result", async () => {
+    const fetchMock = vi.fn(async () =>
+      sseResponse(['event: progress\ndata: {"stage":"generating"}\n\n']),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    // The server may already have answered, recorded and billed the question; asking again
+    // would charge the business twice for one customer message.
+    await expect(
+      sendMessageWithProgress(cfg, { message: "hours?" }, () => {}),
+    ).rejects.toThrow(/temporarily unavailable/i)
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 })

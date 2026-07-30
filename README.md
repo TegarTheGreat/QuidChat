@@ -168,7 +168,7 @@ PGlite is real Postgres compiled to WASM, so row-level security, `pgvector` and 
 3. **Validate** — every business claim must cite a chunk that retrieval actually returned. A citation the model invented, or a claim with none, is rejected. High-risk topics — price, warranty, stock, refunds — are always treated as claims regardless of how the model labelled them.
 4. **Refuse** — if the answer cannot be grounded after one repair round, the assistant declines and records why.
 
-Nothing reaches your customer unvalidated, which is why answers are not streamed token by token: validation runs on the whole answer.
+Nothing reaches your customer unvalidated, which is why answers are not streamed token by token: validation runs on the whole answer. What *is* streamed is the stage — "looking through our documents", "writing an answer", "checking it against our documents" — so a few seconds of waiting reads as work rather than as a hang. If the event stream cannot be used, because a proxy buffers it or the server predates the route, the widget falls back to a plain request and the visitor notices nothing.
 
 ## Cost control
 

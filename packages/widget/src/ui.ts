@@ -1,4 +1,9 @@
-import { sendMessage as defaultSendMessage, type ChatResponse, type Segment } from "./api.js"
+import {
+  sendMessageWithProgress as defaultSendMessage,
+  type ChatResponse,
+  type ProgressStage,
+  type Segment,
+} from "./api.js"
 import type { WidgetConfig } from "./config.js"
 import { DEFAULT_THEME, type WidgetTheme } from "./theme.js"
 
@@ -24,6 +29,11 @@ const STRINGS = {
   inputPlaceholder: "Type your message…",
   sendLabel: "Send message",
   typing: "Assistant is typing…",
+  // Named after what is happening rather than "Loading…". A visitor who reads "looking through
+  // our documents" understands both why it takes a moment and what kind of answer is coming.
+  retrieving: "Looking through our documents…",
+  generating: "Writing an answer…",
+  validating: "Checking it against our documents…",
 }
 
 /**
@@ -309,6 +319,16 @@ export function mountWidget(
     bubble.appendChild(p)
   }
 
+  /** Replaces the indicator's text as the server reports each stage. */
+  function setStage(stage: ProgressStage): void {
+    if (!typingIndicator) return
+    typingIndicator.textContent =
+      stage === "retrieving" ? STRINGS.retrieving
+      : stage === "generating" ? STRINGS.generating
+      : STRINGS.validating
+    messages.scrollTop = messages.scrollHeight
+  }
+
   function setPending(next: boolean): void {
     pending = next
     sendButton.disabled = next
@@ -336,10 +356,11 @@ export function mountWidget(
     setPending(true)
 
     try {
-      const result = await deps.sendMessage(config, {
-        message: text,
-        ...(conversationId !== undefined ? { conversationId } : {}),
-      })
+      const result = await deps.sendMessage(
+        config,
+        { message: text, ...(conversationId !== undefined ? { conversationId } : {}) },
+        setStage,
+      )
       conversationId = result.conversationId
       appendResult(result)
     } catch (err) {
