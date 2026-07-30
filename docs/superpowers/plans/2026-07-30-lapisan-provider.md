@@ -24,7 +24,11 @@ Tiga hal, dua di antaranya sudah tercatat sebagai utang:
 - **Tidak ada dependency runtime baru di seluruh repo.** `fetch` sudah ada di Node 22.
 - **Test tidak boleh menyentuh jaringan.** Semua adapter diuji dengan `fetch` yang di-stub.
 - Setiap `execute()` lewat `rowsOf()` (berlaku bila menyentuh `packages/db`).
-- Komentar dan copy pengguna berbahasa Indonesia; identifier bahasa Inggris.
+- **Komentar dan copy pengguna berbahasa Indonesia; identifier bahasa INGGRIS.**
+  Kode produksi di `packages/core` dan `packages/db` sudah begitu: `rowsOf`,
+  `createStore`, `getTenantConfig`, `withTenant`, `applyMigrations`. Cuplikan kode
+  di rencana ini sempat memakai identifier Indonesia — itu keliru dan sudah
+  diperbaiki. Kalau cuplikan dan aturan bertabrakan, **aturannya yang mengikat**.
 - Commit tanpa trailer atribusi apa pun. `git add` dengan path eksplisit, **jangan** `git add -A`.
 - `pnpm build` masuk verifikasi setiap task.
 - Setiap perbaikan yang mengklaim memaku sebuah properti **wajib** dibuktikan dengan merusak kodenya dan menyaksikan test yang bersangkutan gagal. Tiga ronde pengerasan menemukan 14 cacat dengan cara ini dan nol dengan cara lain.
@@ -424,7 +428,7 @@ Buat `packages/providers/src/openai-compatible.ts`. Poin yang tidak boleh beruba
 import { ProviderError, type Answer, type Capabilities, type CompleteResult, type Provider, type PromptParts } from "@quidchat/core"
 
 /** Memetakan status HTTP ke sebab kegagalan. Bukan semuanya `unavailable`. */
-function sebabDari(status: number): "auth" | "unknown_model" | "rate_limit" | "unavailable" {
+function reasonFromStatus(status: number): "auth" | "unknown_model" | "rate_limit" | "unavailable" {
   if (status === 401 || status === 403) return "auth"
   if (status === 404) return "unknown_model"
   if (status === 429) return "rate_limit"
@@ -432,11 +436,11 @@ function sebabDari(status: number): "auth" | "unknown_model" | "rate_limit" | "u
 }
 
 /** Membuang garis miring di ujung supaya `baseUrl` dengan atau tanpa itu sama saja. */
-const rapikan = (u: string) => u.replace(/\/+$/, "")
+const trimTrailingSlash = (u: string) => u.replace(/\/+$/, "")
 
 /** Memeriksa bentuk `Answer` sebelum ia dipercaya. Model bisa membalas JSON yang sah
  *  tapi bukan bentuk yang kita minta. */
-function sebagaiAnswer(nilai: unknown): Answer {
+export function asAnswer(nilai: unknown): Answer {
   const o = nilai as { segments?: unknown }
   if (!Array.isArray(o.segments)) {
     throw new ProviderError("schema", "balasan tidak punya array `segments`")
@@ -469,10 +473,10 @@ export function openAiCompatible(opts: {
   apiKey: string
   fetchImpl?: typeof fetch
 }): Provider {
-  const base = rapikan(opts.baseUrl)
+  const base = trimTrailingSlash(opts.baseUrl)
   const f = opts.fetchImpl ?? fetch
 
-  async function panggil(jalur: string, body: unknown): Promise<Record<string, unknown>> {
+  async function call(jalur: string, body: unknown): Promise<Record<string, unknown>> {
     let res: Response
     try {
       res = await f(`${base}${jalur}`, {
@@ -489,7 +493,7 @@ export function openAiCompatible(opts: {
     }
     if (!res.ok) {
       throw new ProviderError(
-        sebabDari(res.status),
+        reasonFromStatus(res.status),
         `${opts.id} membalas ${res.status}`,
         { status: res.status },
       )
@@ -499,7 +503,7 @@ export function openAiCompatible(opts: {
 
   /** Menyusun messages dengan urutan STABIL -> VOLATIL. Cache LLM berbasis prefix,
    *  jadi urutan ini yang menentukan apakah caching bekerja sama sekali. */
-  function messagesDari(prompt: PromptParts) {
+  function messagesFrom(prompt: PromptParts) {
     return [
       { role: "system", content: prompt.system },
       ...prompt.history.map((h) => ({ role: h.role, content: h.content })),
@@ -511,9 +515,9 @@ export function openAiCompatible(opts: {
     id: opts.id,
 
     async complete({ model, prompt }): Promise<CompleteResult> {
-      const j = await panggil("/chat/completions", {
+      const j = await call("/chat/completions", {
         model,
-        messages: messagesDari(prompt),
+        messages: messagesFrom(prompt),
         response_format: { type: "json_object" },
       })
       const pilihan = (j.choices as { message?: { content?: unknown } }[] | undefined)?.[0]
@@ -529,7 +533,7 @@ export function openAiCompatible(opts: {
       }
       const pakai = (j.usage ?? {}) as Record<string, number | undefined>
       return {
-        answer: sebagaiAnswer(diurai),
+        answer: asAnswer(parsed),
         usage: {
           inputTokens: pakai.prompt_tokens ?? 0,
           outputTokens: pakai.completion_tokens ?? 0,
@@ -541,7 +545,7 @@ export function openAiCompatible(opts: {
     },
 
     async generateText({ model, system, user }): Promise<string> {
-      const j = await panggil("/chat/completions", {
+      const j = await call("/chat/completions", {
         model,
         messages: [
           { role: "system", content: system },
@@ -557,7 +561,7 @@ export function openAiCompatible(opts: {
     },
 
     async embed({ model, text }): Promise<number[]> {
-      const j = await panggil("/embeddings", { model, input: text })
+      const j = await call("/embeddings", { model, input: text })
       const data = (j.data as { embedding?: unknown }[] | undefined)?.[0]
       if (!Array.isArray(data?.embedding)) {
         throw new ProviderError("schema", "balasan embeddings tanpa array `embedding`")
@@ -595,7 +599,7 @@ pnpm install
 pnpm test && pnpm typecheck && pnpm lint && pnpm build
 ```
 
-Lalu buktikan test urutan pesan bisa gagal: tukar urutan `history` dan `currentTurn` di `messagesDari`, pastikan test pertama **gagal**, pulihkan. Laporkan.
+Lalu buktikan test urutan pesan bisa gagal: tukar urutan `history` dan `currentTurn` di `messagesFrom`, pastikan test pertama **gagal**, pulihkan. Laporkan.
 
 Dan pastikan **tidak ada** panggilan jaringan sungguhan: `grep -rn "fetch(" packages/providers/src/*.test.ts` harus nol hasil selain stub-nya sendiri.
 
@@ -633,7 +637,7 @@ Buat `packages/providers/src/anthropic.test.ts` dengan `fetchPalsu` yang sama be
 Bentuk permintaannya:
 
 ```ts
-      const j = await panggil("/messages", {
+      const j = await call("/messages", {
         model,
         max_tokens: 4096,
         // `system` sebagai ARRAY blok, dengan cache_control di blok terakhir. Ini titik
@@ -659,7 +663,7 @@ Header:
         },
 ```
 
-Balasannya diambil dari `content[0].text`, lalu diurai dan divalidasi dengan `sebagaiAnswer` yang sama — **ekspor helper itu dari `openai-compatible.ts`** alih-alih menyalinnya, supaya validasi bentuk `Answer` hanya punya satu definisi.
+Balasannya diambil dari `content[0].text`, lalu diurai dan divalidasi dengan `asAnswer` yang sama — **ekspor helper itu dari `openai-compatible.ts`** alih-alih menyalinnya, supaya validasi bentuk `Answer` hanya punya satu definisi.
 
 `usage` dipetakan dari `input_tokens`, `output_tokens`, dan `cache_read_input_tokens`.
 
