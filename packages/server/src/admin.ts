@@ -15,6 +15,7 @@ import {
 } from "./admin/conversations.js"
 import { getSetup, getUsage } from "./admin/insights.js"
 import { getSettings, patchSettings } from "./admin/settings.js"
+import { postSetupChat } from "./admin/setup-agent.js"
 import { sendJson, type AdminDeps } from "./admin/shared.js"
 import {
   createRoutingRule,
@@ -137,6 +138,7 @@ export async function handleAdminRequest(
   if (method === "POST" && sub === "/escalations/resolve") return resolveEscalation(req, res, deps)
   if (method === "GET" && sub === "/usage") return getUsage(res, deps, searchParams)
   if (method === "GET" && sub === "/setup") return getSetup(res, deps, searchParams)
+  if (method === "POST" && sub === "/setup/chat") return postSetupChat(req, res, deps)
   if (method === "GET" && sub === "/skills") return getSkills(res, deps, searchParams)
   if (method === "POST" && sub === "/skills") return createSkill(req, res, deps)
   if (method === "POST" && sub === "/skills/sources") return linkSkillSource(req, res, deps)

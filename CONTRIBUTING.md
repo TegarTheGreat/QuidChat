@@ -74,6 +74,16 @@ Three constraints follow from that, and each has already been learned the hard w
 
 The source chip is the signature, and it is deliberately not the tenant's accent colour: a citation is QuidChat's guarantee that the sentence came from the business's own document, not the shop's decoration.
 
+## The setup assistant is the mirror image of the customer one
+
+The customer-facing assistant answers strangers about a business, so every claim about that business must carry a citation. The setup assistant answers the owner about their own QuidChat, so it needs to explain, suggest and disagree — the grounding validator is **deliberately not run on it**.
+
+What replaces that safeguard is the confirmation gate. Four actions stop and wait for a person: approving canned answers, deleting a knowledge source, changing the embedding model, and setting a provider credential. Everything else runs immediately.
+
+**The gate is enforced twice, and both are load-bearing.** `runSetupTurn` hands a gated call back instead of executing it — and holds back the rest of the batch, so a re-index cannot run while the owner is still deciding about the deletion beside it. `POST /admin/setup/chat` then refuses the same call again unless `confirmed: true`. A gate enforced only where the model runs is bypassed by anything that can reach the endpoint, and that endpoint takes an admin token — exactly the credential an owner pastes into other tools.
+
+Don't gate a reversible action. It trains an owner to click Allow without reading, which is how the gate stops protecting the four that matter.
+
 ## Commits
 
 Present tense, and say why rather than what. The diff already says what.
