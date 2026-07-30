@@ -112,6 +112,12 @@ Set both up in **Skills & routing** in the admin panel. Nothing needs a config f
 
 A skill's instructions are added to the grounding rules, never in place of them. A skill can set voice and scope; it cannot grant permission to answer without a source.
 
+## Making it look like yours
+
+**Settings → Widget** sets the accent colour, which side the launcher sits on, and the title your customers read. The colour is a colour picker rather than a text field, because the widget only accepts a real colour and a typed value that gets rejected reads as the setting being broken.
+
+The widget reads those over a public endpoint, so it carries presentation only — never the refusal text, the models, the budget or the allowed origins. It validates every value again in the browser before any of it reaches CSS: a value that is not a colour cannot close a style declaration and add rules to your customer's page. A theme that fails to load, for any reason, leaves the widget looking exactly as it does by default.
+
 ## Providers
 
 Set one key. QuidChat finds it, tells you what it picked, and refuses to start if nothing usable is configured — rather than failing later on a customer's question.

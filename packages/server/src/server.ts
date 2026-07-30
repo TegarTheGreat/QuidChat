@@ -5,6 +5,7 @@ import { handleAdminRequest } from "./admin.js"
 import { handleChannelWebhook } from "./channels.js"
 import { handleChat } from "./chat.js"
 import { handlePanelAsset } from "./panel-asset.js"
+import { handleWidgetConfig } from "./widget-config.js"
 import { handleWidgetAsset } from "./widget-asset.js"
 import { ChatRateLimiter, type RateLimitConfig } from "./rate-limit.js"
 
@@ -97,6 +98,19 @@ export function createServer(deps: ServerDeps): Server {
         logError("unhandled error serving the admin panel", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
       })
+      return
+    }
+
+    // The widget's public theme. Unauthenticated and origin-free like the bundle itself: it
+    // runs in a visitor's browser before any conversation exists, which is exactly why the
+    // handler returns presentation fields only and never the settings row.
+    if (pathname === "/widget-config") {
+      handleWidgetConfig(res, deps.db, url.searchParams.get("tenantSlug") ?? "").catch(
+        (e: unknown) => {
+          logError("unhandled error serving the widget config", e)
+          if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
+        },
+      )
       return
     }
 

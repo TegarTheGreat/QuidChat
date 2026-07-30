@@ -94,10 +94,14 @@ export type SourceStatus = "pending" | "ready" | "error" | (string & {})
 
 export interface Source {
   id: string
+  /** The document's own name — what a customer sees attached to an answer. */
   title: string
+  /** Where it came from: the URL for a page, the title itself for pasted text. */
+  uri?: string
+  kind?: "text" | "url" | (string & {})
   status: SourceStatus
   error?: string | null
-  createdAt?: string
+  lastIndexedAt?: string | null
 }
 
 export interface Citation {
@@ -110,14 +114,30 @@ export interface ConversationMessage {
   role: "user" | "assistant" | (string & {})
   content: string
   createdAt?: string
+  /** The skill that answered, when routing selected one. A wrong answer and a wrongly-routed
+   *  answer look identical without it, and they need different fixes. */
+  skillName?: string | null
   citations?: Citation[]
 }
 
+/** A row in the list. Messages are NOT here: fifty transcripts with every message is a
+ *  payload that grows with traffic and is almost entirely thrown away. */
 export interface Conversation {
   id: string
-  tenantSlug?: string
-  startedAt?: string
   channel?: string
+  visitorId?: string
+  status?: string
+  createdAt?: string
+  messageCount?: number
+}
+
+/** One transcript, fetched when a reader opens it. */
+export interface ConversationDetail {
+  id: string
+  channel?: string
+  visitorId?: string
+  status?: string
+  startedAt?: string
   messages: ConversationMessage[]
 }
 
@@ -185,7 +205,11 @@ export interface CannedAnswer {
 }
 
 export const api = {
-  listTenants: () => request<Tenant[]>("/v1/admin/tenants"),
+  // Every list endpoint answers with a NAMED object — { tenants: [...] } — and every caller
+  // wants the array. Unwrapping here rather than in each page is why these types can stay
+  // arrays: the shape a page sees is the shape it uses, and the wire shape lives in one place.
+  listTenants: () =>
+    request<{ tenants: Tenant[] }>("/v1/admin/tenants").then((r) => r.tenants),
 
   createTenant: (body: { slug: string; name: string; origins: string[] }) =>
     request<Tenant>("/v1/admin/tenants", {
@@ -203,7 +227,9 @@ export const api = {
     }),
 
   listSources: (tenantSlug: string) =>
-    request<Source[]>(`/v1/admin/sources${query({ tenantSlug })}`),
+    request<{ sources: Source[] }>(`/v1/admin/sources${query({ tenantSlug })}`).then(
+      (r) => r.sources,
+    ),
 
   /** Reads a page and indexes it. Private and local addresses are refused by the server,
    *  including via a redirect, so a URL a visitor could supply cannot be turned into a
@@ -230,10 +256,19 @@ export const api = {
     }),
 
   listConversations: (tenantSlug: string) =>
-    request<Conversation[]>(`/v1/admin/conversations${query({ tenantSlug })}`),
+    request<{ conversations: Conversation[] }>(
+      `/v1/admin/conversations${query({ tenantSlug })}`,
+    ).then((r) => r.conversations),
+
+  getConversation: (tenantSlug: string, id: string) =>
+    request<{ conversation: ConversationDetail }>(
+      `/v1/admin/conversation${query({ tenantSlug, id })}`,
+    ).then((r) => r.conversation),
 
   listEscalations: (tenantSlug: string) =>
-    request<Escalation[]>(`/v1/admin/escalations${query({ tenantSlug })}`),
+    request<{ escalations: Escalation[] }>(`/v1/admin/escalations${query({ tenantSlug })}`).then(
+      (r) => r.escalations,
+    ),
 
   getUsage: (tenantSlug: string) =>
     request<Usage>(`/v1/admin/usage${query({ tenantSlug })}`),

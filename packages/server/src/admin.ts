@@ -362,16 +362,30 @@ async function listSources(
   if (tenantId === null) return
 
   const rows = await withTenant(deps.db, tenantId, async (tx) => {
+    // The document's title, not just the URI. For pasted text the two are the same, but for a
+    // page the URI is an address and the title is the name a customer sees attached to the
+    // answer — and a list of bare URLs is not something an owner can recognise their own
+    // content in. Falls back to the URI when indexing never got as far as a document.
     const result = await tx.execute(sql`
-      SELECT id, kind, uri, status, error, last_indexed_at
-      FROM knowledge_sources
-      ORDER BY last_indexed_at DESC NULLS LAST, id
+      SELECT s.id, s.kind, s.uri, s.status, s.error, s.last_indexed_at,
+             coalesce(
+               -- The documents table carries no timestamp, so this is a stable pick rather
+               -- than the newest one; the two only differ if a source was re-indexed under a
+               -- different name.
+               (SELECT d.title FROM documents d
+                 WHERE d.source_id = s.id
+                 ORDER BY d.id
+                 LIMIT 1),
+               s.uri
+             ) AS title
+      FROM knowledge_sources s
+      ORDER BY s.last_indexed_at DESC NULLS LAST, s.id
     `)
     return rowsOf(result)
   })
   sendJson(res, 200, {
     sources: rows.map((r) => ({
-      id: r.id, kind: r.kind, uri: r.uri, status: r.status, error: r.error,
+      id: r.id, kind: r.kind, uri: r.uri, title: r.title, status: r.status, error: r.error,
       lastIndexedAt: r.last_indexed_at,
     })),
   })
@@ -608,6 +622,105 @@ async function listConversations(
       id: r.id, channel: r.channel, visitorId: r.visitor_id, status: r.status,
       createdAt: r.created_at, messageCount: r.message_count,
     })),
+  })
+}
+
+/**
+ * `GET /admin/conversation` — one transcript, with citations.
+ *
+ * A separate request from the list rather than messages embedded in it. Fifty conversations
+ * with every message and every citation is a payload that grows with a tenant's traffic and is
+ * almost entirely thrown away — the reader opens one. This is the request that happens when
+ * they do.
+ *
+ * Citations carry the document TITLE, never the chunk id. The title is the whole point of the
+ * product's promise made visible: "we accept returns within seven days, from Store Policy" is
+ * checkable by a human, and a uuid is not.
+ *
+ * The skill that answered is included because a wrong answer and a wrongly-routed answer look
+ * identical in a transcript otherwise, and they need different fixes: one is missing content,
+ * the other is a routing rule.
+ */
+async function getConversation(
+  res: ServerResponse,
+  deps: AdminDeps,
+  params: URLSearchParams,
+): Promise<void> {
+  const tenantId = await resolveTenantOr404(res, deps.db, params.get("tenantSlug"))
+  if (tenantId === null) return
+  const conversationId = params.get("id")
+  if (!conversationId) {
+    sendJson(res, 400, { error: "id is required" })
+    return
+  }
+
+  const payload = await withTenant(deps.db, tenantId, async (tx) => {
+    const conversation = rowsOf(
+      await tx.execute(sql`
+        SELECT id, channel, visitor_id, status, created_at
+        FROM conversations WHERE id = ${conversationId}
+      `),
+    )[0]
+    if (!conversation) return null
+
+    const messages = rowsOf(
+      await tx.execute(sql`
+        SELECT m.id, m.role, m.content, m.created_at, s.name AS skill_name
+        FROM messages m
+        LEFT JOIN skills s ON s.id = m.skill_id
+        WHERE m.conversation_id = ${conversationId}
+        ORDER BY m.created_at ASC, m.id ASC
+      `),
+    )
+
+    const citations = rowsOf(
+      await tx.execute(sql`
+        SELECT mc.message_id, d.id AS document_id, d.title
+        FROM message_citations mc
+        JOIN chunks ch ON ch.id = mc.chunk_id
+        JOIN documents d ON d.id = ch.document_id
+        JOIN messages m ON m.id = mc.message_id
+        WHERE m.conversation_id = ${conversationId}
+      `),
+    )
+    return { conversation, messages, citations }
+  })
+
+  if (!payload) {
+    sendJson(res, 404, { error: "conversation not found" })
+    return
+  }
+
+  sendJson(res, 200, {
+    conversation: {
+      id: payload.conversation.id,
+      channel: payload.conversation.channel,
+      visitorId: payload.conversation.visitor_id,
+      status: payload.conversation.status,
+      startedAt: payload.conversation.created_at,
+      messages: payload.messages.map((m) => {
+        // One document cited twice in the same answer is two chunks from one file, and showing
+        // its name twice reads as a mistake rather than as thoroughness.
+        const seen = new Set<string>()
+        const messageCitations = payload.citations
+          .filter((c) => c.message_id === m.id)
+          .filter((c) => {
+            const id = c.document_id as string
+            if (seen.has(id)) return false
+            seen.add(id)
+            return true
+          })
+          .map((c) => ({ sourceId: c.document_id, title: c.title }))
+        return {
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          createdAt: m.created_at,
+          skillName: m.skill_name,
+          citations: messageCitations,
+        }
+      }),
+    },
   })
 }
 
@@ -1102,6 +1215,7 @@ export async function handleAdminRequest(
   if (method === "POST" && sub === "/sources/url") return createUrlSource(req, res, deps)
   if (method === "DELETE" && sub === "/sources") return deleteSource(req, res, deps)
   if (method === "GET" && sub === "/conversations") return listConversations(res, deps, searchParams)
+  if (method === "GET" && sub === "/conversation") return getConversation(res, deps, searchParams)
   if (method === "GET" && sub === "/escalations") return listEscalations(res, deps, searchParams)
   if (method === "GET" && sub === "/usage") return getUsage(res, deps, searchParams)
   if (method === "GET" && sub === "/setup") return getSetup(res, deps, searchParams)

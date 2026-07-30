@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from "vitest"
 import type { ChatResponse } from "./api.js"
 import type { WidgetConfig } from "./config.js"
+import { DEFAULT_THEME, sanitizeTheme } from "./theme.js"
 import { mountWidget } from "./ui.js"
 
 /** Token counts are irrelevant to these tests; the shape just has to be present. */
@@ -176,5 +177,35 @@ describe("widget UI", () => {
 
     launcher.click()
     expect(shadow.activeElement).toBe(input)
+  })
+})
+
+describe("widget theming", () => {
+  it("renders fully with the default theme when none is provided, as when a theme fetch fails", () => {
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    mountWidget(container, cfg)
+    const shadow = container.shadowRoot!
+
+    expect(shadow.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(shadow.querySelector(".header-title")!.textContent).toBe(DEFAULT_THEME.title)
+  })
+
+  it("never lets a hostile primaryColor reach the stylesheet", () => {
+    // Stands in for a value an operator typed into the admin's raw-JSON theme editor:
+    // `sanitizeTheme` is the boundary that must catch it before `mountWidget` ever
+    // interpolates a theme value into CSS text.
+    const hostileTheme = sanitizeTheme({
+      primaryColor: "red; } .evil { position: fixed; top: 0; left: 0",
+      position: "left",
+      title: "Acme Support",
+    })
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    mountWidget(container, cfg, undefined, hostileTheme)
+
+    const styleText = container.shadowRoot!.querySelector("style")!.textContent!
+    expect(styleText).not.toContain(".evil")
+    expect(styleText).toContain(DEFAULT_THEME.primaryColor)
   })
 })

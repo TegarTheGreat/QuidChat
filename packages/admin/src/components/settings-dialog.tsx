@@ -65,8 +65,14 @@ export function SettingsDialog({
 }) {
   const [group, setGroup] = React.useState<Group>("models")
   const [draft, setDraft] = React.useState<Settings | null>(null)
-  const [themeText, setThemeText] = React.useState("{}")
-  const [themeError, setThemeError] = React.useState<string | null>(null)
+  // The theme is edited as fields, not as JSON. A business owner should not have to know that
+  // the column is jsonb, and a hand-typed object is a way to store a colour the widget will
+  // silently reject — which reads as the setting not working.
+  const [theme, setTheme] = React.useState<{ primaryColor: string; position: string; title: string }>({
+    primaryColor: "#1a56db",
+    position: "right",
+    title: "Chat assistant",
+  })
   const [saved, setSaved] = React.useState(false)
 
   const fetched = useFetch(
@@ -77,8 +83,14 @@ export function SettingsDialog({
   React.useEffect(() => {
     if (fetched.status === "success") {
       setDraft(fetched.data)
-      setThemeText(JSON.stringify(fetched.data.widget_theme, null, 2))
-      setThemeError(null)
+      const stored = (fetched.data.widget_theme ?? {}) as Record<string, unknown>
+      setTheme({
+        // Falls back to the widget's own defaults, so an unset theme shows what a visitor
+        // actually sees rather than an empty field.
+        primaryColor: typeof stored.primaryColor === "string" ? stored.primaryColor : "#1a56db",
+        position: stored.position === "left" ? "left" : "right",
+        title: typeof stored.title === "string" && stored.title !== "" ? stored.title : "Chat assistant",
+      })
       setSaved(false)
     }
   }, [fetched])
@@ -92,13 +104,10 @@ export function SettingsDialog({
 
   async function handleSave() {
     if (!draft || !tenantSlug) return
-    let widget_theme: Record<string, unknown>
-    try {
-      widget_theme = JSON.parse(themeText) as Record<string, unknown>
-      setThemeError(null)
-    } catch {
-      setThemeError("Widget theme must be valid JSON.")
-      return
+    const widget_theme: Record<string, unknown> = {
+      primaryColor: theme.primaryColor,
+      position: theme.position,
+      title: theme.title,
     }
     try {
       await save({ ...draft, tenantSlug, widget_theme })
@@ -319,19 +328,52 @@ export function SettingsDialog({
                           onChange={(next) => update("allowed_origins", next)}
                         />
                       </Field>
-                      <Field label="Widget theme (JSON)">
-                        <Textarea
-                          value={themeText}
-                          onChange={(e) => {
-                            setThemeText(e.target.value)
+                      <Field label="Accent colour">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="color"
+                            aria-label="Accent colour"
+                            className="h-9 w-16 p-1"
+                            value={theme.primaryColor}
+                            onChange={(e) => {
+                              // A colour input can only produce #rrggbb, which is exactly the
+                              // shape the widget accepts — so the control itself is the
+                              // validation, and a value that would be rejected cannot be typed.
+                              setTheme((t) => ({ ...t, primaryColor: e.target.value }))
+                              setSaved(false)
+                            }}
+                          />
+                          <span className="font-mono text-sm text-muted-foreground">
+                            {theme.primaryColor}
+                          </span>
+                        </div>
+                      </Field>
+                      <Field label="Which side it sits on">
+                        <Select
+                          value={theme.position}
+                          onValueChange={(next) => {
+                            setTheme((t) => ({ ...t, position: next }))
                             setSaved(false)
                           }}
-                          rows={8}
-                          className="font-mono text-xs"
+                        >
+                          <SelectTrigger aria-label="Widget position">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="right">bottom right</SelectItem>
+                            <SelectItem value="left">bottom left</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field label="Title your customers see">
+                        <Input
+                          value={theme.title}
+                          onChange={(e) => {
+                            setTheme((t) => ({ ...t, title: e.target.value }))
+                            setSaved(false)
+                          }}
+                          placeholder="Chat assistant"
                         />
-                        {themeError && (
-                          <p className="text-sm text-destructive">{themeError}</p>
-                        )}
                       </Field>
                     </div>
                   )}
