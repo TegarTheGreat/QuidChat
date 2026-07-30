@@ -7,3 +7,5 @@ export { pruneExpiredConversations, startRetentionSchedule } from "./retention.j
 export type { PruneResult } from "./retention.js"
 export { notifyEscalation, notifyEscalationInBackground } from "./escalation-notify.js"
 export type { EscalationNotice } from "./escalation-notify.js"
+export { checkIntegrity, reportIntegrity } from "./integrity.js"
+export type { IntegrityProblem } from "./integrity.js"

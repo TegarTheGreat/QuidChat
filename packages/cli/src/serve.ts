@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto"
 import { applyMigrations, createDb } from "@quidchat/db"
 import { resolveProviders, type ResolveResult } from "@quidchat/providers"
-import { createServer, startRetentionSchedule } from "@quidchat/server"
+import { createServer, reportIntegrity, startRetentionSchedule } from "@quidchat/server"
 import { readServeConfig } from "./config.js"
 
 export type ServeResult = {
@@ -37,6 +37,11 @@ export async function serve(args: {
   const db = await createDb(config.db)
   await applyMigrations(db)
   log("migrations: applied")
+
+  // Before anything serves a customer. A database left inconsistent by a kill rather than a stop
+  // misbehaves quietly — a setting saves and does nothing — and the operator who can act on that
+  // is the one reading this output right now.
+  await reportIntegrity({ db, log, logError: (message, cause) => console.error(message, cause) })
 
   log(`provider: chat via ${resolved.chosen.chat}, embeddings via ${resolved.chosen.embed}`)
 
