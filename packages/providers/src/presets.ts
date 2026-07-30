@@ -147,6 +147,40 @@ export const presets: readonly Preset[] = [
     defaultEmbeddingModel: "nomic-ai/nomic-embed-text-v1.5",
   },
   {
+    id: "gemini",
+    kind: "openai-compatible",
+    // Google's own OpenAI-compatible surface, documented at ai.google.dev/gemini-api/docs/openai.
+    // It speaks the same wire format as everything else here, so no separate adapter is needed —
+    // which is exactly why that surface exists.
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    apiKeyVar: "GEMINI_API_KEY",
+    baseUrlVar: "GEMINI_BASE_URL",
+    hasEmbeddings: true,
+    defaultChatModel: "gemini-3.6-flash",
+    defaultEmbeddingModel: "gemini-embedding-001",
+  },
+  {
+    id: "mistral",
+    kind: "openai-compatible",
+    baseUrl: "https://api.mistral.ai/v1",
+    apiKeyVar: "MISTRAL_API_KEY",
+    baseUrlVar: "MISTRAL_BASE_URL",
+    // Mistral's embeddings live outside the OpenAI-compatible chat surface, so this preset is
+    // treated as chat-only and must be paired with something that embeds. Claiming otherwise
+    // would move the failure to the first customer question instead of to start-up.
+    hasEmbeddings: false,
+    defaultChatModel: "mistral-large-latest",
+  },
+  {
+    id: "xai",
+    kind: "openai-compatible",
+    baseUrl: "https://api.x.ai/v1",
+    apiKeyVar: "XAI_API_KEY",
+    baseUrlVar: "XAI_BASE_URL",
+    hasEmbeddings: false,
+    defaultChatModel: "grok-4.5",
+  },
+  {
     id: "ollama",
     kind: "openai-compatible",
     baseUrl: "http://localhost:11434/v1",

@@ -69,3 +69,39 @@ describe("choosing which service does what", () => {
     expect(absent.chosen.chat).toBe("openai")
   })
 })
+
+describe("the services added from their own documentation", () => {
+  it("reaches Gemini through Google's OpenAI-compatible surface", () => {
+    // ai.google.dev/gemini-api/docs/openai — same wire format, so no separate adapter.
+    const r = resolveProviders({ GEMINI_API_KEY: "k" })
+    expect(r.chosen).toEqual({ chat: "gemini", embed: "gemini" })
+    expect(r.models).toEqual({ chat: "gemini-3.6-flash", embed: "gemini-embedding-001" })
+    expect(r.provider).not.toBeNull()
+  })
+
+  it("treats Mistral and xAI as chat-only, so the failure lands at start-up", () => {
+    // Neither exposes embeddings on the surface this adapter speaks. Claiming otherwise would
+    // move the failure to the first customer question instead of to the operator's terminal.
+    for (const env of [{ MISTRAL_API_KEY: "k" }, { XAI_API_KEY: "k" }]) {
+      const alone = resolveProviders(env)
+      expect(alone.provider, JSON.stringify(env)).toBeNull()
+      expect(alone.chosen.embed).toBeNull()
+    }
+
+    // Paired with something that embeds, they answer — and the operator says which does what.
+    const paired = resolveProviders({
+      MISTRAL_API_KEY: "m",
+      OPENAI_API_KEY: "o",
+      QUIDCHAT_CHAT_PROVIDER: "mistral",
+    })
+    expect(paired.chosen).toEqual({ chat: "mistral", embed: "openai" })
+    expect(paired.models.chat).toBe("mistral-large-latest")
+  })
+
+  it("lets every hosted service be pointed somewhere else", () => {
+    // A gateway, a proxy, a regional endpoint: each preset takes a base-url override for the
+    // same reason OpenAI does, and a deployment that needs one is not exotic.
+    const r = resolveProviders({ XAI_API_KEY: "k", XAI_BASE_URL: "https://gateway.internal/v1" })
+    expect(r.chosen.chat).toBe("xai")
+  })
+})

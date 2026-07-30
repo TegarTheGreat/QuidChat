@@ -85,7 +85,14 @@ describe("readablePage", () => {
       contentType: "text/html; charset=utf-8",
       url: "https://shop.example/",
     })
-    expect(page).toEqual({ title: "Shop", text: "Open daily.", finalUrl: "https://shop.example/" })
+    expect(page).toMatchObject({
+      title: "Shop",
+      text: "Open daily.",
+      finalUrl: "https://shop.example/",
+    })
+    // The raw body comes back too, because a crawler needs the links that `text` has thrown
+    // away. Nothing indexes it.
+    expect(page.html).toContain("<title>Shop</title>")
   })
 
   it("falls back to the URL when the page has no title", () => {

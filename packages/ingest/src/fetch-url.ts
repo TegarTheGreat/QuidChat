@@ -18,6 +18,14 @@ export type FetchedPage = {
   text: string
   /** The URL actually fetched, after redirects. Stored so a source can be re-read later. */
   finalUrl: string
+  /**
+   * The body as it arrived, when it was HTML.
+   *
+   * Kept only because a crawler needs the links, which `text` has already thrown away. Nothing
+   * indexes this — the chunker takes `text` — so it costs memory for the length of one crawl and
+   * nothing after it.
+   */
+  html?: string
 }
 
 export class UrlFetchError extends Error {
@@ -255,7 +263,12 @@ export function readablePage(args: { body: string; contentType: string; url: str
       `${url} has no readable text — if the page builds its content in the browser, paste the text instead`,
     )
   }
-  return { title: (isHtml ? extractTitle(body) : null) ?? url, text, finalUrl: url }
+  return {
+    title: (isHtml ? extractTitle(body) : null) ?? url,
+    text,
+    finalUrl: url,
+    ...(isHtml ? { html: body } : {}),
+  }
 }
 
 /**

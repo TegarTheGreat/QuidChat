@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs"
 import { runAddText } from "./add-text.js"
+import { runAddSite } from "./add-site.js"
 import { runAddUrl } from "./add-url.js"
 import { runInit } from "./init.js"
 import { runPrune } from "./prune.js"
@@ -26,6 +27,11 @@ const USAGE = `Usage:
 
   quidchat add-text <slug> --title "<title>" (--file <path> | --stdin)
       Index text as a knowledge source for a tenant.
+
+  quidchat add-site <slug> <url> [--max-pages <n>]
+      Read a whole site and index every page. Follows the site's own links, stays
+      on its origin, obeys robots.txt, and stops at --max-pages (default 25).
+      Give it a sitemap.xml and it reads exactly what the sitemap lists.
 
   quidchat prune
       Delete conversations past each tenant's retention window, then exit. The
@@ -158,6 +164,21 @@ async function main(): Promise<void> {
 
   if (command === "prune") {
     await runPrune({ env: process.env })
+    await finish()
+  }
+
+  if (command === "add-site") {
+    const slug = positional[0]
+    if (!slug) throw new Error(`a tenant slug is required\n\n${USAGE}`)
+    const url = positional[1]
+    if (!url) throw new Error(`a URL is required\n\n${USAGE}`)
+    const maxPages = Number(firstOf(named, "max-pages") ?? "")
+    await runAddSite({
+      env: process.env,
+      slug,
+      url,
+      ...(Number.isFinite(maxPages) && maxPages > 0 ? { maxPages } : {}),
+    })
     await finish()
   }
 

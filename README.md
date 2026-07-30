@@ -82,7 +82,14 @@ Nothing reaches your customer unvalidated, which is why answers are not streamed
 
 ## Giving it knowledge
 
-Three ways in, all equivalent once the text is chunked: paste it in the panel, pipe it through `add-text`, or point at a page with `add-url` or **Knowledge → Read a page from your site**.
+Four ways in, all equivalent once the text is chunked: paste it in the panel, pipe it through `add-text`, point at a page with `add-url` or **Knowledge → Read a page from your site**, or point at the whole site with `add-site`.
+
+```bash
+node packages/cli/dist/main.mjs add-site my-shop https://myshop.example --max-pages 25
+node packages/cli/dist/main.mjs add-site my-shop https://myshop.example/sitemap.xml
+```
+
+`add-site` follows the site's own links, stays on its origin, and obeys `robots.txt`. Each page becomes its own source under its own title, because a citation reading "Delivery terms" is worth something to a customer and one reading "My Shop" is not. Give it a sitemap and it reads exactly what the sitemap lists, without following links — the owner already said what they wanted found. Pages it could not read are named with the reason rather than counted, and one unreadable page never ends the crawl: a site with a PDF in its menu is completely ordinary.
 
 A page is reduced to its readable prose. Scripts and stylesheets go because they are not language — they match nothing a customer would type and cost an embedding call each. Menus, headers and footers go too: a menu repeated across ninety pages becomes ninety near-identical chunks that crowd the real answer out of the retrieval window.
 
@@ -188,6 +195,9 @@ Every provider call has a deadline and is retried when the provider says "not no
 | Provider | Variable | Base URL override |
 |---|---|---|
 | Anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
+| Google Gemini | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
+| Mistral | `MISTRAL_API_KEY` | `MISTRAL_BASE_URL` |
+| xAI (Grok) | `XAI_API_KEY` | `XAI_BASE_URL` |
 | OpenAI | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | OpenRouter | `OPENROUTER_API_KEY` | `OPENROUTER_BASE_URL` |
 | Groq | `GROQ_API_KEY` | `GROQ_BASE_URL` |
