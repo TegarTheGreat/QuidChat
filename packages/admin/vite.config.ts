@@ -11,6 +11,10 @@ import { defineConfig } from "vite"
 // files outside `packages/admin`.
 export default defineConfig({
   plugins: [react()],
+  // Served by @quidchat/server under /panel, so asset URLs have to be built with that
+  // prefix. Left at the default "/", index.html would ask for /assets/index-*.js and get
+  // the API's 404 — the panel would load as a blank page with no clue why.
+  base: "/panel/",
   build: {
     outDir: "dist",
   },

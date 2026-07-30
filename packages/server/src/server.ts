@@ -4,6 +4,7 @@ import { createStore, type QuidDb } from "@quidchat/db"
 import { handleAdminRequest } from "./admin.js"
 import { handleChannelWebhook } from "./channels.js"
 import { handleChat } from "./chat.js"
+import { handlePanelAsset } from "./panel-asset.js"
 import { handleWidgetAsset } from "./widget-asset.js"
 import { ChatRateLimiter, type RateLimitConfig } from "./rate-limit.js"
 
@@ -85,6 +86,15 @@ export function createServer(deps: ServerDeps): Server {
     if (pathname === "/chat") {
       handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError, rateLimiter }).catch((e: unknown) => {
         logError("unhandled error in chat route", e)
+        if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
+      })
+      return
+    }
+
+    // The admin panel. Mounted at /panel because /admin/* is the API — see panel-asset.ts.
+    if (pathname === "/panel" || pathname.startsWith("/panel/")) {
+      handlePanelAsset(res, pathname).catch((e: unknown) => {
+        logError("unhandled error serving the admin panel", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
       })
       return

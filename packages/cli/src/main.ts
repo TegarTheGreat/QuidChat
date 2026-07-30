@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import { runAddText } from "./add-text.js"
 import { runAddUrl } from "./add-url.js"
 import { runInit } from "./init.js"
+import { runPrune } from "./prune.js"
 import { serve } from "./serve.js"
 
 /**
@@ -25,6 +26,10 @@ const USAGE = `Usage:
 
   quidchat add-text <slug> --title "<title>" (--file <path> | --stdin)
       Index text as a knowledge source for a tenant.
+
+  quidchat prune
+      Delete conversations past each tenant's retention window, then exit. The
+      server does this daily on its own; this is for running it from cron.
 
   quidchat add-url <slug> <url> [--title "<title>"]
       Read a page and index it. Private and local addresses are refused, including
@@ -98,6 +103,11 @@ async function main(): Promise<void> {
     const text = useStdin ? readFileSync(0, "utf8") : readFileSync(file!, "utf8")
 
     await runAddText({ env: process.env, slug, title, text })
+    return
+  }
+
+  if (command === "prune") {
+    await runPrune({ env: process.env })
     return
   }
 

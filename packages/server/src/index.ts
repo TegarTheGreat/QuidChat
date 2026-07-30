@@ -3,3 +3,5 @@ export * from "./server.js"
 // limits, and so `rateLimits` on `ServerDeps` is nameable from outside the package.
 export { ChatRateLimiter, DEFAULT_TENANT_LIMIT, DEFAULT_VISITOR_LIMIT, RateLimiter } from "./rate-limit.js"
 export type { RateLimitConfig, RateLimitDecision } from "./rate-limit.js"
+export { pruneExpiredConversations, startRetentionSchedule } from "./retention.js"
+export type { PruneResult } from "./retention.js"

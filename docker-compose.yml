@@ -1,6 +1,9 @@
 services:
   quidchat:
     build: .
+    # A container that exits stays exited without this, and the failure most likely to
+    # exit it — Postgres restarting under it — is one a retry actually fixes.
+    restart: unless-stopped
     ports:
       - "${PORT:-3210}:3210"
     environment:
@@ -54,6 +57,7 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg17
+    restart: unless-stopped
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quidchat}
       POSTGRES_DB: quidchat

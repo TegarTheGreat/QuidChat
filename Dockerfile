@@ -76,6 +76,10 @@ COPY --from=build /tmp/deploy/node_modules ./node_modules
 # every request for /quidchat.js.
 COPY --from=build /app/packages/cli/dist/main.mjs ./packages/cli/dist/main.mjs
 COPY --from=build /app/packages/widget/dist/index.iife.js ./packages/widget/dist/index.iife.js
+# The admin panel, for the same reason and by the same resolution: `handlePanelAsset` looks
+# for `../../admin/dist/` relative to main.mjs. Without it the container serves the API and
+# no interface, which makes every "configure it in the panel" instruction unfollowable.
+COPY --from=build /app/packages/admin/dist ./packages/admin/dist
 
 # The PGlite tier writes here by default (QUIDCHAT_DATA_DIR defaults to
 # ./.quidchat/data). Creating and chowning it before the VOLUME declaration matters:

@@ -1,6 +1,6 @@
 import { applyMigrations, createDb } from "@quidchat/db"
 import { resolveProviders, type ResolveResult } from "@quidchat/providers"
-import { createServer } from "@quidchat/server"
+import { createServer, startRetentionSchedule } from "@quidchat/server"
 import { readServeConfig } from "./config.js"
 
 export type ServeResult = {
@@ -39,6 +39,15 @@ export async function serve(args: {
 
   log(`provider: chat via ${resolved.chosen.chat}, embeddings via ${resolved.chosen.embed}`)
 
+  // Started before listening, so the first pass happens whether or not anyone connects.
+  // Without a schedule, `retention_days` was a setting a business could change that deleted
+  // nothing — a promise about their customers' personal data that the product did not keep.
+  const stopRetention = startRetentionSchedule({
+    db,
+    log,
+    logError: (message, cause) => console.error(message, cause),
+  })
+
   const server = createServer({ db, provider: resolved.provider })
   await new Promise<void>((resolve) => server.listen(config.port, () => resolve()))
 
@@ -48,10 +57,14 @@ export async function serve(args: {
 
   return {
     port,
-    close: () =>
-      new Promise<void>((resolve, reject) =>
+    close: () => {
+      // Stopped on close so a test that starts several servers does not leave timers behind
+      // firing against a database its own test already tore down.
+      stopRetention()
+      return new Promise<void>((resolve, reject) =>
         server.close((err) => (err ? reject(err) : resolve())),
-      ),
+      )
+    },
   }
 }
 

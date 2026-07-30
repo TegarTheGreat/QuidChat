@@ -32,6 +32,8 @@ node packages/cli/dist/main.mjs add-url my-shop https://myshop.example/delivery 
 node packages/cli/dist/main.mjs serve
 ```
 
+The admin panel is at **http://localhost:3210/panel** — every setting lives there, including the ones this quick start passed as flags.
+
 Then paste this into the site you allowed:
 
 ```html
@@ -139,6 +141,8 @@ Anthropic has no embeddings endpoint, and retrieval needs one. Set `ANTHROPIC_AP
 | `QUIDCHAT_DATA_DIR` | `./.quidchat/data` | Where PGlite stores data. `memory` for ephemeral |
 | `QUIDCHAT_ADMIN_TOKEN` | — | Required by the admin API; unset means admin routes refuse |
 
+The panel is served at `/panel` by the same process that serves the API, so an install has an interface without a second deployment. The API keeps `/admin/*`: one namespace for pages and endpoints would make every new route a question about which it is, and the first wrong guess would shadow a working endpoint with an HTML page.
+
 `GET /health` answers `{"status":"ok"}` without touching Postgres — a liveness probe that failed while the database was briefly unreachable would make an orchestrator kill a process that was about to recover, turning a blip into an outage.
 
 ## Storage
@@ -180,6 +184,12 @@ The two are separate on purpose. An answer typed into the panel is approved as i
 
 A `static` tenant with no live answers refuses every question. That is deliberate — the alternative is making one up.
 
+## Keeping only what you need
+
+`retention_days` deletes conversations once they pass it. The server runs a pass at start-up and once a day after; `quidchat prune` does the same thing once and exits, for anyone who would rather see it in their own crontab.
+
+Only conversations are deleted, and messages, citations and escalations follow by cascade — four separate deletes would be four chances to leave a customer's text behind under another table's name. `usage_events` is kept deliberately: it holds a model name and token counts rather than anything a customer wrote, and the monthly budget is computed from it, so pruning it would quietly hand a tenant more spend than they configured. `0` means keep forever, the same way `monthly_budget_cents = 0` means unlimited.
+
 ## Multi-tenant by construction
 
 One installation, many businesses, and none can see another's data.
@@ -199,6 +209,25 @@ Isolation is row-level security, not application filters. Foreign keys carry `te
 | `@quidchat/admin` | Admin panel |
 | `@quidchat/channels` | WhatsApp, WAHA, Telegram and Discord adapters |
 | `@quidchat/cli` | The `quidchat` binary |
+
+## Deploying
+
+```bash
+docker compose up
+```
+
+starts two containers: `postgres`, running `pgvector/pgvector:pg17`, and `quidchat`, built from the included `Dockerfile`. Compose starts `quidchat` only once Postgres's own healthcheck passes, not merely once the container has started — Postgres accepts TCP connections for a moment before it can actually serve a query, and starting the app in that window would misread a normal boot delay as a broken database. Provider keys still come from the host environment, exactly as in Providers above: `export OPENAI_API_KEY=sk-...` before `docker compose up`, not a value written into the compose file or the image, because either of those would sit in plain text in the image history and in anyone's `docker inspect`.
+
+For a single machine that doesn't want a separate Postgres container, build and run the image on its own, with no `DATABASE_URL`, and it falls back to the embedded PGlite tier exactly as it does outside Docker:
+
+```bash
+docker build -t quidchat .
+docker run -p 3210:3210 -e OPENAI_API_KEY=sk-... -v quidchat_data:/app/.quidchat/data quidchat
+```
+
+The named volume is not optional here for the same reason `QUIDCHAT_DATA_DIR` defaults to an on-disk path rather than memory: without it, replacing the container — an ordinary redeploy, not a failure — would silently drop every tenant's documents and conversations.
+
+Rate limiting runs in memory, per process (see Cost control), so it is not shared across replicas. Two copies of `quidchat` behind a load balancer allow twice the configured burst and sustained rate, because each process fills its own token bucket with no knowledge of the other. The monthly budget guard doesn't have that problem: `monthly_budget_cents` is read and written in Postgres, so the same total holds no matter how many replicas are running.
 
 ## Development
 
