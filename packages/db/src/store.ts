@@ -102,7 +102,27 @@ export function createStore(db: QuidDb): Store {
             LIMIT ${poolSize}
           ),
           fused AS (
-            SELECT id, SUM(1.0 / (60 + rnk)) AS score
+            -- Konstanta RRF = 10, BUKAN 60 dari makalah aslinya. Alasannya aritmetika,
+            -- bukan selera.
+            --
+            -- Skor maksimum chunk yang hanya muncul di SATU daftar adalah 1/(k+1).
+            -- Skor minimum chunk yang muncul di KEDUA daftar adalah 2/(k+pool).
+            -- Dengan k=60 dan pool=32: 0,01639 < 0,02174 — jadi chunk yang hadir di
+            -- kedua daftar mengalahkan SETIAP chunk satu-daftar, sebaik apa pun
+            -- kecocokannya.
+            --
+            -- Itu bukan sekadar tidak optimal, itu penyingkiran struktural: chunk
+            -- ber-'embedding IS NULL' dan chunk yang masih memakai model embedding lama
+            -- TIDAK BISA masuk daftar 'sem', jadi mereka selamanya satu-daftar. Terukur:
+            -- satu chunk penjawab tanpa embedding di antara 12 chunk tak relevan
+            -- ber-embedding jatuh ke peringkat 4; dengan >=8 chunk dua-daftar ia keluar
+            -- dari jendela kandidat dan pipeline MENOLAK padahal jawabannya ada.
+            --
+            -- Syaratnya k < pool − 2. Karena poolSize = max(limit*4, 20), kolam bisa
+            -- sekecil 20, jadi k harus < 18. k=10 memenuhi seluruh rentang (0,09091 >
+            -- 0,04762) dan TETAP membuat kehadiran di kedua daftar menguntungkan
+            -- (0,18182 > 0,09091) — hanya tidak lagi mutlak.
+            SELECT id, SUM(1.0 / (10 + rnk)) AS score
             FROM (SELECT id, rnk FROM kw UNION ALL SELECT id, rnk FROM sem) u
             GROUP BY id
           )
