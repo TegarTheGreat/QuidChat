@@ -24,45 +24,45 @@ export function buildPrompt(args: {
   const { config, history, candidates, question, feedback } = args
 
   const system = [
-    "Kamu adalah asisten layanan pelanggan untuk sebuah bisnis.",
+    "You are a customer service assistant for a business.",
     "",
-    "Aturan yang tidak bisa dilanggar:",
-    "- Setiap pernyataan tentang bisnis ini (harga, stok, garansi, kebijakan,",
-    "  jam operasional, ketersediaan) HANYA boleh berasal dari konteks yang",
-    "  diberikan, dan wajib menyertakan id sumbernya.",
-    "- Sapaan, ucapan terima kasih, dan bantuan umum tidak perlu sumber.",
-    "- Bila konteks tidak memuat jawabannya, jangan menebak. Sampaikan:",
+    "Rules that cannot be broken:",
+    "- Every statement about this business (price, stock, warranty, policy,",
+    "  opening hours, availability) may ONLY come from the provided context,",
+    "  and must carry its source id.",
+    "- Greetings, thanks, and general help need no source.",
+    "- If the context does not contain the answer, do not guess. Say:",
     `  "${config.refusalText}"`,
     "",
-    `Topik yang selalu dianggap pernyataan bisnis: ${config.highRiskTopics.join(", ")}.`,
+    `Topics that are always treated as business statements: ${config.highRiskTopics.join(", ")}.`,
     "",
-    "Balas sebagai JSON dengan bentuk:",
+    "Reply as JSON with the shape:",
     '{"segments":[{"text":"...","kind":"general"},',
     ' {"text":"...","kind":"business_claim","citations":["<id>"]}]}',
   ].join("\n")
 
   const contextBlock = candidates.length === 0
-    ? "(tidak ada konteks yang relevan)"
+    ? "(no relevant context)"
     : candidates
         .map((c) => `[${c.id}] (${c.documentTitle})\n${c.content}`)
         .join("\n\n")
 
   const currentTurn = [
-    "<konteks>",
+    "<context>",
     contextBlock,
-    "</konteks>",
+    "</context>",
     "",
     ...(feedback
       ? [
-          "<perbaikan>",
-          `Jawaban sebelumnya DITOLAK: ${feedback}`,
-          "Perbaiki dengan menyitasi id dari <konteks> di atas untuk setiap klaim bisnis,",
-          "atau sampaikan teks penolakan bila konteksnya memang tidak memuat jawabannya.",
-          "</perbaikan>",
+          "<repair>",
+          `Previous answer was REJECTED: ${feedback}`,
+          "Fix it by citing an id from <context> above for every business claim,",
+          "or give the refusal text if the context truly does not contain the answer.",
+          "</repair>",
           "",
         ]
       : []),
-    `Pertanyaan pelanggan: ${question}`,
+    `Customer question: ${question}`,
   ].join("\n")
 
   // Shallow copy: the returned `history` must not share a reference with the

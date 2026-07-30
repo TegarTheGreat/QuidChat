@@ -2,55 +2,55 @@ import { describe, expect, it } from "vitest"
 import { validateGrounding } from "./validator.js"
 import type { Candidate } from "../types.js"
 
-const TOPICS = ["harga", "diskon", "garansi", "refund", "stok", "legal"]
+const TOPICS = ["price", "discount", "warranty", "refund", "stock", "legal"]
 const candidates: Candidate[] = [
-  { id: "chunk-1", content: "Garansi resmi 12 bulan.", documentTitle: "Kebijakan" },
-  { id: "chunk-2", content: "Harga Rp200.000.", documentTitle: "Katalog" },
+  { id: "chunk-1", content: "Official warranty 12 months.", documentTitle: "Policy" },
+  { id: "chunk-2", content: "Price $200,000.", documentTitle: "Catalog" },
 ]
 
 const run = (segments: Parameters<typeof validateGrounding>[0]["answer"]["segments"]) =>
   validateGrounding({ answer: { segments }, candidates, highRiskTopics: TOPICS })
 
 describe("validateGrounding", () => {
-  it("menolak klaim bisnis tanpa sitasi", () => {
-    const v = run([{ kind: "business_claim", text: "Garansi 12 bulan.", citations: [] }])
+  it("rejects a business claim without a citation", () => {
+    const v = run([{ kind: "business_claim", text: "Warranty 12 months.", citations: [] }])
     expect(v.ok).toBe(false)
     if (!v.ok) expect(v.violation).toBe("missing_citation")
   })
 
-  it("menolak sitasi di luar candidateSet", () => {
+  it("rejects a citation outside the candidateSet", () => {
     const v = run([
-      { kind: "business_claim", text: "Garansi 12 bulan.", citations: ["chunk-99"] },
+      { kind: "business_claim", text: "Warranty 12 months.", citations: ["chunk-99"] },
     ])
     expect(v.ok).toBe(false)
     if (!v.ok) expect(v.violation).toBe("unknown_citation")
   })
 
-  it("menolak segmen general yang menyebut topik berisiko tinggi", () => {
-    const v = run([{ kind: "general", text: "Harga kami paling murah kok." }])
+  it("rejects a general segment that mentions a high-risk topic", () => {
+    const v = run([{ kind: "general", text: "Our price is the cheapest around." }])
     expect(v.ok).toBe(false)
     if (!v.ok) expect(v.violation).toBe("unlabelled_high_risk")
   })
 
-  it("meloloskan klaim bisnis dengan sitasi valid", () => {
+  it("passes a business claim with a valid citation", () => {
     const v = run([
-      { kind: "business_claim", text: "Garansi 12 bulan.", citations: ["chunk-1"] },
+      { kind: "business_claim", text: "Warranty 12 months.", citations: ["chunk-1"] },
     ])
     expect(v.ok).toBe(true)
     if (v.ok) expect(v.citedChunkIds).toEqual(["chunk-1"])
   })
 
-  it("meloloskan sapaan berlabel general", () => {
-    const v = run([{ kind: "general", text: "Halo! Tentu saya bantu." }])
+  it("passes a greeting labelled general", () => {
+    const v = run([{ kind: "general", text: "Hello! Sure, I can help." }])
     expect(v.ok).toBe(true)
     if (v.ok) expect(v.citedChunkIds).toEqual([])
   })
 
-  it("mengumpulkan sitasi unik dari beberapa segmen", () => {
+  it("collects unique citations from multiple segments", () => {
     const v = run([
-      { kind: "general", text: "Halo!" },
-      { kind: "business_claim", text: "Garansi 12 bulan.", citations: ["chunk-1"] },
-      { kind: "business_claim", text: "Harganya Rp200.000.", citations: ["chunk-2", "chunk-1"] },
+      { kind: "general", text: "Hello!" },
+      { kind: "business_claim", text: "Warranty 12 months.", citations: ["chunk-1"] },
+      { kind: "business_claim", text: "The price is $200,000.", citations: ["chunk-2", "chunk-1"] },
     ])
     expect(v.ok).toBe(true)
     // `toSorted()` not `sort()`: the latter would mutate the array inside the
@@ -59,7 +59,7 @@ describe("validateGrounding", () => {
     if (v.ok) expect(v.citedChunkIds.toSorted()).toEqual(["chunk-1", "chunk-2"])
   })
 
-  it("menolak jawaban kosong", () => {
+  it("rejects an empty answer", () => {
     const v = run([])
     expect(v.ok).toBe(false)
     // The violation is checked too. Without this, an implementation that rejects an

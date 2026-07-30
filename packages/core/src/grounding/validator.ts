@@ -17,7 +17,7 @@ export function validateGrounding(args: {
   const { answer, candidates, highRiskTopics } = args
 
   if (answer.segments.length === 0) {
-    return { ok: false, violation: "empty_answer", detail: "tidak ada segmen" }
+    return { ok: false, violation: "empty_answer", detail: "no segments" }
   }
 
   const allowed = new Set(candidates.map((c) => c.id))
@@ -31,7 +31,7 @@ export function validateGrounding(args: {
         return {
           ok: false,
           violation: "unlabelled_high_risk",
-          detail: `segmen general menyebut: ${risky.join(", ")}`,
+          detail: `general segment mentions: ${risky.join(", ")}`,
         }
       }
       continue
@@ -41,7 +41,7 @@ export function validateGrounding(args: {
       return {
         ok: false,
         violation: "missing_citation",
-        detail: `klaim bisnis tanpa sitasi: ${seg.text.slice(0, 60)}`,
+        detail: `business claim without citation: ${seg.text.slice(0, 60)}`,
       }
     }
 
@@ -52,7 +52,7 @@ export function validateGrounding(args: {
         return {
           ok: false,
           violation: "unknown_citation",
-          detail: `sitasi di luar candidateSet: ${id}`,
+          detail: `citation outside candidateSet: ${id}`,
         }
       }
       cited.add(id)

@@ -6,66 +6,66 @@ const config: TenantConfig = {
   chatModel: "claude-opus-5",
   rewriteModel: "claude-opus-5",
   embeddingModel: "text-embedding-3-small",
-  refusalText: "Maaf, saya belum punya info itu.",
-  highRiskTopics: ["harga", "garansi"],
+  refusalText: "Sorry, I don't have that information yet.",
+  highRiskTopics: ["price", "warranty"],
 }
 
 const history = [
-  { role: "user" as const, content: "halo" },
-  { role: "assistant" as const, content: "Halo! Ada yang bisa dibantu?" },
+  { role: "user" as const, content: "hello" },
+  { role: "assistant" as const, content: "Hello! How can I help?" },
 ]
 
 const c = (id: string, content: string): Candidate =>
-  ({ id, content, documentTitle: "Katalog" })
+  ({ id, content, documentTitle: "Catalog" })
 
 describe("buildPrompt", () => {
-  it("prefix byte-identik untuk pertanyaan berbeda", () => {
-    const a = buildPrompt({ config, history, candidates: [c("k1", "Garansi 12 bulan")], question: "garansi?" })
-    const b = buildPrompt({ config, history, candidates: [c("k2", "Harga 200rb")], question: "harga?" })
+  it("the prefix is byte-identical for different questions", () => {
+    const a = buildPrompt({ config, history, candidates: [c("k1", "Warranty 12 months")], question: "warranty?" })
+    const b = buildPrompt({ config, history, candidates: [c("k2", "Price $200")], question: "price?" })
     expect(prefixOf(a)).toBe(prefixOf(b))
   })
 
-  it("prefix berubah bila konfigurasi tenant berubah", () => {
+  it("the prefix changes when tenant configuration changes", () => {
     const a = buildPrompt({ config, history, candidates: [], question: "x" })
     const b = buildPrompt({
-      config: { ...config, refusalText: "beda" },
+      config: { ...config, refusalText: "different" },
       history, candidates: [], question: "x",
     })
     expect(prefixOf(a)).not.toBe(prefixOf(b))
   })
 
-  it("konteks hasil retrieve masuk turn sekarang, bukan system", () => {
+  it("retrieved context goes into the current turn, not system", () => {
     const p = buildPrompt({
       config, history,
-      candidates: [c("k1", "Garansi resmi 12 bulan")],
-      question: "garansi berapa lama?",
+      candidates: [c("k1", "Official warranty 12 months")],
+      question: "how long is the warranty?",
     })
-    expect(p.system).not.toContain("Garansi resmi 12 bulan")
-    expect(p.currentTurn).toContain("Garansi resmi 12 bulan")
+    expect(p.system).not.toContain("Official warranty 12 months")
+    expect(p.currentTurn).toContain("Official warranty 12 months")
   })
 
-  it("menyertakan id chunk agar model bisa menyitasinya", () => {
-    const p = buildPrompt({ config, history, candidates: [c("k1", "isi")], question: "q" })
+  it("includes the chunk id so the model can cite it", () => {
+    const p = buildPrompt({ config, history, candidates: [c("k1", "content")], question: "q" })
     expect(p.currentTurn).toContain("k1")
   })
 
-  it("system prompt memuat teks penolakan dan daftar topik berisiko tenant", () => {
+  it("system prompt contains the refusal text and the tenant's high-risk topic list", () => {
     const p = buildPrompt({ config, history, candidates: [], question: "q" })
-    expect(p.system).toContain("Maaf, saya belum punya info itu.")
-    // Assertion on the interpolated sentence, NOT just on the word "garansi".
-    // That word also appears in the static rules text, so `toContain("garansi")`
+    expect(p.system).toContain("Sorry, I don't have that information yet.")
+    // Assertion on the interpolated sentence, NOT just on the word "price".
+    // That word also appears in the static rules text, so `toContain("price")`
     // would still pass even if `config.highRiskTopics` was never rendered at
     // all — an assertion that proves nothing.
-    expect(p.system).toContain("Topik yang selalu dianggap pernyataan bisnis: harga, garansi.")
+    expect(p.system).toContain("Topics that are always treated as business statements: price, warranty.")
   })
 
-  it("riwayat diteruskan apa adanya, tapi bukan array milik pemanggil", () => {
+  it("history is passed through as-is, but is not the caller's own array", () => {
     const p = buildPrompt({ config, history, candidates: [], question: "q" })
     expect(p.history).toEqual(history)
     expect(p.history).not.toBe(history)
   })
 
-  it("prefix tetap identik walau waktu berjalan di antara dua pemanggilan", () => {
+  it("the prefix stays identical even when time passes between calls", () => {
     // This is the regression spec §11.1 cites as the reason this test exists: a single
     // `new Date()` in the system prompt would invalidate the cache on every message,
     // with no error and no log. A test without a fake clock would NOT catch it — two
@@ -74,9 +74,9 @@ describe("buildPrompt", () => {
     vi.useFakeTimers()
     try {
       vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"))
-      const a = buildPrompt({ config, history, candidates: [c("k1", "isi")], question: "q1" })
+      const a = buildPrompt({ config, history, candidates: [c("k1", "content")], question: "q1" })
       vi.advanceTimersByTime(60 * 60 * 1000) // one hour
-      const b = buildPrompt({ config, history, candidates: [c("k2", "lain")], question: "q2" })
+      const b = buildPrompt({ config, history, candidates: [c("k2", "other")], question: "q2" })
       expect(prefixOf(a)).toBe(prefixOf(b))
     } finally {
       vi.useRealTimers()

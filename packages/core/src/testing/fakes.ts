@@ -6,8 +6,8 @@ export const DEFAULT_CONFIG: TenantConfig = {
   chatModel: "fake-model",
   rewriteModel: "fake-model",
   embeddingModel: "fake-embedding-model",
-  refusalText: "Maaf, saya belum punya informasi itu.",
-  highRiskTopics: ["harga", "diskon", "garansi", "refund", "stok", "legal"],
+  refusalText: "Sorry, I don't have that information yet.",
+  highRiskTopics: ["price", "discount", "warranty", "refund", "stock", "legal"],
 }
 
 /**
@@ -55,14 +55,14 @@ export class FakeProvider implements Provider {
   embedCalls: string[] = []
   textCalls: { system: string; user: string }[] = []
   /** The reply `generateText` returns, settable by a test. */
-  textReply = "pertanyaan yang ditulis ulang"
+  textReply = "rewritten question"
 
   constructor(private answers: Answer[]) {}
 
   async complete(args: { model: string; prompt: PromptParts }): Promise<CompleteResult> {
     this.calls.push(args.prompt)
     const next = this.answers[this.calls.length - 1] ?? this.answers.at(-1)
-    if (!next) throw new Error("FakeProvider kehabisan jawaban")
+    if (!next) throw new Error("FakeProvider ran out of answers")
     return {
       answer: next,
       usage: { inputTokens: 10, outputTokens: 5, cachedTokens: null },
