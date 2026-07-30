@@ -120,19 +120,32 @@ BEGIN
   END IF;
 END $guard1$;
 
--- Guard bagian 2: SETIAP policy permissive pada tabel ber-`tenant_id` wajib menyebut
--- current_tenant_id(). Memeriksa "ada satu policy yang men-scope" TIDAK CUKUP: Postgres
--- menggabungkan policy permissive dengan OR, jadi satu `USING (true)` yang ditambahkan di
--- samping policy yang benar meruntuhkan isolasi sementara policy yang benar tetap ada.
--- Diukur di PGlite: serangan itu mengubah 1 baris menjadi 2, dan versi guard yang hanya
--- memeriksa keberadaan TETAP LOLOS.
+-- Guard bagian 2: SETIAP policy permissive pada tabel ber-`tenant_id` wajib ber-ekspresi
+-- TEPAT `(tenant_id = current_tenant_id())`. Bukan "mengandung", bukan "menyebut" —
+-- tepat itu.
+--
+-- DUA versi sebelumnya kalah, dan keduanya kalah karena mencoba menyimpulkan MAKNA dari
+-- TEKS:
+--   1. "ada satu policy yang menyebut current_tenant_id()" -> dikalahkan dengan menambah
+--      `USING (true)` DI SAMPING policy yang benar. Postgres menggabungkan policy
+--      permissive dengan OR, jadi isolasinya runtuh sementara policy yang benar tetap ada
+--      dan pemeriksaan keberadaan tetap terpenuhi. Diukur: 1 baris -> 2 baris.
+--   2. "setiap policy permissive MENGANDUNG current_tenant_id()" -> dikalahkan dengan
+--      `USING (current_tenant_id() IS NOT NULL)`. Menyebut fungsinya tanpa membatasi
+--      satu baris pun. Diukur: `conversations` bocor 1 -> 2 baris, mengembalikan
+--      visitor_id tenant lain, dan guard-nya DIAM.
+--
+-- Pemeriksaan substring TIDAK AKAN PERNAH bisa membuktikan sebuah policy MEMBATASI.
+-- Karena seluruh 11 tabel ber-tenant_id di skema ini memang memakai satu ekspresi yang
+-- sama (diverifikasi 11/11), keseragaman itu dijadikan aturan.
 DO $guard2$
 DECLARE bad text;
 BEGIN
-  SELECT string_agg(format('%s.%s', p.tablename, p.policyname), ', ') INTO bad
+  SELECT string_agg(
+           format('%s.%s = %s', p.tablename, p.policyname, coalesce(p.qual, 'NULL')),
+           ' | '
+         ) INTO bad
   FROM pg_policies p
-  JOIN pg_class c ON c.relname = p.tablename
-  JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
   WHERE p.schemaname = 'public'
     AND p.permissive = 'PERMISSIVE'
     AND EXISTS (
@@ -140,16 +153,23 @@ BEGIN
       WHERE col.table_schema = 'public' AND col.table_name = p.tablename
         AND col.column_name = 'tenant_id'
     )
-    AND (p.qual IS NULL OR p.qual NOT LIKE '%current_tenant_id()%');
+    AND coalesce(p.qual, '') <> '(tenant_id = current_tenant_id())';
   IF bad IS NOT NULL THEN
-    RAISE EXCEPTION 'policy permissive tanpa current_tenant_id(): %', bad;
+    RAISE EXCEPTION
+      'policy pada tabel ber-tenant_id wajib TEPAT (tenant_id = current_tenant_id()); ditemukan: %',
+      bad;
   END IF;
 END $guard2$;
 ```
 
-Sudah diverifikasi: keduanya lolos pada skema sekarang, dan **menolak** serangan policy
-bocor berdampingan. Versi yang hanya memeriksa keberadaan policy yang men-scope TIDAK
-menolaknya — itu ditemukan dengan menjalankan serangannya, bukan dengan membacanya.
+Sudah diverifikasi: lolos pada skema sekarang, dan **menolak kedua serangan** di atas.
+
+**Analisis teks hanya menjaga BENTUK.** Karena itu ada lapis kedua yang menjaga AKIBAT:
+`packages/db/src/isolation-guard.test.ts` mengisi SELURUH 11 tabel ber-`tenant_id` untuk
+dua tenant, lalu untuk setiap tabel menuntut jumlah baris yang dilihat satu tenant sama
+dengan jumlah baris miliknya sendiri. Test itu menangkap kedua serangan **tanpa perlu
+diantisipasi**, dan juga menuntut tidak ada tabel yang hampa — di percobaan pertama saya
+8 dari 11 tabel kosong, sehingga "lolos"-nya tidak membuktikan apa pun.
 
 - [ ] **Step 2b: Buat `getTenantConfig` menolak pembacaan ambigu**
 
