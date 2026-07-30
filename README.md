@@ -269,6 +269,8 @@ pnpm build
 
 Every defect it checks for was invisible to the unit suite and obvious within a minute of using the thing: a `bin` pointing at a TypeScript file, migrations resolved relative to a module that no longer existed once bundled, a data directory whose parent was never created, and `add-text` printing its success line and then never exiting. Behaviour is what the suite covers; this covers the artifact.
 
+`pnpm panel:check http://localhost:3210 <admin-token>` uses the admin panel the way an owner does — types into its forms, clicks its buttons, and checks the result appears — against a server you already have running. It needs a Chrome or Chromium binary and skips with a message if it cannot find one; set `CHROME_PATH` to point at yours. Nothing else exercises the form wiring, and a panel whose every button was dead would pass the rest of the suite.
+
 After changing anything under `packages/db/migrations/`, run `pnpm generate:migrations`. The SQL is embedded in a module so applying migrations never depends on a filesystem path — a path relative to the module works only from the source tree, and a bundled binary dies on start instead. A test fails if the two copies drift.
 
 ## Licence

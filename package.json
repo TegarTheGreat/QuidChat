@@ -14,6 +14,7 @@
     "lint": "oxlint .",
     "format": "oxfmt .",
     "smoke": "node scripts/smoke.mjs",
+    "panel:check": "node scripts/panel-check.mjs",
     "generate:migrations": "node scripts/generate-migrations.mjs"
   },
   "devDependencies": {
