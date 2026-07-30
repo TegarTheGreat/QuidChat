@@ -53,7 +53,10 @@ describe("validateGrounding", () => {
       { kind: "business_claim", text: "Harganya Rp200.000.", citations: ["chunk-2", "chunk-1"] },
     ])
     expect(v.ok).toBe(true)
-    if (v.ok) expect(v.citedChunkIds.sort()).toEqual(["chunk-1", "chunk-2"])
+    // `toSorted()` bukan `sort()`: yang kedua mengubah array di dalam verdict,
+    // jadi assertion berikutnya di test yang sama akan memeriksa data yang sudah
+    // teracak urutannya oleh assertion sebelumnya.
+    if (v.ok) expect(v.citedChunkIds.toSorted()).toEqual(["chunk-1", "chunk-2"])
   })
 
   it("menolak jawaban kosong", () => {

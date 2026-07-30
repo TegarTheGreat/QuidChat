@@ -13,7 +13,7 @@ describe("detectHighRisk", () => {
   })
 
   it("mengembalikan beberapa topik sekaligus", () => {
-    expect(detectHighRisk("ada diskon dan stok masih banyak", TOPICS).sort())
+    expect(detectHighRisk("ada diskon dan stok masih banyak", TOPICS).toSorted())
       .toEqual(["diskon", "stok"])
   })
 
