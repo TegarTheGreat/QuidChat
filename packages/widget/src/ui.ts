@@ -82,6 +82,22 @@ function buildStyle(theme: WidgetTheme): string {
     overflow: hidden;
   }
   .panel[hidden] { display: none; }
+  /* On a phone the panel was a 320px box floating in a 390px screen: cramped for reading and
+     for typing, while most of the display went unused. Most customers arrive on a phone, so
+     below this width it takes the screen the way a messaging app does. The launcher stays put,
+     because a conversation someone wants to leave has to be closable without hunting. */
+  @media (max-width: 480px) {
+    .panel {
+      left: 12px;
+      right: 12px;
+      width: auto;
+      max-width: none;
+      bottom: 84px;
+      height: calc(100vh - 100px);
+      max-height: none;
+    }
+    .message { max-width: 90%; }
+  }
   .header {
     display: flex;
     justify-content: space-between;
