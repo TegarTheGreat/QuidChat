@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical record.** This plan describes work that is complete. The code has moved on since
+> it was written — most visibly, the codebase was translated to English after these tasks landed,
+> so the Indonesian strings in the code samples below are what was built at the time, not what is
+> in the repository now. Read it for the reasoning behind a decision; read the code for what the
+> code does.
+
+
 **Goal:** Close six defects found in the final review of Plan 1, all of which passed the entire test suite because the tests never checked the property they claimed to.
 
 **Architecture:** No new modules. This plan fixes five existing files in `packages/core` and `packages/db`, plus a migration, and adds tests that **fail when the property they cover breaks** — which the current tests don't do.

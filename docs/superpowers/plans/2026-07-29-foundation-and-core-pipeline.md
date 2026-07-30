@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical record.** This plan describes work that is complete. The code has moved on since
+> it was written — most visibly, the codebase was translated to English after these tasks landed,
+> so the Indonesian strings in the code samples below are what was built at the time, not what is
+> in the repository now. Read it for the reasoning behind a decision; read the code for what the
+> code does.
+
+
 **Goal:** Build the monorepo, a database layer with tenant isolation enforced by Postgres, and a single-skill answering pipeline that refuses to answer unsourced business claims.
 
 **Architecture:** `@quidchat/db` holds the Drizzle schema, migrations, and a two-tier connection factory (PGlite / postgres); the embedded-postgres tier is a process-lifecycle concern that belongs to the `quidchat serve` plan and will reuse `kind: "postgres"` once the process is running. `@quidchat/core` is a pure library with no HTTP and no access to `process.env`; it receives `Store` and `Provider` as injected dependencies so it can be tested without a database and without a network. The pipeline runs as fixed stages — retrieve, generate, validate — with a maximum of two retrieval rounds.

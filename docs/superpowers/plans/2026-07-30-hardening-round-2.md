@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical record.** This plan describes work that is complete. The code has moved on since
+> it was written — most visibly, the codebase was translated to English after these tasks landed,
+> so the Indonesian strings in the code samples below are what was built at the time, not what is
+> in the repository now. Read it for the reasoning behind a decision; read the code for what the
+> code does.
+
+
 **Goal:** Close two tenant-isolation attacks that still succeed, one RRF parameter defect that subordinates the keyword path, and four claims that aren't yet pinned by a test.
 
 **Architecture:** No new module. Fixes to the migration, `store.ts`, `tenant.ts`, and an expansion of the isolation tests to cover **writes**, not just reads.

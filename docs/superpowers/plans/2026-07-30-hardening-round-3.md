@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical record.** This plan describes work that is complete. The code has moved on since
+> it was written — most visibly, the codebase was translated to English after these tasks landed,
+> so the Indonesian strings in the code samples below are what was built at the time, not what is
+> in the repository now. Read it for the reasoning behind a decision; read the code for what the
+> code does.
+
+
 **Goal:** Close isolation holes that will open the moment the next features add views, functions, another schema, or partitioned tables — and pin four claims that currently can be broken with no test failing.
 
 **Architecture:** No new module. Expand the migration guard so it's no longer looking only at plain tables in the `public` schema, revoke privileges the application role shouldn't have, and strengthen tests that have been measuring the wrong thing.

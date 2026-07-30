@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical record.** This plan describes work that is complete. The code has moved on since
+> it was written — most visibly, the codebase was translated to English after these tasks landed,
+> so the Indonesian strings in the code samples below are what was built at the time, not what is
+> in the repository now. Read it for the reasoning behind a decision; read the code for what the
+> code does.
+
+
 **Goal:** Let a business put its own content into QuidChat — pasted text, an uploaded file, or a crawled URL — chunked, embedded, and retrievable, so the assistant has something to answer from.
 
 **Architecture:** New package `packages/ingest`. Pure functions for chunking, a small orchestrator that writes through `Store`, and a crawler kept deliberately narrow. Embedding comes from the `Provider` already in place.

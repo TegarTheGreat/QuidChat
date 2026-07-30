@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical record.** This plan describes work that is complete. The code has moved on since
+> it was written — most visibly, the codebase was translated to English after these tasks landed,
+> so the Indonesian strings in the code samples below are what was built at the time, not what is
+> in the repository now. Read it for the reasoning behind a decision; read the code for what the
+> code does.
+
+
 **Goal:** One `@quidchat/providers` package that covers every LLM provider and router with a setup that's as close to zero-configuration as possible, plus closes two debts recorded in spec §11.5.
 
 **Architecture:** `packages/core` stays a pure library — no network, no `process.env`. A new `packages/providers` package is allowed both. One OpenAI-compatible adapter covers the majority of services because almost every router speaks that wire format; Anthropic gets a native adapter because its prompt caching is different and the project's whole cost story depends on it.
