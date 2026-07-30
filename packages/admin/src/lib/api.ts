@@ -124,7 +124,12 @@ export interface Conversation {
 export interface Escalation {
   id: string
   reason: string
-  createdAt: string
+  /** When the assistant gave up, not when the conversation started — the two differ whenever
+   *  one conversation escalates more than once, and this list is read newest first. */
+  occurredAt: string
+  resolvedAt: string | null
+  /** The customer's last question. Null only for an escalation recorded without one. */
+  question: string | null
   conversationId?: string
 }
 

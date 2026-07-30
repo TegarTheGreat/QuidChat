@@ -1,5 +1,6 @@
 import { sendMessage as defaultSendMessage, type ChatResponse, type Segment } from "./api.js"
 import type { WidgetConfig } from "./config.js"
+import { DEFAULT_THEME, type WidgetTheme } from "./theme.js"
 
 export type UiDeps = {
   sendMessage: typeof defaultSendMessage
@@ -8,23 +9,34 @@ export type UiDeps = {
 const DEFAULT_DEPS: UiDeps = { sendMessage: defaultSendMessage }
 
 /*
- * Every user-facing string below is hardcoded English for now — the launcher label,
- * the placeholder, the dialog title. None of it is the greeting or the refusal
- * (those come from the server, per tenant); it is UI chrome. It belongs in tenant
- * configuration eventually (see `tenant_settings.widget_theme`, extended in a later
- * task), but that isn't wired up yet.
+ * Every user-facing string below is hardcoded English — the launcher label, the
+ * placeholder, the close/send labels. None of it is the greeting or the refusal
+ * (those come from the server, per tenant); it is UI chrome that stays the same for
+ * every tenant. The one exception is the dialog title, which is no longer here: it
+ * comes from `theme.title` (see `theme.ts` and `mountWidget`'s `theme` parameter)
+ * because that field of `tenant_settings.widget_theme` is exactly the kind of thing
+ * a business reasonably wants to change — everything else below is not.
  */
 const STRINGS = {
   launcherLabel: "Open chat assistant",
   closeLabel: "Close chat",
-  dialogLabel: "Chat assistant",
   inputLabel: "Message",
   inputPlaceholder: "Type your message…",
   sendLabel: "Send message",
   typing: "Assistant is typing…",
 }
 
-const STYLE = `
+/**
+ * `theme.primaryColor` and `theme.position` are the only two values interpolated
+ * into this CSS text. Both are safe to interpolate directly because `sanitizeTheme`
+ * (see `theme.ts`) already constrains them to a strict pattern before this function
+ * ever sees them — `primaryColor` to hex/rgb()/a fixed name, `position` to the
+ * literal `"left"` or `"right"` — so neither can contain a `;`, a `}`, or anything
+ * else that could close this declaration and inject further rules.
+ */
+function buildStyle(theme: WidgetTheme): string {
+  const side = theme.position
+  return `
   :host {
     all: initial;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -32,13 +44,13 @@ const STYLE = `
   * { box-sizing: border-box; }
   .launcher {
     position: fixed;
-    right: 20px;
+    ${side}: 20px;
     bottom: 20px;
     width: 56px;
     height: 56px;
     border-radius: 50%;
     border: none;
-    background: #1a56db;
+    background: ${theme.primaryColor};
     color: #fff;
     font-size: 24px;
     cursor: pointer;
@@ -46,7 +58,7 @@ const STYLE = `
   }
   .panel {
     position: fixed;
-    right: 20px;
+    ${side}: 20px;
     bottom: 88px;
     width: 320px;
     max-width: calc(100vw - 40px);
@@ -65,7 +77,7 @@ const STYLE = `
     justify-content: space-between;
     align-items: center;
     padding: 12px 16px;
-    background: #1a56db;
+    background: ${theme.primaryColor};
     color: #fff;
   }
   .header-title { font-weight: 600; font-size: 14px; }
@@ -95,7 +107,7 @@ const STYLE = `
   }
   .message p { margin: 0 0 4px 0; }
   .message p:last-child { margin-bottom: 0; }
-  .message.visitor { align-self: flex-end; background: #1a56db; color: #fff; }
+  .message.visitor { align-self: flex-end; background: ${theme.primaryColor}; color: #fff; }
   .message.assistant { align-self: flex-start; background: #f1f3f5; color: #111; }
   .message.error { align-self: flex-start; background: #fdecec; color: #92140c; }
   .citation { font-size: 12px; opacity: 0.7; }
@@ -118,7 +130,7 @@ const STYLE = `
   .send {
     border: none;
     border-radius: 8px;
-    background: #1a56db;
+    background: ${theme.primaryColor};
     color: #fff;
     padding: 0 14px;
     cursor: pointer;
@@ -126,6 +138,7 @@ const STYLE = `
   }
   .send:disabled { opacity: 0.5; cursor: default; }
 `
+}
 
 /** Appends one `business_claim` or `general` segment as a paragraph inside `bubble`.
  *  A `business_claim` also gets a visible citation line right below it — never a
@@ -168,17 +181,25 @@ function appendSegment(
  * Mounts the widget into `container` (which the caller has already inserted into
  * the document) using a shadow root for style isolation. `deps` defaults to the
  * real API client; tests inject a fake one so the UI tests never touch `fetch`.
+ *
+ * `theme` defaults to `DEFAULT_THEME` — the widget's original hardcoded look — so
+ * every existing caller and test that only passes `container`/`config`/`deps`
+ * keeps rendering exactly as before. The caller (`index.ts`) is the one that
+ * awaits `fetchWidgetTheme` and passes the resolved value in; `mountWidget` itself
+ * stays synchronous and never touches the network, which is what keeps it easy to
+ * unit-test with a plain fake `deps`.
  */
 export function mountWidget(
   container: HTMLElement,
   config: WidgetConfig,
   deps: UiDeps = DEFAULT_DEPS,
+  theme: WidgetTheme = DEFAULT_THEME,
 ): void {
   const doc = container.ownerDocument
   const shadow = container.attachShadow({ mode: "open" })
 
   const style = doc.createElement("style")
-  style.textContent = STYLE
+  style.textContent = buildStyle(theme)
   shadow.appendChild(style)
 
   const launcher = doc.createElement("button")
@@ -192,14 +213,14 @@ export function mountWidget(
   panel.className = "panel"
   panel.setAttribute("role", "dialog")
   panel.setAttribute("aria-modal", "true")
-  panel.setAttribute("aria-label", STRINGS.dialogLabel)
+  panel.setAttribute("aria-label", theme.title)
   panel.hidden = true
 
   const header = doc.createElement("div")
   header.className = "header"
   const title = doc.createElement("span")
   title.className = "header-title"
-  title.textContent = STRINGS.dialogLabel
+  title.textContent = theme.title
   const closeButton = doc.createElement("button")
   closeButton.className = "close"
   closeButton.setAttribute("aria-label", STRINGS.closeLabel)

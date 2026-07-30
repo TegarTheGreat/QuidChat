@@ -1,4 +1,5 @@
 import { readConfig } from "./config.js"
+import { fetchWidgetTheme } from "./theme.js"
 import { mountWidget } from "./ui.js"
 
 /** `document.currentScript` is only reliable while this module's top-level code is
@@ -18,14 +19,18 @@ function currentScript(): HTMLScriptElement {
 const script = currentScript()
 const config = readConfig(script)
 
-function init(): void {
+// `fetchWidgetTheme` never throws and never returns nothing — offline, an unknown
+// tenant, or a server too old to have the route all resolve to `DEFAULT_THEME` —
+// so there is no failure path here to handle beyond letting it resolve.
+async function init(): Promise<void> {
+  const theme = await fetchWidgetTheme(config)
   const container = document.createElement("div")
   document.body.appendChild(container)
-  mountWidget(container, config)
+  mountWidget(container, config, undefined, theme)
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init)
+  document.addEventListener("DOMContentLoaded", () => void init())
 } else {
-  init()
+  void init()
 }
