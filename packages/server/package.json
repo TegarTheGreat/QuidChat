@@ -12,6 +12,7 @@
   "dependencies": {
     "@quidchat/core": "workspace:*",
     "@quidchat/db": "workspace:*",
+    "@quidchat/ingest": "workspace:*",
     "drizzle-orm": "0.45.2"
   }
 }
