@@ -19,8 +19,6 @@ function fakeFetch(reply: { status?: number; json?: unknown; body?: string }) {
   return { impl, records }
 }
 
-// Prompt content is deliberately Indonesian: it represents real customer-facing
-// business copy for the target market, not code.
 const prompt = {
   system: "kamu asisten",
   history: [{ role: "user" as const, content: "halo" }],
@@ -39,24 +37,23 @@ const validAnswer = {
 }
 
 describe("openAiCompatible", () => {
-  it("sends system, history, and the current turn in that order", async () => {
+  it("mengirim system, history, dan turn sekarang dalam urutan itu", async () => {
     const { impl, records } = fakeFetch({ json: validAnswer })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
     await p.complete({ model: "m", prompt })
 
     expect(records[0]!.url).toBe("https://example.test/v1/chat/completions")
     const messages = records[0]!.body.messages as { role: string; content: string }[]
-    // This order is not a matter of taste: LLM caching is prefix-based, so stable
-    // content must come first and volatile content last. Swapping any two of these
-    // invalidates the cache on every message with no error at all — exactly the
-    // regression the mandatory ordering test #3 in packages/core guards against.
+    // Urutannya BUKAN selera: cache LLM berbasis prefix, jadi yang stabil wajib di depan
+    // dan yang volatil di belakang. Membalik ini membatalkan cache setiap pesan tanpa
+    // error apa pun — persis regresi yang test wajib #3 di packages/core menjaga.
     expect(messages.map((m) => m.role)).toEqual(["system", "user", "user"])
     expect(messages[0]!.content).toBe("kamu asisten")
     expect(messages[1]!.content).toBe("halo")
     expect(messages[2]!.content).toContain("Pertanyaan pelanggan: garansi?")
   })
 
-  it("parses a structured answer and reports token usage", async () => {
+  it("mengurai jawaban terstruktur dan melaporkan pemakaian token", async () => {
     const { impl } = fakeFetch({ json: validAnswer })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
     const result = await p.complete({ model: "m", prompt })
@@ -65,14 +62,14 @@ describe("openAiCompatible", () => {
     expect(result.usage.outputTokens).toBe(20)
   })
 
-  it("carries the key in the Authorization header", async () => {
+  it("membawa kunci di header Authorization", async () => {
     const { impl, records } = fakeFetch({ json: validAnswer })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "secret", fetchImpl: impl })
     await p.complete({ model: "m", prompt })
     expect(records[0]!.headers.Authorization).toBe("Bearer secret")
   })
 
-  it("maps HTTP status codes to the correct ProviderError cause", async () => {
+  it("memetakan status HTTP ke sebab ProviderError yang benar", async () => {
     const cases: [number, string][] = [
       [401, "auth"], [403, "auth"], [404, "unknown_model"],
       [429, "rate_limit"], [500, "unavailable"], [503, "unavailable"],
@@ -87,10 +84,9 @@ describe("openAiCompatible", () => {
     }
   })
 
-  it("a non-JSON response becomes cause `schema`, not `unavailable`", async () => {
-    // The distinction matters: `schema` records `schema_invalid` in escalations,
-    // which correctly signals that the model failed to follow the format.
-    // `unavailable` would record something else entirely.
+  it("balasan yang bukan JSON menjadi sebab `schema`, bukan `unavailable`", async () => {
+    // Bedanya penting: `schema` mencatat `schema_invalid` di escalations dan itu MEMANG
+    // sinyal bahwa model gagal mematuhi format. `unavailable` mencatat hal lain.
     const { impl } = fakeFetch({ json: { choices: [{ message: { content: "maaf, bukan JSON" } }] } })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
     await p.complete({ model: "m", prompt }).catch((e: unknown) => {
@@ -98,7 +94,7 @@ describe("openAiCompatible", () => {
     })
   })
 
-  it("rejects JSON whose shape is not an Answer", async () => {
+  it("menolak JSON yang bentuknya bukan Answer", async () => {
     const { impl } = fakeFetch({
       json: { choices: [{ message: { content: JSON.stringify({ not: "segments" }) } }] },
     })
@@ -108,7 +104,7 @@ describe("openAiCompatible", () => {
     })
   })
 
-  it("embed returns the vector from the embeddings endpoint", async () => {
+  it("embed mengembalikan vektor dari endpoint embeddings", async () => {
     const { impl, records } = fakeFetch({ json: { data: [{ embedding: [0.1, 0.2, 0.3] }] } })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
     const v = await p.embed({ model: "e", text: "halo" })
@@ -116,14 +112,14 @@ describe("openAiCompatible", () => {
     expect(records[0]!.url).toBe("https://example.test/v1/embeddings")
   })
 
-  it("generateText returns the text as-is, without parsing JSON", async () => {
+  it("generateText mengembalikan teks apa adanya, tanpa mengurai JSON", async () => {
     const { impl } = fakeFetch({ json: { choices: [{ message: { content: "garansi berapa bulan" } }] } })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1", apiKey: "k", fetchImpl: impl })
     const t = await p.generateText({ model: "m", system: "tulis ulang", user: "garansi?" })
     expect(t).toBe("garansi berapa bulan")
   })
 
-  it("a trailing slash in baseUrl does not produce a doubled-up URL", async () => {
+  it("baseUrl bergaris miring di ujung tidak menghasilkan URL berganda", async () => {
     const { impl, records } = fakeFetch({ json: validAnswer })
     const p = openAiCompatible({ id: "test", baseUrl: "https://example.test/v1/", apiKey: "k", fetchImpl: impl })
     await p.complete({ model: "m", prompt })
