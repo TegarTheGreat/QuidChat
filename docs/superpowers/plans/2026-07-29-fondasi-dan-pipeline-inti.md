@@ -1545,6 +1545,22 @@ import { sql } from "drizzle-orm"
 import type { QuidDb } from "./client.js"
 import { withTenant } from "./tenant.js"
 
+/**
+ * Menyeragamkan hasil `execute()` yang bentuknya BERBEDA antar driver:
+ * driver PGlite mengembalikan objek ber-`rows`, sedangkan driver postgres-js
+ * mengembalikan hasil `client.unsafe()` yang berupa Array (dengan properti
+ * tambahan seperti `count` dan `command`, tapi TANPA `.rows`).
+ *
+ * Tanpa penyeragaman ini, mengakses `.rows` langsung akan bekerja di seluruh
+ * test — yang memakai PGlite — lalu menghasilkan `undefined` di tier 3 yang
+ * memakai postgres-js. Bug yang lolos setiap test dan hanya muncul di produksi.
+ */
+function rowsOf(res: unknown): Record<string, unknown>[] {
+  return Array.isArray(res)
+    ? (res as Record<string, unknown>[])
+    : ((res as { rows?: Record<string, unknown>[] }).rows ?? [])
+}
+
 export function createStore(db: QuidDb): Store {
   return {
     async getTenantConfig(tenantId: string): Promise<TenantConfig> {
@@ -1553,7 +1569,7 @@ export function createStore(db: QuidDb): Store {
           SELECT chat_model, rewrite_model, refusal_text, high_risk_topics
           FROM tenant_settings WHERE tenant_id = ${tenantId}
         `)
-        const row = (res as unknown as { rows: Record<string, unknown>[] }).rows[0]
+        const row = rowsOf(res)[0]
         if (!row) throw new Error(`tenant_settings tidak ditemukan: ${tenantId}`)
         return {
           chatModel: row.chat_model as string,
@@ -1582,8 +1598,7 @@ export function createStore(db: QuidDb): Store {
           ) DESC
           LIMIT ${limit}
         `)
-        const rows = (res as unknown as { rows: Record<string, unknown>[] }).rows
-        return rows.map((r) => ({
+        return rowsOf(res).map((r) => ({
           id: r.id as string,
           content: r.content as string,
           documentTitle: r.title as string,
@@ -1599,7 +1614,7 @@ export function createStore(db: QuidDb): Store {
           VALUES (${tenantId}, ${conversationId}, 'assistant', ${text})
           RETURNING id
         `)
-        const messageId = (res as unknown as { rows: { id: string }[] }).rows[0]!.id
+        const messageId = rowsOf(res)[0]!.id as string
         for (const chunkId of citedChunkIds) {
           await tx.execute(sql`
             INSERT INTO message_citations (message_id, chunk_id)
