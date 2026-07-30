@@ -90,11 +90,9 @@ Guard yang ada hanya memeriksa *ada* policy, bukan bahwa policy itu men-scope. S
 Di `packages/db/migrations/0001_init.sql`, ganti seluruh blok guard di akhir berkas dengan:
 
 ```sql
--- Guard: setiap tabel ber-`tenant_id` wajib RLS aktif DAN forced, punya policy, DAN
--- policy itu wajib benar-benar menyebut current_tenant_id(). Pemeriksaan terakhir itu
--- yang membedakan "ada policy" dari "ada policy yang men-scope": `USING (true)` adalah
--- policy yang sah dan sama sekali tidak mengisolasi.
-DO $guard$
+-- Guard bagian 1: setiap tabel ber-`tenant_id` wajib RLS aktif DAN forced, dan wajib
+-- punya setidaknya satu policy.
+DO $guard1$
 DECLARE bad text;
 BEGIN
   SELECT string_agg(format('%s (%s)', t.nama, t.alasan), ', ') INTO bad
@@ -107,11 +105,6 @@ BEGIN
                SELECT 1 FROM pg_policies p
                WHERE p.schemaname = 'public' AND p.tablename = c.relname
              ) THEN 'tanpa policy'
-             WHEN NOT EXISTS (
-               SELECT 1 FROM pg_policies p
-               WHERE p.schemaname = 'public' AND p.tablename = c.relname
-                 AND p.qual LIKE '%current_tenant_id()%'
-             ) THEN 'policy tidak menyebut current_tenant_id()'
            END AS alasan
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind = 'r'
@@ -125,10 +118,63 @@ BEGIN
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'RLS tidak lengkap: %', bad;
   END IF;
-END $guard$;
+END $guard1$;
+
+-- Guard bagian 2: SETIAP policy permissive pada tabel ber-`tenant_id` wajib menyebut
+-- current_tenant_id(). Memeriksa "ada satu policy yang men-scope" TIDAK CUKUP: Postgres
+-- menggabungkan policy permissive dengan OR, jadi satu `USING (true)` yang ditambahkan di
+-- samping policy yang benar meruntuhkan isolasi sementara policy yang benar tetap ada.
+-- Diukur di PGlite: serangan itu mengubah 1 baris menjadi 2, dan versi guard yang hanya
+-- memeriksa keberadaan TETAP LOLOS.
+DO $guard2$
+DECLARE bad text;
+BEGIN
+  SELECT string_agg(format('%s.%s', p.tablename, p.policyname), ', ') INTO bad
+  FROM pg_policies p
+  JOIN pg_class c ON c.relname = p.tablename
+  JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+  WHERE p.schemaname = 'public'
+    AND p.permissive = 'PERMISSIVE'
+    AND EXISTS (
+      SELECT 1 FROM information_schema.columns col
+      WHERE col.table_schema = 'public' AND col.table_name = p.tablename
+        AND col.column_name = 'tenant_id'
+    )
+    AND (p.qual IS NULL OR p.qual NOT LIKE '%current_tenant_id()%');
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'policy permissive tanpa current_tenant_id(): %', bad;
+  END IF;
+END $guard2$;
 ```
 
-Sudah diverifikasi: lolos pada skema sekarang, dan menolak ketika RLS salah satu tabel dimatikan.
+Sudah diverifikasi: keduanya lolos pada skema sekarang, dan **menolak** serangan policy
+bocor berdampingan. Versi yang hanya memeriksa keberadaan policy yang men-scope TIDAK
+menolaknya — itu ditemukan dengan menjalankan serangannya, bukan dengan membacanya.
+
+- [ ] **Step 2b: Buat `getTenantConfig` menolak pembacaan ambigu**
+
+Menghapus `WHERE` itu benar, tapi meninggalkan celah: kalau policy bocor, query-nya
+mengembalikan beberapa baris dan kode diam-diam mengambil yang pertama — yang bisa milik
+tenant lain. Karena setelan default setiap tenant identik di instalasi baru, test yang
+memeriksa `chatModel` tidak akan menyadarinya.
+
+Di `packages/db/src/store.ts`, di dalam `getTenantConfig`:
+
+```ts
+        const rows = rowsOf(res)
+        if (rows.length === 0) throw new Error(`tenant_settings tidak ditemukan: ${tenantId}`)
+        // Lebih dari satu baris berarti RLS sedang TIDAK mengisolasi — di bawah policy yang
+        // benar, `SELECT` tanpa `WHERE` di dalam withTenant() hanya bisa melihat satu baris.
+        if (rows.length > 1) {
+          throw new Error(
+            `isolasi tenant gagal: tenant_settings mengembalikan ${rows.length} baris untuk satu tenant`,
+          )
+        }
+        const row = rows[0]!
+```
+
+Ini **assertion invariant**, bukan filter aplikasi: ia tidak mempersempit query, ia menolak
+melanjutkan ketika hasil query membuktikan RLS rusak.
 
 - [ ] **Step 3: Buat `quidchat_app` benar-benar bisa dipakai di tier 3**
 
