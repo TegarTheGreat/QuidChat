@@ -2,6 +2,7 @@ import { createServer as createHttpServer, type IncomingMessage, type Server, ty
 import type { Provider, Store } from "@quidchat/core"
 import { createStore, type QuidDb } from "@quidchat/db"
 import { handleAdminRequest } from "./admin.js"
+import { handleChannelWebhook } from "./channels.js"
 import { handleChat } from "./chat.js"
 import { handleWidgetAsset } from "./widget-asset.js"
 
@@ -67,6 +68,19 @@ export function createServer(deps: ServerDeps): Server {
       handleWidgetAsset(res).catch((e: unknown) => {
         logError("unhandled error serving widget bundle", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
+      })
+      return
+    }
+
+    if (pathname.startsWith("/channels/")) {
+      handleChannelWebhook(req, res, pathname, {
+        db: deps.db, store, provider: deps.provider, env, logError,
+      }).catch((e: unknown) => {
+        logError("unhandled error in channel webhook", e)
+        // Still a 200: every one of these platforms retries a non-2xx webhook, and a
+        // retry would re-answer a question that may already have been answered and
+        // billed.
+        if (!res.headersSent) sendJson(res, 200, { status: "error" })
       })
       return
     }

@@ -190,6 +190,9 @@ importers:
 
   packages/server:
     dependencies:
+      '@quidchat/channels':
+        specifier: workspace:*
+        version: link:../channels
       '@quidchat/core':
         specifier: workspace:*
         version: link:../core

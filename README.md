@@ -65,6 +65,23 @@ Ask something it has no source for and you get a refusal, not an invention:
 
 A refusal is a `200`. It is the product working, not failing.
 
+## Channels
+
+The website widget works out of the box. The others are opt-in — absent credentials mean the webhook route returns `404`, because a business that only uses the widget should not have a live unauthenticated WhatsApp endpoint on its server.
+
+Point the platform at `POST /v1/channels/:channel/:tenantSlug`.
+
+| Channel | Variables |
+|---|---|
+| Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_SECRET_TOKEN` |
+| WhatsApp Cloud | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET` |
+| WAHA (self-hosted WhatsApp) | `WAHA_BASE_URL`, `WAHA_SESSION`, `WAHA_API_KEY` |
+| Discord | `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY` |
+
+Set the signature secret. Verification runs before anything is parsed or stored, so a forged request never reaches the pipeline — without it, anyone who learns the URL can put words in a business's conversation history and spend its budget.
+
+Every channel goes through the identical pipeline. Routing, retrieval, grounding, refusal and spend behave exactly as they do on the website, because the promise the product makes does not change with the transport.
+
 ## Providers
 
 Set one key. QuidChat finds it, tells you what it picked, and refuses to start if nothing usable is configured — rather than failing later on a customer's question.
