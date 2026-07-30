@@ -226,17 +226,21 @@ BEGIN
   SELECT string_agg(format('%s: %s', t.nama, a.alasan), ' | ') INTO bad
   FROM (
     SELECT c.relname AS nama,
+           n.nspname AS skema,
            -- Kunci tenant tabel ini: `tenant_id` bila ada, kalau tidak `id`.
            -- `tenants` memakai `id` karena ia SENDIRI adalah tenant-nya.
            CASE WHEN EXISTS (
              SELECT 1 FROM information_schema.columns col
-             WHERE col.table_schema = 'public' AND col.table_name = c.relname
+             WHERE col.table_schema = n.nspname AND col.table_name = c.relname
                AND col.column_name = 'tenant_id'
            ) THEN 'tenant_id' ELSE 'id' END AS kunci,
            c.relrowsecurity AS rls_aktif,
            c.relforcerowsecurity AS rls_forced
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public' AND c.relkind = 'r'
+    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+      AND n.nspname NOT LIKE 'pg_temp%'
+      AND n.nspname NOT LIKE 'pg_toast_temp%'
+      AND c.relkind IN ('r', 'p')   -- 'p' = tabel terpartisi; parent-nya BUKAN 'r'
   ) t
   CROSS JOIN LATERAL (
     SELECT format('(%s = current_tenant_id())', t.kunci) AS harapan
@@ -247,21 +251,26 @@ BEGIN
         WHEN NOT (t.rls_aktif AND t.rls_forced) THEN 'RLS tidak aktif atau tidak forced'
         WHEN NOT EXISTS (
           SELECT 1 FROM pg_policies p
-          WHERE p.schemaname = 'public' AND p.tablename = t.nama
+          WHERE p.schemaname = t.skema AND p.tablename = t.nama
         ) THEN 'tanpa policy'
         WHEN EXISTS (
           SELECT 1 FROM pg_policies p
-          WHERE p.schemaname = 'public' AND p.tablename = t.nama
+          WHERE p.schemaname = t.skema AND p.tablename = t.nama
             AND p.permissive = 'PERMISSIVE'
-            AND coalesce(p.qual, '') <> h.harapan
+            AND p.qual IS NOT NULL AND p.qual <> h.harapan
         ) THEN format('ada policy permissive dengan qual bukan %s', h.harapan)
         WHEN EXISTS (
           SELECT 1 FROM pg_policies p
-          WHERE p.schemaname = 'public' AND p.tablename = t.nama
+          WHERE p.schemaname = t.skema AND p.tablename = t.nama
             AND p.permissive = 'PERMISSIVE'
-            AND p.with_check IS NOT NULL
-            AND p.with_check <> h.harapan
+            AND p.with_check IS NOT NULL AND p.with_check <> h.harapan
         ) THEN format('ada policy permissive dengan with_check bukan %s', h.harapan)
+        WHEN NOT EXISTS (
+          SELECT 1 FROM pg_policies p
+          WHERE p.schemaname = t.skema AND p.tablename = t.nama
+            AND p.permissive = 'PERMISSIVE'
+            AND (p.qual = h.harapan OR p.with_check = h.harapan)
+        ) THEN 'tidak ada policy permissive yang men-scope ke tenant'
       END AS alasan
   ) a
   WHERE a.alasan IS NOT NULL;
@@ -270,3 +279,63 @@ BEGIN
     RAISE EXCEPTION 'isolasi tenant tidak lengkap -> %', bad;
   END IF;
 END $guard_isolasi$;
+
+-- View dan matview TIDAK punya RLS sendiri. Sebuah view berjalan dengan hak PEMILIKNYA
+-- kecuali dibuat `WITH (security_invoker = true)`, dan defaultnya MATI. Terukur: satu
+-- view sederhana di atas `conversations` membuat tenant A melihat pesan tenant B.
+--
+-- Matview lebih buruk: `security_invoker` tidak berlaku padanya sama sekali, jadi satu-
+-- satunya cara aman adalah tidak memberi hak SELECT kepada role aplikasi.
+DO $guard_view$
+DECLARE bad text;
+BEGIN
+  SELECT string_agg(format('%s.%s', n.nspname, c.relname), ', ') INTO bad
+  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+    AND c.relkind = 'v'
+    AND has_table_privilege('quidchat_app', c.oid, 'SELECT')
+    AND NOT coalesce(
+      (SELECT option_value = 'true' FROM pg_options_to_table(c.reloptions)
+       WHERE option_name = 'security_invoker'), false);
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION
+      'view tanpa security_invoker=true tapi bisa dibaca quidchat_app -> %; RLS pemanggil TIDAK berlaku di sana',
+      bad;
+  END IF;
+END $guard_view$;
+
+DO $guard_matview$
+DECLARE bad text;
+BEGIN
+  SELECT string_agg(format('%s.%s', n.nspname, c.relname), ', ') INTO bad
+  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+    AND c.relkind = 'm'
+    AND has_table_privilege('quidchat_app', c.oid, 'SELECT');
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION
+      'materialized view bisa dibaca quidchat_app -> %; matview tidak mendukung security_invoker, jadi hak SELECT-nya harus dicabut',
+      bad;
+  END IF;
+END $guard_matview$;
+
+-- Fungsi SECURITY DEFINER berjalan sebagai pembuatnya, jadi ia menembus RLS. Dan
+-- `EXECUTE` diberikan ke PUBLIC secara DEFAULT — tanpa GRANT apa pun, role aplikasi
+-- sudah boleh memanggilnya. Terukur: satu fungsi dashboard mengembalikan hitungan pesan
+-- kedua tenant.
+--
+-- `current_tenant_id()` sendiri dikecualikan: ia memang perlu ada dan ia INVOKER.
+DO $guard_secdef$
+DECLARE bad text;
+BEGIN
+  SELECT string_agg(format('%s.%s', n.nspname, p.proname), ', ') INTO bad
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+    AND p.prosecdef
+    AND has_function_privilege('quidchat_app', p.oid, 'EXECUTE');
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION
+      'fungsi SECURITY DEFINER bisa dijalankan quidchat_app -> %; fungsi seperti itu menembus RLS',
+      bad;
+  END IF;
+END $guard_secdef$;

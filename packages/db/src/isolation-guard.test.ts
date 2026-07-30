@@ -145,6 +145,61 @@ describe("isolasi tenant di bawah serangan", () => {
     await db.execute(sql`ALTER TABLE chunks ENABLE ROW LEVEL SECURITY`)
     await db.execute(sql`ALTER TABLE chunks FORCE ROW LEVEL SECURITY`)
   })
+
+  it("guard MENOLAK tabel baru tanpa RLS", async () => {
+    // Memaku ENUMERASI guard, bukan isinya. Kalau guard ditulis ulang menjadi daftar
+    // keras nama tabel, kedelapan test serangan lain TETAP hijau — semuanya menyasar
+    // tabel yang terdaftar. Test inilah yang menangkapnya, dan ia juga menutup skenario
+    // paling mungkin di dunia nyata: migrasi berikutnya menambahkan tabel dan lupa RLS.
+    await db.execute(sql`CREATE TABLE lupa_rls (tenant_id uuid NOT NULL, isi text)`)
+    await expect(db.execute(sql.raw(guard))).rejects.toThrow()
+    await db.execute(sql`DROP TABLE lupa_rls`)
+  })
+
+  it("guard MENOLAK tabel di skema lain tanpa RLS", async () => {
+    // Serangan yang terukur bocor BACA DAN TULIS: `analytics.leads`.
+    await db.execute(sql`CREATE SCHEMA analytics`)
+    await db.execute(sql`CREATE TABLE analytics.leads (tenant_id uuid NOT NULL, catatan text)`)
+    await expect(db.execute(sql.raw(guard))).rejects.toThrow()
+    await db.execute(sql`DROP SCHEMA analytics CASCADE`)
+  })
+
+  it("guard MENOLAK tabel terpartisi tanpa RLS", async () => {
+    // Parent tabel terpartisi ber-relkind 'p', bukan 'r', jadi guard lama tidak pernah
+    // melihatnya dan `USING (true)` di sana lolos.
+    await db.execute(sql`
+      CREATE TABLE audit_log (tenant_id uuid NOT NULL, saat timestamptz NOT NULL)
+      PARTITION BY RANGE (saat)
+    `)
+    await expect(db.execute(sql.raw(guard))).rejects.toThrow()
+    await db.execute(sql`DROP TABLE audit_log`)
+  })
+
+  it("guard MENOLAK view yang bisa dibaca app role tanpa security_invoker", async () => {
+    const guardView = blokGuard("guard_view")
+    await db.execute(sql`CREATE VIEW ringkasan AS SELECT tenant_id, visitor_id FROM conversations`)
+    await db.execute(sql`GRANT SELECT ON ringkasan TO quidchat_app`)
+    await expect(db.execute(sql.raw(guardView))).rejects.toThrow()
+    // Dan dengan security_invoker menyala, guard-nya lolos.
+    await db.execute(sql`DROP VIEW ringkasan`)
+    await db.execute(sql`
+      CREATE VIEW ringkasan WITH (security_invoker = true) AS
+      SELECT tenant_id, visitor_id FROM conversations
+    `)
+    await db.execute(sql`GRANT SELECT ON ringkasan TO quidchat_app`)
+    await expect(db.execute(sql.raw(guardView))).resolves.toBeDefined()
+    await db.execute(sql`DROP VIEW ringkasan`)
+  })
+
+  it("guard MENOLAK fungsi SECURITY DEFINER yang bisa dijalankan app role", async () => {
+    const guardSecdef = blokGuard("guard_secdef")
+    await db.execute(sql`
+      CREATE FUNCTION bocor() RETURNS bigint LANGUAGE sql SECURITY DEFINER
+      AS 'SELECT count(*) FROM conversations'
+    `)
+    await expect(db.execute(sql.raw(guardSecdef))).rejects.toThrow()
+    await db.execute(sql`DROP FUNCTION bocor()`)
+  })
 })
 
 /**
