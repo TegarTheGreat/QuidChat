@@ -1,11 +1,34 @@
 import { validateGrounding } from "./grounding/validator.js"
 import { buildPrompt } from "./prompt/builder.js"
+import { ProviderError } from "./provider-error.js"
 import type { Provider } from "./provider.js"
 import type { Store } from "./store.js"
 import type { EscalationReason, PipelineResult } from "./types.js"
 
 const MAX_ROUNDS = 2
 const CANDIDATE_LIMIT = 8
+
+/**
+ * Menerjemahkan kegagalan provider ke alasan eskalasi. Bukan `schema_invalid` untuk
+ * semuanya — lihat `ProviderErrorKind` untuk alasan mengapa perbedaannya penting.
+ * Error yang BUKAN `ProviderError` diperlakukan sebagai tidak tersedia, bukan sebagai
+ * pelanggaran schema: kita tidak tahu sebabnya, dan menuduh model lebih buruk daripada
+ * mengakui ketidaktahuan.
+ */
+function alasanDari(e: unknown): EscalationReason {
+  if (e instanceof ProviderError) {
+    switch (e.kind) {
+      case "schema":
+        return "schema_invalid"
+      case "rate_limit":
+      case "unavailable":
+      case "auth":
+      case "unknown_model":
+        return "provider_unavailable"
+    }
+  }
+  return "provider_unavailable"
+}
 
 /**
  * Menjawab satu pertanyaan pelanggan, atau menolak.
@@ -59,8 +82,8 @@ export async function answer(args: {
   let embedding: number[]
   try {
     embedding = await provider.embed({ model: config.embeddingModel, text: question })
-  } catch {
-    return refuse("provider_unavailable")
+  } catch (e) {
+    return refuse(alasanDari(e))
   }
 
   const candidates = await store.searchChunks({
@@ -80,8 +103,8 @@ export async function answer(args: {
     let result
     try {
       result = await provider.complete({ model: config.chatModel, prompt })
-    } catch {
-      return refuse("schema_invalid")
+    } catch (e) {
+      return refuse(alasanDari(e))
     }
 
     const verdict = validateGrounding({

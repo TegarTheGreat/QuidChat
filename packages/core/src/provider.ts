@@ -25,8 +25,15 @@ export type CompleteResult = {
 
 export interface Provider {
   readonly id: string
-  /** Menghasilkan jawaban terstruktur. Melempar bila model gagal mematuhi schema. */
+  /** Menghasilkan jawaban terstruktur. Melempar `ProviderError` — lihat `ProviderErrorKind`. */
   complete(args: { model: string; prompt: PromptParts }): Promise<CompleteResult>
+  /**
+   * Penyelesaian teks biasa, tanpa schema. Dipakai untuk pekerjaan internal yang
+   * hasilnya bukan jawaban pelanggan — menulis ulang query pada ronde perbaikan,
+   * misalnya. Sengaja TIDAK mengembalikan `Answer`: keluarannya tidak pernah tayang
+   * ke pengunjung, jadi ia tidak perlu dan tidak boleh melewati validator grounding.
+   */
+  generateText(args: { model: string; system: string; user: string }): Promise<string>
   embed(args: { model: string; text: string }): Promise<number[]>
   capabilities(model: string): Promise<Capabilities>
 }

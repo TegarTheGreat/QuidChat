@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { answer } from "./pipeline.js"
+import { ProviderError, type ProviderErrorKind } from "./provider-error.js"
 import { FakeProvider, MemoryStore } from "./testing/fakes.js"
 import type { Provider } from "./provider.js"
-import type { Candidate } from "./types.js"
+import type { Candidate, EscalationReason } from "./types.js"
 
 const ctx = { tenantId: "t1", conversationId: "c1", history: [], question: "garansi berapa lama?" }
 const candidate: Candidate = {
@@ -100,19 +101,39 @@ describe("answer", () => {
     expect(provider.embedCalls).toHaveLength(1)
   })
 
-  it("menolak dengan schema_invalid saat provider melempar", async () => {
-    const store = new MemoryStore([candidate])
-    const provider: Provider = {
-      id: "broken",
-      complete: async () => { throw new Error("model tidak mematuhi schema") },
-      embed: async () => Array.from({ length: 1536 }, () => 0),
-      capabilities: async () => ({
-        contextWindow: 1, maxOutput: 1, tools: false, vision: false,
-        thinking: false, promptCaching: false as const,
-      }),
+  it("memetakan setiap sebab kegagalan provider ke alasan eskalasi yang benar", async () => {
+    // Test lama hanya membuktikan bahwa provider yang melempar menghasilkan
+    // `schema_invalid`. Itu justru cacatnya: 429 dan 503 pun dicatat begitu, dan
+    // pemilik bisnis yang membaca "model tidak mematuhi schema" akan menulis ulang
+    // basis pengetahuan yang bukan masalahnya.
+    const kasus: [ProviderErrorKind | "bukan-ProviderError", EscalationReason][] = [
+      ["schema", "schema_invalid"],
+      ["rate_limit", "provider_unavailable"],
+      ["unavailable", "provider_unavailable"],
+      ["auth", "provider_unavailable"],
+      ["unknown_model", "provider_unavailable"],
+      ["bukan-ProviderError", "provider_unavailable"],
+    ]
+
+    for (const [sebab, diharapkan] of kasus) {
+      const store = new MemoryStore([candidate])
+      const provider: Provider = {
+        id: "rusak",
+        complete: async () => {
+          throw sebab === "bukan-ProviderError"
+            ? new Error("sesuatu yang tidak kami kenali")
+            : new ProviderError(sebab, `gagal: ${sebab}`)
+        },
+        generateText: async () => "",
+        embed: async () => Array.from({ length: 1536 }, () => 0),
+        capabilities: async () => ({
+          contextWindow: 1, maxOutput: 1, tools: false, vision: false,
+          thinking: false, promptCaching: false as const,
+        }),
+      }
+      const res = await answer({ store, provider, ...ctx })
+      expect(res.kind).toBe("refused")
+      if (res.kind === "refused") expect(res.reason).toBe(diharapkan)
     }
-    const res = await answer({ store, provider, ...ctx })
-    expect(res.kind).toBe("refused")
-    if (res.kind === "refused") expect(res.reason).toBe("schema_invalid")
   })
 })

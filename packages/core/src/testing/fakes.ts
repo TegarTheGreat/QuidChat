@@ -53,6 +53,9 @@ export class FakeProvider implements Provider {
    *  dengan tepat biaya mana yang terjadi dan mana yang tidak. */
   calls: PromptParts[] = []
   embedCalls: string[] = []
+  textCalls: { system: string; user: string }[] = []
+  /** Balasan yang dikembalikan `generateText`, bisa disetel test. */
+  textReply = "pertanyaan yang ditulis ulang"
 
   constructor(private answers: Answer[]) {}
 
@@ -64,6 +67,11 @@ export class FakeProvider implements Provider {
       answer: next,
       usage: { inputTokens: 10, outputTokens: 5, cachedTokens: null },
     }
+  }
+
+  async generateText(args: { model: string; system: string; user: string }): Promise<string> {
+    this.textCalls.push({ system: args.system, user: args.user })
+    return this.textReply
   }
 
   async embed(args: { model: string; text: string }): Promise<number[]> {
