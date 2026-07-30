@@ -28,7 +28,7 @@ export type FakeCannedAnswer = {
  * noise. The shape the pipeline calls stays the same.
  */
 export class MemoryStore implements Store {
-  recordedAnswers: { segments: Segment[]; citedChunkIds: string[] }[] = []
+  recordedAnswers: { segments: Segment[]; citedChunkIds: string[]; skillId?: string }[] = []
   recordedEscalations: EscalationReason[] = []
   recordedUserTurns: string[] = []
   createdDocuments: { sourceId: string; title: string; url: string | undefined }[] = []
@@ -91,8 +91,16 @@ export class MemoryStore implements Store {
     return next
   }
 
-  async recordAnswer(args: { segments: Segment[]; citedChunkIds: string[] }): Promise<void> {
-    this.recordedAnswers.push({ segments: args.segments, citedChunkIds: args.citedChunkIds })
+  async recordAnswer(args: {
+    segments: Segment[]
+    citedChunkIds: string[]
+    skillId?: string
+  }): Promise<void> {
+    this.recordedAnswers.push({
+      segments: args.segments,
+      citedChunkIds: args.citedChunkIds,
+      ...(args.skillId ? { skillId: args.skillId } : {}),
+    })
   }
 
   async recordEscalation(args: { reason: EscalationReason }): Promise<void> {

@@ -61,6 +61,15 @@ export interface Store {
     conversationId: string
     segments: Segment[]
     citedChunkIds: string[]
+    /**
+     * Which skill produced this answer, when routing selected one.
+     *
+     * Optional because a tenant with no skills configured still answers, and forcing a
+     * value would mean inventing a fake "default skill" to mean "no routing happened".
+     * The admin panel needs it to show whether a question went where the owner intended —
+     * routing is configurable, and configuration you cannot observe is guesswork.
+     */
+    skillId?: string
   }): Promise<void>
 
   recordEscalation(args: {

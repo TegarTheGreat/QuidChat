@@ -106,6 +106,9 @@ export async function answer(args: {
       tenantId, conversationId,
       segments: [{ kind: "general", text: config.refusalText }],
       citedChunkIds: [],
+      // Recorded on refusals too: knowing WHICH skill could not answer is what tells an
+      // owner whether their routing sent the question to the wrong place.
+      ...(skill ? { skillId: skill.id } : {}),
     })
     return { kind: "refused", text: config.refusalText, reason, usage }
   }
@@ -116,7 +119,10 @@ export async function answer(args: {
   // from the runtime validator — so this deliberately never touches `validateGrounding`.
   const respondWithCanned = async (canned: { answer: string }): Promise<PipelineResult> => {
     const segments: Segment[] = [{ kind: "general", text: canned.answer }]
-    await store.recordAnswer({ tenantId, conversationId, segments, citedChunkIds: [] })
+    await store.recordAnswer({
+      tenantId, conversationId, segments, citedChunkIds: [],
+      ...(skill ? { skillId: skill.id } : {}),
+    })
     return { kind: "answered", segments, citations: [], usage }
   }
 
@@ -259,6 +265,7 @@ export async function answer(args: {
         tenantId, conversationId,
         segments: result.answer.segments,
         citedChunkIds: verdict.citedChunkIds,
+        ...(skill ? { skillId: skill.id } : {}),
       })
       // The candidate set is still in hand here, so each cited id can be paired with the
       // document it came from. `recordAnswer` keeps taking bare ids because

@@ -196,12 +196,12 @@ export function createStore(db: QuidDb): Store {
       })
     },
 
-    async recordAnswer({ tenantId, conversationId, segments, citedChunkIds }) {
+    async recordAnswer({ tenantId, conversationId, segments, citedChunkIds, skillId }) {
       const text = segments.map((s: Segment) => s.text).join(" ")
       await withTenant(db, tenantId, async (tx) => {
         const res = await tx.execute(sql`
-          INSERT INTO messages (tenant_id, conversation_id, role, content)
-          VALUES (${tenantId}, ${conversationId}, 'assistant', ${text})
+          INSERT INTO messages (tenant_id, conversation_id, role, content, skill_id)
+          VALUES (${tenantId}, ${conversationId}, 'assistant', ${text}, ${skillId ?? null})
           RETURNING id
         `)
         const messageId = rowsOf(res)[0]!.id as string
