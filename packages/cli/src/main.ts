@@ -67,6 +67,28 @@ function firstOf(named: Map<string, string[]>, key: string): string | undefined 
   return named.get(key)?.[0]
 }
 
+/**
+ * Ends a one-shot command.
+ *
+ * The work being finished does not make the process exit: an embedded PGlite instance and the
+ * HTTP client's connection pool both keep handles open, and `add-text` was observed printing
+ * its success line and then hanging indefinitely — a user sees the work succeed and still has
+ * to interrupt the terminal, which reads as a failure of the thing that just told them it
+ * worked. Commands that have produced their output are done, and a CLI should not depend on
+ * every library releasing every handle to say so.
+ *
+ * stdout is flushed first. `process.exit` does not wait for a pipe to drain, and the same
+ * success line that made this bug visible was lost that way while diagnosing it.
+ */
+async function finish(): Promise<never> {
+  await new Promise<void>((resolve) => {
+    // `write` calls back once the data is handed to the OS. An empty write is enough: the
+    // callback still fires after everything queued before it.
+    if (!process.stdout.write("", () => resolve())) process.stdout.once("drain", () => resolve())
+  })
+  process.exit(0)
+}
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2)
   const { positional, named } = parseFlags(rest)
@@ -113,7 +135,7 @@ async function main(): Promise<void> {
       name: firstOf(named, "name") ?? slug,
       origins: (named.get("origin") ?? []).filter((o) => o.length > 0),
     })
-    return
+    await finish()
   }
 
   if (command === "add-text") {
@@ -131,12 +153,12 @@ async function main(): Promise<void> {
     const text = useStdin ? readFileSync(0, "utf8") : readFileSync(file!, "utf8")
 
     await runAddText({ env: process.env, slug, title, text })
-    return
+    await finish()
   }
 
   if (command === "prune") {
     await runPrune({ env: process.env })
-    return
+    await finish()
   }
 
   if (command === "add-url") {
@@ -146,7 +168,7 @@ async function main(): Promise<void> {
     if (!url) throw new Error(`a URL is required\n\n${USAGE}`)
     const title = firstOf(named, "title")
     await runAddUrl({ env: process.env, slug, url, ...(title ? { title } : {}) })
-    return
+    await finish()
   }
 
   throw new Error(`Unknown command: ${command}\n\n${USAGE}`)
