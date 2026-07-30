@@ -14,9 +14,11 @@ import { ConversationsPage } from "./pages/conversations"
 import { EscalationsPage } from "./pages/escalations"
 import { KnowledgePage } from "./pages/knowledge"
 import { OverviewPage } from "./pages/overview"
+import { SetupPage } from "./pages/setup"
 import { TenantsPage } from "./pages/tenants"
 
 const SECTION_TITLES: Record<Section, string> = {
+  setup: "Setup",
   overview: "Overview",
   knowledge: "Knowledge",
   conversations: "Conversations",
@@ -25,7 +27,7 @@ const SECTION_TITLES: Record<Section, string> = {
 }
 
 function AdminApp() {
-  const [section, setSection] = React.useState<Section>("overview")
+  const [section, setSection] = React.useState<Section>("setup")
   const [settingsOpen, setSettingsOpen] = React.useState(false)
   const [tenantsReloadKey, setTenantsReloadKey] = React.useState(0)
   const selectedTenant = useTenant()
@@ -67,6 +69,7 @@ function AdminApp() {
               No tenants yet. Create one from the Tenants section.
             </p>
           )}
+          {selectedTenant && section === "setup" && <SetupPage tenantSlug={selectedTenant} />}
           {selectedTenant && section === "overview" && <OverviewPage tenantSlug={selectedTenant} />}
           {selectedTenant && section === "knowledge" && <KnowledgePage tenantSlug={selectedTenant} />}
           {selectedTenant && section === "conversations" && (

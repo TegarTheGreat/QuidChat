@@ -8,6 +8,7 @@ import {
   LogOut,
   MessagesSquare,
   Settings,
+  Wand2,
 } from "lucide-react"
 import type { Tenant } from "../lib/api"
 
@@ -25,9 +26,12 @@ import {
   SidebarMenuItem,
 } from "./ui/sidebar"
 
-export type Section = "overview" | "knowledge" | "conversations" | "escalations" | "tenants"
+export type Section = "setup" | "overview" | "knowledge" | "conversations" | "escalations" | "tenants"
 
 const NAV_ITEMS: { id: Section; title: string; icon: typeof LayoutDashboard }[] = [
+  // Setup comes first: it is the screen that explains why a new installation is not
+  // answering, and a first-time owner should meet it before anything else.
+  { id: "setup", title: "Setup", icon: Wand2 },
   { id: "overview", title: "Overview", icon: LayoutDashboard },
   { id: "knowledge", title: "Knowledge", icon: BookOpen },
   { id: "conversations", title: "Conversations", icon: MessagesSquare },

@@ -54,6 +54,19 @@ function matchesKeyword(pattern: string, message: string): boolean {
  * do — they belong to a later pass that wraps this one with those calls. Here they
  * are treated as non-matching, so evaluation simply falls through to the next rule.
  */
+/**
+ * TWO DIFFERENT FALLBACKS, and confusing them is easy.
+ *
+ * A routing rule of kind `fallback` always matches and is terminal — it is how a tenant
+ * says "anything not matched above goes here". Routing uses only rules, so a tenant with
+ * no fallback RULE gets `null` for an unmatched message, and the pipeline then retrieves
+ * across all of the tenant's sources. That is the right default: an unrouted question
+ * should see everything rather than nothing.
+ *
+ * `skills.is_fallback` is separate. It marks the skill that HANDOFF goes to when a routed
+ * skill finds nothing in its own sources. A skill can be a handoff target without any rule
+ * pointing at it, and a rule can point at a skill that is not a handoff target.
+ */
 export function route(args: { rules: RoutingRule[]; skills: Skill[]; message: string }): Skill | null {
   const skillById = new Map(args.skills.map((s) => [s.id, s]))
   const ordered = args.rules.toSorted((a, b) => a.position - b.position)

@@ -133,6 +133,21 @@ export interface Usage {
   [key: string]: unknown
 }
 
+
+export interface SetupFinding {
+  id: string
+  severity: "blocker" | "warning" | "suggestion"
+  title: string
+  why: string
+  fix: string
+}
+
+export interface SetupStatus {
+  ready: boolean
+  findings: SetupFinding[]
+  snapshot: Record<string, unknown>
+}
+
 // ---- Endpoints ------------------------------------------------------------
 
 export const api = {
@@ -170,4 +185,9 @@ export const api = {
 
   getUsage: (tenantSlug: string) =>
     request<Usage>(`/v1/admin/usage${query({ tenantSlug })}`),
+
+  /** What is stopping this tenant from answering. Needs no provider, so it works even
+   *  when nothing is configured — which is exactly when an owner needs it. */
+  getSetup: (tenantSlug: string) =>
+    request<SetupStatus>(`/v1/admin/setup${query({ tenantSlug })}`),
 }
