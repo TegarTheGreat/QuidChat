@@ -1345,20 +1345,36 @@ describe("buildPrompt", () => {
     expect(p.currentTurn).toContain("k1")
   })
 
-  it("system prompt memuat teks penolakan dan daftar topik berisiko", () => {
+  it("system prompt memuat teks penolakan dan daftar topik berisiko tenant", () => {
     const p = buildPrompt({ config, history, candidates: [], question: "q" })
     expect(p.system).toContain("Maaf, saya belum punya info itu.")
-    expect(p.system).toContain("garansi")
+    // Assertion pada kalimat hasil interpolasi, BUKAN pada kata "garansi" saja.
+    // Kata itu juga muncul di teks aturan statis, jadi `toContain("garansi")`
+    // tetap lolos walau `config.highRiskTopics` tidak pernah dirender sama
+    // sekali — assertion yang tidak membuktikan apa pun.
+    expect(p.system).toContain("Topik yang selalu dianggap pernyataan bisnis: harga, garansi.")
   })
 
-  it("riwayat diteruskan apa adanya dan hanya bertambah di ujung", () => {
+  it("riwayat diteruskan apa adanya, tapi bukan array milik pemanggil", () => {
     const p = buildPrompt({ config, history, candidates: [], question: "q" })
     expect(p.history).toEqual(history)
+    expect(p.history).not.toBe(history)
   })
 })
 ```
 
 Test pertama itu **test wajib #3** dari spec §9.1. Ia menangkap masalah yang tanpa test hanya muncul sebagai tagihan membengkak tanpa penjelasan.
+
+Dua assertion terakhir itu sengaja lebih ketat daripada yang tampak perlu:
+
+- **Daftar topik** diuji sebagai kalimat utuh hasil interpolasi. Menguji satu kata
+  saja tidak membedakan antara "daftar topik tenant dirender" dan "kata itu
+  kebetulan ada di teks aturan statis".
+- **`not.toBe(history)`** mewajibkan salinan dangkal. `PromptParts.history`
+  dijanjikan "hanya bertambah di ujung"; kalau builder mengembalikan array milik
+  pemanggil, satu `push` di hilir ikut mengubah state pemanggil dan membatalkan
+  kestabilan prefix yang menjadi seluruh alasan task ini ada. Salinannya satu
+  spread; mode gagalnya sunyi dan mahal.
 
 - [ ] **Step 2: Jalankan test untuk memastikan gagal**
 
@@ -1421,7 +1437,10 @@ export function buildPrompt(args: {
     `Pertanyaan pelanggan: ${question}`,
   ].join("\n")
 
-  return { system, history, currentTurn }
+  // Salinan dangkal: `history` yang dikembalikan tidak boleh berbagi referensi
+  // dengan array milik pemanggil, supaya mutasi di hilir tidak membatalkan
+  // kestabilan prefix.
+  return { system, history: [...history], currentTurn }
 }
 
 /**
