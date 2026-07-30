@@ -6,6 +6,7 @@ import { ScrollArea } from "../components/ui/scroll-area"
 import { Skeleton } from "../components/ui/skeleton"
 import { cn } from "../lib/utils"
 import { useFetch } from "../hooks/use-fetch"
+import { formatDateTime } from "../lib/format"
 import { api, type Conversation } from "../lib/api"
 
 function conversationLabel(conversation: Conversation): string {
@@ -82,7 +83,7 @@ export function ConversationsPage({ tenantSlug }: { tenantSlug: string }) {
                   <span className="text-xs text-muted-foreground">
                     {conversation.messageCount ?? 0} message
                     {conversation.messageCount === 1 ? "" : "s"}
-                    {conversation.createdAt ? ` · ${conversation.createdAt}` : ""}
+                    {conversation.createdAt ? ` · ${formatDateTime(conversation.createdAt)}` : ""}
                   </span>
                 </button>
               ))}

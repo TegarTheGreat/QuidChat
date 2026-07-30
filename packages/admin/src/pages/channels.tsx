@@ -7,6 +7,7 @@ import { Label } from "../components/ui/label"
 import { MutationError } from "../components/mutation-error"
 import { Skeleton } from "../components/ui/skeleton"
 import { useFetch } from "../hooks/use-fetch"
+import { formatDateTime } from "../lib/format"
 import { api, type ChannelId, type ChannelsResponse } from "../lib/api"
 
 /** Plain names, and the webhook path each platform has to be pointed at — the one thing an
@@ -155,20 +156,23 @@ function ChannelCard({
       <CardContent className="space-y-4 text-sm">
         {status?.error && <MutationError message={status.error} />}
 
-        {status && (
-          <div className="space-y-1">
+        <div className="space-y-1">
+          {status && (
             <p className="text-muted-foreground">
               Stored: {status.configuredFields.map((f) => FIELD_LABELS[f] ?? f).join(", ") || "nothing"}
-              {status.updatedAt ? ` · updated ${status.updatedAt}` : ""}
+              {status.updatedAt ? ` · updated ${formatDateTime(status.updatedAt)}` : ""}
             </p>
-            <p className="text-xs text-muted-foreground">
-              Point {meta.title} at{" "}
-              <code className="rounded bg-muted px-1">
-                {`${window.location.origin}/v1/channels/${meta.id}/${tenantSlug}`}
-              </code>
-            </p>
-          </div>
-        )}
+          )}
+          {/* Shown before connecting as well as after. This URL is what someone pastes into
+              BotFather or Meta's console, and needing it is the reason they opened this card —
+              hiding it until the channel is already connected has the order backwards. */}
+          <p className="text-xs text-muted-foreground">
+            Point {meta.title} at{" "}
+            <code className="rounded bg-muted px-1">
+              {`${window.location.origin}/v1/channels/${meta.id}/${tenantSlug}`}
+            </code>
+          </p>
+        </div>
 
         <form
           className="space-y-3"
@@ -225,7 +229,8 @@ function ChannelCard({
           </div>
           {spec.required.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              {spec.required.map((f) => FIELD_LABELS[f] ?? f).join(" and ")} are required. Set the
+              {spec.required.map((f) => FIELD_LABELS[f] ?? f).join(" and ")}{" "}
+              {spec.required.length === 1 ? "is" : "are"} required. Set the
               webhook secret too where the platform offers one: without it, anyone who learns the
               URL above can put words in your conversation history and spend your budget.
             </p>

@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Textarea } from "../components/ui/textarea"
 import { useFetch } from "../hooks/use-fetch"
 import { useMutation } from "../hooks/use-mutation"
+import { formatRelative } from "../lib/format"
 import { api, type Escalation } from "../lib/api"
 
 /** Plain-language headings. `no_source` is the database's word for it, not a business
@@ -143,7 +144,7 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
                             )}
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-muted-foreground">
-                            {escalation.occurredAt}
+                            {formatRelative(escalation.occurredAt)}
                           </TableCell>
                           <TableCell>
                             {escalation.resolvedAt ? (
