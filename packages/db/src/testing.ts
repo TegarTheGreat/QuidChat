@@ -1,4 +1,9 @@
-// Placeholder. `freshPglite()` — database PGlite bersih di memori dengan migrasi
-// sudah diterapkan — diisi di task berikutnya yang membangun pabrik koneksi.
-// Sengaja belum mengekspor apa pun: belum ada konsumen yang mengimpornya.
-export {}
+import { createDb, type QuidDb } from "./client.js"
+import { applyMigrations } from "./migrate.js"
+
+/** Database PGlite bersih di memori, migrasi sudah diterapkan. */
+export async function freshPglite(): Promise<QuidDb> {
+  const db = await createDb({ kind: "pglite" })
+  await applyMigrations(db)
+  return db
+}
