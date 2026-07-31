@@ -215,3 +215,54 @@ export async function deleteChannel(
   }
   sendJson(res, 200, { ok: true })
 }
+
+/**
+ * `PATCH /admin/channels` — pause or resume a channel without touching its credentials.
+ *
+ * The list route has always reported an `enabled` flag and the panel has always drawn a "Paused"
+ * badge for it, but nothing could ever set it: saving goes through `putChannel`, which replaces
+ * the whole row and therefore demands every credential again. So the only way to stop answering on
+ * WhatsApp was to disconnect it and find the token a second time — which is what an owner does at
+ * the exact moment they are least able to, during an incident or a holiday closure.
+ *
+ * Credentials stay where they are. Pausing is not revoking, and treating it as revoking is what
+ * made the safe action expensive enough to avoid.
+ */
+export async function setChannelEnabled(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const tenantSlug = typeof raw.tenantSlug === "string" ? raw.tenantSlug : null
+  const channel = typeof raw.channel === "string" ? raw.channel : ""
+  if (typeof raw.enabled !== "boolean") {
+    sendJson(res, 400, { error: "enabled must be true or false" })
+    return
+  }
+  const enabled = raw.enabled
+
+  const tenantId = await resolveTenantOr404(res, deps.db, tenantSlug)
+  if (tenantId === null) return
+  if (!CHANNEL_FIELDS[channel]) {
+    sendJson(res, 400, { error: `channel must be one of ${Object.keys(CHANNEL_FIELDS).join(", ")}` })
+    return
+  }
+
+  const updated = await withTenant(deps.db, tenantId, async (tx) =>
+    rowsOf(
+      await tx.execute(sql`
+        UPDATE channel_configs SET enabled = ${enabled}, updated_at = now()
+        WHERE channel = ${channel} RETURNING channel, enabled
+      `),
+    )[0],
+  )
+  if (!updated) {
+    // Nothing to pause is not the same as pausing nothing: an owner who sees "paused" on a
+    // channel that was never connected would trust a protection that is not there.
+    sendJson(res, 404, { error: "that channel is not configured" })
+    return
+  }
+  sendJson(res, 200, { channel: updated.channel, enabled: updated.enabled })
+}

@@ -1,11 +1,30 @@
 import * as React from "react"
+import { Check, Copy } from "lucide-react"
 import { Badge } from "../components/ui/badge"
 import { Button } from "../components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
+import { ConfirmDialog } from "../components/confirm-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
 import { MutationError } from "../components/mutation-error"
+import { RowActions } from "../components/row-actions"
 import { Skeleton } from "../components/ui/skeleton"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table"
 import { useFetch } from "../hooks/use-fetch"
 import { formatDateTime } from "../lib/format"
 import { api, type ChannelForm, type ChannelId, type ChannelsResponse } from "../lib/api"
@@ -13,41 +32,49 @@ import { api, type ChannelForm, type ChannelId, type ChannelsResponse } from "..
 /**
  * Channels — connecting WhatsApp, Telegram or Discord without touching the environment.
  *
- * Credentials are write-only by design. Nothing here ever displays a stored value, because
- * there is no use for it: a business either replaces a token or leaves it alone, and a field
- * that shows part of one is a field that leaks part of one. What the screen shows instead is
- * which fields are stored, which is what "connected" actually means.
+ * Credentials are write-only by design. Nothing here ever displays a stored value, because there
+ * is no use for it: a business either replaces a token or leaves it alone, and a field that shows
+ * part of one is a field that leaks part of one. What the screen shows instead is which fields are
+ * stored, which is what "connected" actually means.
  *
- * Environment variables still work and still win nothing: a stored credential takes precedence,
- * so a shared installation stops answering every business's customers from one account.
+ * This was eight stacked cards, each with every credential box open at once — around twenty empty
+ * password fields on a page where a shop connects one channel and never looks at the rest. It is a
+ * table now, and the fields are behind the row's own dialog.
+ *
+ * Environment variables still work and still lose: a stored credential takes precedence, so a
+ * shared installation does not answer every business's customers from one account.
  */
 export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
   const [reloadKey, setReloadKey] = React.useState(0)
   const data = useFetch(() => api.listChannels(tenantSlug), [tenantSlug, reloadKey])
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [connecting, setConnecting] = React.useState<ChannelForm | null>(null)
+  const [disconnecting, setDisconnecting] = React.useState<ChannelForm | null>(null)
 
-  async function act(fn: () => Promise<unknown>) {
+  async function act(fn: () => Promise<unknown>): Promise<boolean> {
     setBusy(true)
     setError(null)
     try {
       await fn()
       setReloadKey((k) => k + 1)
+      return true
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
+      return false
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-semibold">Channels</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          The same assistant, answering on the places your customers already use. Every channel
-          goes through the identical pipeline, so grounding, refusals and your budget behave
-          exactly as they do on your website.
+          The same assistant, answering where your customers already are. Every channel goes
+          through the identical pipeline, so grounding, refusals and your budget behave exactly as
+          they do on your website.
         </p>
       </div>
 
@@ -63,173 +90,273 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
                 <CardTitle className="text-base">Credentials cannot be stored yet</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
-                Set <code className="rounded bg-muted px-1">QUIDCHAT_SECRET_KEY</code> on the
-                server and restart it. Channel credentials are encrypted with it, and storing
-                them in plain text is not offered as an alternative — a database backup would
-                hand over the ability to send messages as your business. Generate one with{" "}
+                Set <code className="rounded bg-muted px-1">QUIDCHAT_SECRET_KEY</code> on the server
+                and restart it. Channel credentials are encrypted with it, and storing them in plain
+                text is not offered as an alternative — a database backup would hand over the
+                ability to send messages as your business. Generate one with{" "}
                 <code className="rounded bg-muted px-1">openssl rand -base64 32</code>.
               </CardContent>
             </Card>
           )}
 
-          {data.data.forms.map((form) => (
-            <ChannelCard
-              key={form.id}
-              tenantSlug={tenantSlug}
-              form={form}
-              data={data.data}
-              busy={busy || !data.data.secretKeyConfigured}
-              onSave={(secrets, enabled) =>
-                act(() =>
-                  api.saveChannel({
-                    tenantSlug,
-                    channel: form.id as ChannelId,
-                    enabled,
-                    secrets,
-                  }),
-                )
-              }
-              onDisconnect={() =>
-                act(() => api.deleteChannel({ tenantSlug, channel: form.id as ChannelId }))
-              }
-            />
-          ))}
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Channel</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden md:table-cell">Stored</TableHead>
+                    <TableHead className="w-10" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.data.forms.map((form) => {
+                    const status = data.data.channels.find((c) => c.channel === form.id)
+                    const locked = busy || !data.data.secretKeyConfigured
+                    return (
+                      <TableRow key={form.id}>
+                        <TableCell>
+                          <p className="font-medium">{form.title}</p>
+                          <p className="text-xs text-muted-foreground">{form.hint}</p>
+                          {status?.error && (
+                            <p className="mt-1 text-xs text-destructive">{status.error}</p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {status ? (
+                            <Badge variant={status.enabled ? "secondary" : "outline"}>
+                              {status.enabled ? "Connected" : "Paused"}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline">Not connected</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
+                          {status
+                            ? `${
+                                status.configuredFields
+                                  .map(
+                                    (name) =>
+                                      form.fields.find((f) => f.name === name)?.label ?? name,
+                                  )
+                                  .join(", ") || "nothing"
+                              }${status.updatedAt ? ` · ${formatDateTime(status.updatedAt)}` : ""}`
+                            : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <RowActions
+                            label={`Actions for ${form.title}`}
+                            actions={[
+                              {
+                                label: status ? "Replace credentials" : "Connect",
+                                disabled: locked,
+                                onSelect: () => setConnecting(form),
+                              },
+                              ...(status
+                                ? [
+                                    {
+                                      label: status.enabled ? "Pause" : "Resume",
+                                      disabled: busy,
+                                      onSelect: () =>
+                                        void act(() =>
+                                          api.setChannelEnabled({
+                                            tenantSlug,
+                                            channel: form.id as ChannelId,
+                                            enabled: !status.enabled,
+                                          }),
+                                        ),
+                                    },
+                                    {
+                                      label: "Disconnect",
+                                      destructive: true,
+                                      disabled: busy,
+                                      onSelect: () => setDisconnecting(form),
+                                    },
+                                  ]
+                                : []),
+                            ]}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         </>
       )}
+
+      <Dialog open={connecting !== null} onOpenChange={(open) => !open && setConnecting(null)}>
+        {connecting && data.status === "success" && (
+          <ConnectDialog
+            form={connecting}
+            data={data.data}
+            tenantSlug={tenantSlug}
+            busy={busy}
+            onSave={async (secrets) => {
+              const ok = await act(() =>
+                api.saveChannel({
+                  tenantSlug,
+                  channel: connecting.id as ChannelId,
+                  enabled: true,
+                  secrets,
+                }),
+              )
+              if (ok) setConnecting(null)
+            }}
+          />
+        )}
+      </Dialog>
+
+      <ConfirmDialog
+        open={disconnecting !== null}
+        title={`Disconnect ${disconnecting?.title}?`}
+        description="Its stored credentials are deleted, and messages arriving on it stop being answered. To connect it again you need the token from the platform a second time — to stop answering for a while without that, pause it instead."
+        confirmLabel="Disconnect it"
+        busy={busy}
+        onCancel={() => setDisconnecting(null)}
+        onConfirm={() => {
+          const target = disconnecting
+          if (!target) return
+          void act(async () => {
+            await api.deleteChannel({ tenantSlug, channel: target.id as ChannelId })
+            setDisconnecting(null)
+          })
+        }}
+      />
     </div>
   )
 }
 
-function ChannelCard({
-  tenantSlug,
-  form,
-  data,
-  busy,
-  onSave,
-  onDisconnect,
-}: {
-  tenantSlug: string
-  form: ChannelForm
-  data: ChannelsResponse
-  busy: boolean
-  onSave: (secrets: Record<string, string>, enabled: boolean) => void
-  onDisconnect: () => void
-}) {
-  const meta = form
-  const status = data.channels.find((c) => c.channel === form.id)
-  const [values, setValues] = React.useState<Record<string, string>>({})
+/**
+ * The address the platform sends messages to.
+ *
+ * Copying it is the single most-repeated action on this screen, and the clipboard API is not
+ * available at all over plain HTTP — which is how a self-hosted server is first reached, by IP,
+ * before anyone has a certificate. So the URL is always shown as selectable text, and the button
+ * falls back to the old copy command rather than failing silently.
+ */
+function WebhookUrl({ url }: { url: string }): React.ReactElement {
+  const [copied, setCopied] = React.useState(false)
 
-  const allFields = form.fields
-  const requiredFields = form.fields.filter((f) => f.required)
-  const missingRequired = requiredFields.filter((f) => (values[f.name] ?? "").trim() === "")
+  async function copy() {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url)
+      } else {
+        const area = document.createElement("textarea")
+        area.value = url
+        area.style.position = "fixed"
+        area.style.opacity = "0"
+        document.body.appendChild(area)
+        area.select()
+        document.execCommand("copy")
+        area.remove()
+      }
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Nothing to report: the address is on screen and can be selected by hand.
+    }
+  }
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
-        <div>
-          <CardTitle className="text-base">{meta.title}</CardTitle>
-          <p className="mt-1 text-sm text-muted-foreground">{meta.hint}</p>
+    <div className="flex items-center gap-2 rounded-md border bg-muted/40 p-2">
+      <code className="min-w-0 flex-1 break-all text-xs">{url}</code>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-8 shrink-0"
+        aria-label="Copy the webhook address"
+        onClick={() => void copy()}
+      >
+        {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+      </Button>
+    </div>
+  )
+}
+
+function ConnectDialog({
+  form,
+  data,
+  tenantSlug,
+  busy,
+  onSave,
+}: {
+  form: ChannelForm
+  data: ChannelsResponse
+  tenantSlug: string
+  busy: boolean
+  onSave: (secrets: Record<string, string>) => void
+}): React.ReactElement {
+  const status = data.channels.find((c) => c.channel === form.id)
+  const [values, setValues] = React.useState<Record<string, string>>({})
+  const requiredFields = form.fields.filter((f) => f.required)
+  const missing = requiredFields.filter((f) => (values[f.name] ?? "").trim() === "")
+
+  return (
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>
+          {status ? `Replace ${form.title} credentials` : `Connect ${form.title}`}
+        </DialogTitle>
+        <DialogDescription>{form.hint}</DialogDescription>
+      </DialogHeader>
+
+      <div className="space-y-1">
+        <Label>Point {form.title} at this address</Label>
+        <WebhookUrl url={`${window.location.origin}/v1/channels/${form.id}/${tenantSlug}`} />
+      </div>
+
+      <form
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault()
+          onSave(values)
+          // Cleared on save because nothing here is ever read back: leaving a token in the form
+          // would be the one place in the product that shows a stored credential.
+          setValues({})
+        }}
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          {form.fields.map((field) => (
+            <div key={field.name} className="space-y-1">
+              <Label htmlFor={`${form.id}-${field.name}`}>
+                {field.label}
+                {!field.required && (
+                  <span className="ml-1 text-xs text-muted-foreground">(optional)</span>
+                )}
+              </Label>
+              <Input
+                id={`${form.id}-${field.name}`}
+                // Hidden for a credential, plain for an address or a session name: masking
+                // something that is not a secret only makes it harder to check.
+                type={field.secret ? "password" : "text"}
+                autoComplete="off"
+                value={values[field.name] ?? ""}
+                onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.value }))}
+                placeholder={
+                  status?.configuredFields.includes(field.name) ? "stored — type to replace" : ""
+                }
+              />
+            </div>
+          ))}
         </div>
-        <div className="flex shrink-0 gap-2">
-          {status ? (
-            <Badge variant={status.enabled ? "secondary" : "outline"}>
-              {status.enabled ? "Connected" : "Paused"}
-            </Badge>
-          ) : (
-            <Badge variant="outline">Not connected</Badge>
-          )}
-        </div>
-      </CardHeader>
 
-      <CardContent className="space-y-4 text-sm">
-        {status?.error && <MutationError message={status.error} />}
+        <p className="text-xs text-muted-foreground">
+          Set the webhook secret too, where the platform offers one. Without it, anyone who learns
+          the address above can put words in your conversation history and spend your budget.
+        </p>
 
-        <div className="space-y-1">
-          {status && (
-            <p className="text-muted-foreground">
-              Stored:{" "}
-              {status.configuredFields
-                .map((name) => form.fields.find((f) => f.name === name)?.label ?? name)
-                .join(", ") || "nothing"}
-              {status.updatedAt ? ` · updated ${formatDateTime(status.updatedAt)}` : ""}
-            </p>
-          )}
-          {/* Shown before connecting as well as after. This URL is what someone pastes into
-              BotFather or Meta's console, and needing it is the reason they opened this card —
-              hiding it until the channel is already connected has the order backwards. */}
-          <p className="text-xs text-muted-foreground">
-            Point {meta.title} at{" "}
-            <code className="rounded bg-muted px-1">
-              {`${window.location.origin}/v1/channels/${meta.id}/${tenantSlug}`}
-            </code>
-          </p>
-        </div>
-
-        <form
-          className="space-y-3"
-          onSubmit={(event) => {
-            event.preventDefault()
-            onSave(values, true)
-            // Cleared on save because nothing here is ever read back: leaving a token visible in
-            // the form would be the one place in the product that shows a stored credential.
-            setValues({})
-          }}
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            {allFields.map((field) => (
-              <div key={field.name} className="space-y-1">
-                <Label htmlFor={`${form.id}-${field.name}`}>
-                  {field.label}
-                  {!field.required && (
-                    <span className="ml-1 text-xs text-muted-foreground">(optional)</span>
-                  )}
-                </Label>
-                <Input
-                  id={`${form.id}-${field.name}`}
-                  // Hidden for a credential, plain for an address or a session name: masking
-                  // something that is not a secret only makes it harder to check.
-                  type={field.secret ? "password" : "text"}
-                  autoComplete="off"
-                  value={values[field.name] ?? ""}
-                  onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.value }))}
-                  placeholder={
-                    status?.configuredFields.includes(field.name) ? "stored — type to replace" : ""
-                  }
-                />
-              </div>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={busy || missingRequired.length > 0}>
-              {status ? "Replace credentials" : "Connect"}
-            </Button>
-            {status && (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy}
-                  // Pausing needs the credentials again, because the API replaces the row rather
-                  // than patching it. Asking for them is more honest than a toggle that appears
-                  // to work and silently keeps the old ones.
-                  onClick={() => onDisconnect()}
-                >
-                  Disconnect
-                </Button>
-              </>
-            )}
-          </div>
-          {requiredFields.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              {requiredFields.map((f) => f.label).join(" and ")}{" "}
-              {requiredFields.length === 1 ? "is" : "are"} required. Set the
-              webhook secret too where the platform offers one: without it, anyone who learns the
-              URL above can put words in your conversation history and spend your budget.
-            </p>
-          )}
-        </form>
-      </CardContent>
-    </Card>
+        <DialogFooter>
+          <Button type="submit" disabled={busy || missing.length > 0}>
+            {status ? "Replace credentials" : "Connect"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
   )
 }

@@ -191,6 +191,9 @@ async function main() {
   const env = {
     QUIDCHAT_DATA_DIR: join(dir, "data"),
     QUIDCHAT_ADMIN_TOKEN: "smoke-token",
+    // Channel credentials are encrypted with this, and the Channels screen refuses to offer a
+    // form without it — so without a key here the panel check would exercise a disabled page.
+    QUIDCHAT_SECRET_KEY: Buffer.alloc(32, 7).toString("base64"),
     OPENAI_API_KEY: "sk-smoke",
     OPENAI_BASE_URL: `http://127.0.0.1:${PROVIDER_PORT}/v1`,
     PORT: String(SERVER_PORT),

@@ -514,6 +514,13 @@ export const api = {
       { method: "PUT", body: JSON.stringify(body) },
     ),
 
+  /** Pause or resume without resupplying credentials — they stay stored either way. */
+  setChannelEnabled: (body: { tenantSlug: string; channel: ChannelId; enabled: boolean }) =>
+    request<{ channel: string; enabled: boolean }>("/v1/admin/channels", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
   deleteChannel: (body: { tenantSlug: string; channel: ChannelId }) =>
     request<{ ok: true }>("/v1/admin/channels", {
       method: "DELETE",

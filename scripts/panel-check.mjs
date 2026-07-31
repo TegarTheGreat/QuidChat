@@ -248,6 +248,59 @@ check(
 check("cancelling is possible", (await clickText("Cancel")) === "clicked")
 
 /**
+ * Channels.
+ *
+ * The page was eight cards with every credential box open at once — around twenty empty password
+ * fields for a shop that connects one channel. The fields are behind the row's dialog now, and
+ * pausing exists at all: the "Paused" badge was drawn from a flag nothing could ever set, so the
+ * only way to stop answering on WhatsApp was to disconnect it and find the token again.
+ */
+console.log("channels")
+await open("Channels")
+await pointerClick(`[aria-label="Actions for Telegram"]`)
+await sleep(600)
+check("the row menu offers connecting", (await menuItems()).includes("Connect"))
+await clickMenuItem("Connect")
+await sleep(700)
+text = await bodyText()
+check(
+  "the dialog shows the address to point the platform at",
+  text.includes("/v1/channels/telegram/smoke-shop"),
+  text.slice(0, 300),
+)
+check(
+  "connecting is refused until the credentials are filled in",
+  (await clickText("Connect")) === "disabled",
+)
+await typeInto("#telegram-botToken", "111:smoke-token")
+await typeInto("#telegram-secretToken", "smoke-webhook-secret")
+check("connecting works", (await clickText("Connect")) === "clicked")
+await sleep(2000)
+text = await bodyText()
+check("the channel reads as connected", text.includes("Connected"), text.slice(0, 400))
+
+await pointerClick(`[aria-label="Actions for Telegram"]`)
+await sleep(600)
+let items = await menuItems()
+check("a connected channel can be paused", items.includes("Pause"), items)
+await clickMenuItem("Pause")
+await sleep(2000)
+text = await bodyText()
+check("pausing shows in the table", text.includes("Paused"), text.slice(0, 400))
+
+await pointerClick(`[aria-label="Actions for Telegram"]`)
+await sleep(600)
+check("a paused channel can be resumed", (await menuItems()).includes("Resume"))
+await clickMenuItem("Disconnect")
+await sleep(1000)
+text = await bodyText()
+check("disconnecting asks first", text.includes("Disconnect Telegram?"), text.slice(0, 300))
+check("disconnecting works", (await clickText("Disconnect it")) === "clicked")
+await sleep(2000)
+text = await bodyText()
+check("the channel is not connected any more", text.includes("Not connected"), text.slice(0, 400))
+
+/**
  * Tenants.
  *
  * The page listed businesses and let one be switched to; there was no rename and no removal, in
@@ -273,7 +326,7 @@ check("the tenant is listed", text.includes("Smoke Test Shop"), text.slice(0, 30
 
 await pointerClick(`[aria-label="Actions for Smoke Test Shop"]`)
 await sleep(600)
-let items = await menuItems()
+items = await menuItems()
 check("the row menu offers rename and delete", items.includes("Rename") && items.includes("Delete"), items)
 await clickMenuItem("Rename")
 await sleep(700)

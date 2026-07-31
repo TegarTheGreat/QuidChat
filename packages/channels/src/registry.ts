@@ -74,7 +74,7 @@ export const channelDefinitions: readonly ChannelDefinition[] = [
   {
     id: "telegram",
     title: "Telegram",
-    hint: "Create a bot with @BotFather, then set its webhook to the URL below.",
+    hint: "Create a bot with @BotFather, then set its webhook to the address shown when you connect it.",
     fields: [
       { name: "botToken", label: "Bot token", envVar: "TELEGRAM_BOT_TOKEN", required: true, secret: true },
       { name: "secretToken", label: "Webhook secret", envVar: "TELEGRAM_SECRET_TOKEN", required: true, secret: true },
@@ -130,7 +130,7 @@ export const channelDefinitions: readonly ChannelDefinition[] = [
   {
     id: "slack",
     title: "Slack",
-    hint: "From your Slack app: the bot token (xoxb-…) and the signing secret. Subscribe it to message events and point them at the URL below.",
+    hint: "From your Slack app: the bot token (xoxb-…) and the signing secret. Subscribe it to message events and point them at the address shown when you connect it.",
     fields: [
       { name: "botToken", label: "Bot token", envVar: "SLACK_BOT_TOKEN", required: true, secret: true },
       { name: "signingSecret", label: "Signing secret", envVar: "SLACK_SIGNING_SECRET", required: true, secret: true },

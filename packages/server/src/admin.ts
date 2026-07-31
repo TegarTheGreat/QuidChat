@@ -8,7 +8,12 @@ import {
   setCannedAnswerStatus,
   updateCannedAnswer,
 } from "./admin/canned-answers.js"
-import { deleteChannel, listChannels, putChannel } from "./admin/channels.js"
+import {
+  deleteChannel,
+  listChannels,
+  putChannel,
+  setChannelEnabled,
+} from "./admin/channels.js"
 import {
   getConversation,
   listConversations,
@@ -181,6 +186,7 @@ export async function handleAdminRequest(
   if (method === "DELETE" && sub === "/canned-answers") return deleteCannedAnswer(req, res, deps)
   if (method === "GET" && sub === "/channels") return listChannels(res, deps, searchParams)
   if (method === "PUT" && sub === "/channels") return putChannel(req, res, deps)
+  if (method === "PATCH" && sub === "/channels") return setChannelEnabled(req, res, deps)
   if (method === "DELETE" && sub === "/channels") return deleteChannel(req, res, deps)
 
   sendJson(res, 404, { error: "not found" })

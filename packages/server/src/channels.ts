@@ -35,44 +35,57 @@ export type ChannelDeps = {
 }
 
 /**
- * The tenant's own channel credentials, or null when they have none stored.
+ * The tenant's own channel credentials — or the fact that it has deliberately paused this one.
  *
  * Read before the environment is consulted, so a business that connected WhatsApp in the panel
  * uses its own number even on a deployment that also has one configured in the environment.
  * Without that precedence, a shared installation would answer every tenant's customers from one
  * account — which is the exact thing per-tenant credentials exist to prevent.
  *
- * Returns null on ANY failure, including a missing or changed encryption key, and the caller
+ * "Paused" is a separate answer from "nothing stored", and that distinction is the whole point.
+ * The row used to be selected with `AND enabled = true`, so a paused channel looked identical to
+ * an unconfigured one and the caller fell through to the environment: on the ordinary small
+ * deployment, where the token is in the environment anyway, pausing changed a badge in the panel
+ * and nothing else. The bot kept answering customers while its owner believed it had stopped.
+ *
+ * Returns `none` on ANY failure, including a missing or changed encryption key, and the caller
  * falls back to the environment. A channel that stops working is visible in the panel, which
  * reports the same decryption failure; refusing the webhook outright would take a working
  * environment-configured channel down with it.
  */
+type StoredChannel =
+  | { kind: "secrets"; secrets: Record<string, string> }
+  /** Configured, and switched off on purpose. Never falls back to the environment. */
+  | { kind: "paused" }
+  | { kind: "none" }
+
 async function storedChannelSecrets(args: {
   db: QuidDb
   tenantId: string
   channel: string
   env: Record<string, string | undefined>
   logError: (message: string, cause: unknown) => void
-}): Promise<Record<string, string> | null> {
+}): Promise<StoredChannel> {
   const { db, tenantId, channel, env, logError } = args
   try {
     const row = await withTenant(db, tenantId, async (tx) =>
       rowsOf(
         await tx.execute(sql`
-          SELECT secrets FROM channel_configs WHERE channel = ${channel} AND enabled = true
+          SELECT secrets, enabled FROM channel_configs WHERE channel = ${channel}
         `),
       )[0],
     )
-    if (!row) return null
+    if (!row) return { kind: "none" }
+    if (row.enabled === false) return { kind: "paused" }
     const secrets = decryptSecrets(row.secrets as string, readSecretKey(env), `${channel} credentials`)
     const out: Record<string, string> = {}
     for (const [key, value] of Object.entries(secrets as Record<string, unknown>)) {
       if (typeof value === "string" && value !== "") out[key] = value
     }
-    return Object.keys(out).length > 0 ? out : null
+    return Object.keys(out).length > 0 ? { kind: "secrets", secrets: out } : { kind: "none" }
   } catch (cause) {
     logError(`could not read stored ${channel} credentials`, cause)
-    return null
+    return { kind: "none" }
   }
 }
 
@@ -205,9 +218,17 @@ export async function handleChannelWebhook(
     env: deps.env,
     logError: deps.logError,
   })
+  if (stored.kind === "paused") {
+    // 403, not 404: the channel exists and the platform's URL is correct, so an owner reading
+    // their delivery log sees "switched off here" rather than hunting a webhook that looks wrong.
+    res.writeHead(403, { "content-type": "application/json" })
+    res.end(JSON.stringify({ error: `channel "${channel}" is paused for this tenant` }))
+    return
+  }
   const adapter =
-    (stored ? adapterFromStoredSecrets(channel, tenantSlug, stored) : null) ??
-    adapterFromEnv(channel, tenantSlug, deps.env)
+    (stored.kind === "secrets"
+      ? adapterFromStoredSecrets(channel, tenantSlug, stored.secrets)
+      : null) ?? adapterFromEnv(channel, tenantSlug, deps.env)
   if (!adapter) {
     res.writeHead(404, { "content-type": "application/json" })
     res.end(JSON.stringify({ error: `channel "${channel}" is not configured` }))
