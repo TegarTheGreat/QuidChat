@@ -256,6 +256,8 @@ Isolation is row-level security, not application filters. Foreign keys carry `te
 
 `retention_days` deletes conversations once they pass it. The server runs a pass at start-up and once a day after; `quidchat prune` does the same thing once and exits, for anyone who would rather see it in their own crontab.
 
+`quidchat backup` writes the other half of that promise: one file holding the documents a shop wrote out, the answers it approved sentence by sentence, and every conversation its customers had. None of it is recoverable from anywhere else. It dumps through the running engine rather than copying the data directory, because copying files that Postgres has open is how a backup turns out to be unrestorable at the moment somebody needs it. On a managed Postgres the command prints the `pg_dump` line instead of wrapping a tool that already exists.
+
 Only conversations are deleted, and messages, citations and escalations follow by cascade — four separate deletes would be four chances to leave a customer's text behind under another table's name. `usage_events` is kept deliberately: it holds a model name and token counts rather than anything a customer wrote, and the monthly budget is computed from it, so pruning it would quietly hand a tenant more spend than they configured. `0` means keep forever, the same way `monthly_budget_cents = 0` means unlimited.
 
 ## Storage

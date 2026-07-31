@@ -55,3 +55,21 @@ export async function createDb(config: DbConfig): Promise<QuidDb> {
   }
   return drizzlePostgres(postgres(config.url, { max: 10 }), { schema })
 }
+
+/**
+ * A consistent copy of the whole database, as bytes.
+ *
+ * PGlite is a directory of files, and copying that directory while the server has it open is how
+ * a backup ends up unrestorable in exactly the case someone needs it. Its own dump reads through
+ * the running engine instead, which is the difference between a copy and a snapshot.
+ *
+ * Returns null for a managed Postgres, where the answer is `pg_dump` against the same URL — a
+ * tool that already exists, is already what an operator's provider documents, and would be worse
+ * for being wrapped.
+ */
+export async function dumpDatabase(db: QuidDb): Promise<Uint8Array | null> {
+  const client: unknown = (db as { $client?: unknown }).$client
+  if (!(client instanceof PGlite)) return null
+  const blob = await client.dumpDataDir("gzip")
+  return new Uint8Array(await blob.arrayBuffer())
+}

@@ -27,7 +27,7 @@
 
 import { spawn } from "node:child_process"
 import { createServer } from "node:http"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -214,6 +214,19 @@ async function main() {
     // Both halves matter. The command has succeeded at its job and still hung here before.
     check("add-text exits", add.code === 0 && !add.timedOut, add.timedOut ? "timed out" : add.stderr.trim())
     check("add-text reports what it indexed", /indexed .* chunk/.test(add.stdout), add.stdout.trim())
+
+    console.log("backup")
+    const backupPath = join(dir, "smoke-backup.tgz")
+    const backup = await runCli(["backup", "--out", backupPath], env)
+    check("backup exits", backup.code === 0 && !backup.timedOut, backup.stderr.trim() || `code ${backup.code}`)
+    // A gzip member, not an empty file dressed as one — which is the failure a backup command
+    // has to be checked for, since nobody finds out until they need it.
+    const backupBytes = await readFile(backupPath).catch(() => Buffer.alloc(0))
+    check(
+      "backup writes a real archive",
+      backupBytes.length > 1024 && backupBytes[0] === 0x1f && backupBytes[1] === 0x8b,
+      `${backupBytes.length} bytes`,
+    )
 
     console.log("serve")
     server = spawn(process.execPath, [CLI, "serve"], {

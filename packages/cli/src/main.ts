@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import { runAddText } from "./add-text.js"
 import { runAddPdf } from "./add-pdf.js"
 import { runAddSite } from "./add-site.js"
+import { runBackup } from "./backup.js"
 import { runAddUrl } from "./add-url.js"
 import { runInit } from "./init.js"
 import { runPrune } from "./prune.js"
@@ -37,6 +38,12 @@ const USAGE = `Usage:
   quidchat add-pdf <slug> <file.pdf> [--title "<title>"]
       Index a PDF. A scan with no text in it is refused with a reason rather
       than indexed as nothing.
+
+  quidchat backup [--out <path>]
+      Write one file containing everything: documents, canned answers,
+      conversations. Taken through the running engine, so it is a snapshot
+      rather than a copy of files being written to. On a managed Postgres it
+      prints the pg_dump command instead of pretending.
 
   quidchat prune
       Delete conversations past each tenant's retention window, then exit. The
@@ -179,6 +186,12 @@ async function main(): Promise<void> {
     if (!path) throw new Error(`a path to a PDF is required\n\n${USAGE}`)
     const title = firstOf(named, "title")
     await runAddPdf({ env: process.env, slug, path, ...(title ? { title } : {}) })
+    await finish()
+  }
+
+  if (command === "backup") {
+    const out = firstOf(named, "out")
+    await runBackup({ env: process.env, ...(out ? { out } : {}) })
     await finish()
   }
 
