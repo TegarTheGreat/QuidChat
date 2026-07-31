@@ -105,7 +105,7 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Channel</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead className="whitespace-nowrap">Status</TableHead>
                     <TableHead className="hidden md:table-cell">Stored</TableHead>
                     <TableHead className="w-10" />
                   </TableRow>
@@ -123,7 +123,9 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
                             <p className="mt-1 text-xs text-destructive">{status.error}</p>
                           )}
                         </TableCell>
-                        <TableCell>
+                        {/* Nowrap, because "Not connected" broke across two lines in this column
+                            and a badge folded in half reads as a rendering fault. */}
+                        <TableCell className="whitespace-nowrap">
                           {status ? (
                             <Badge variant={status.enabled ? "secondary" : "outline"}>
                               {status.enabled ? "Connected" : "Paused"}

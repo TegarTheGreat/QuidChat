@@ -127,7 +127,10 @@ export function SetupPage({
             ) : (
               <CircleAlert className="size-4" />
             )}
-            <AlertTitle>
+            {/* Semibold, matching every card title on the screen. At `font-medium` it sat at the
+                same weight as the sentence under it, so the one line that says whether customers
+                are being answered read as the first half of a paragraph. */}
+            <AlertTitle className="font-semibold">
               {setup.data.ready ? "Ready to answer customers" : "Not answering yet"}
             </AlertTitle>
             <AlertDescription>
