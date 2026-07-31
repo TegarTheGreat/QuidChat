@@ -255,6 +255,10 @@ export interface ProvidersResponse {
   configuredFields: string[]
   chatProvider: string | null
   embedProvider: string | null
+  /** A model runner answering on this server's own loopback address, and what it has pulled.
+   *  Probed only while the tenant has no key of its own. */
+  localRunner?: { available: boolean; models: string[] }
+  localRunnerUrl?: string
 }
 
 export interface ChannelForm {

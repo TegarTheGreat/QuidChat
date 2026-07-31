@@ -33,6 +33,9 @@ export type ServerDeps = {
   resolveProvider?: ProviderResolver
   /** Asks a tenant's provider which models it has — see `tenant-provider.ts`. */
   listModels?: ModelLister
+  /** Used only to probe for a model runner on this machine's loopback address. Injectable so a
+   *  test can answer that probe without one running, and without the wait for it to fail. */
+  fetchImpl?: typeof fetch
   /** Defaults to `process.env`. Injectable so a test can exercise the admin token gate
    *  (unset vs. set, valid vs. invalid) without mutating real process state — see
    *  `admin.ts`'s `checkAdminAuth`. */
@@ -181,6 +184,7 @@ export function createServer(deps: ServerDeps): Server {
         ...(deps.resolveProvider ? { resolveProvider: deps.resolveProvider } : {}),
         adminToken: env.QUIDCHAT_ADMIN_TOKEN, env, failedAuthLimiter,
         ...(deps.listModels ? { listModels: deps.listModels } : {}),
+        ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
       }).catch((e: unknown) => {
         logError("unhandled error in admin route", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })

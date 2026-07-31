@@ -252,6 +252,8 @@ One installation, many businesses, and none can see another's data.
 
 Isolation is row-level security, not application filters. Foreign keys carry `tenant_id` as composite keys, because foreign key checks bypass row security — which makes a cross-tenant reference impossible rather than merely forbidden. The migration refuses to apply if any table is left unprotected, and the test suite attacks that guard rather than trusting it.
 
+QuidChat probes its own loopback address for a model runner while a tenant has no key of its own, and offers it in the panel when one is answering with a model pulled. "I have no card and no key" is the first sentence of the conversation for a small shop, and the deployments most likely to have Ollama going were the least likely to be told they could use it. The probe is loopback-only and gives up after a second, because the question is whether this server can reach a runner on itself.
+
 ## Keeping only what you need
 
 `retention_days` deletes conversations once they pass it. The server runs a pass at start-up and once a day after; `quidchat prune` does the same thing once and exits, for anyone who would rather see it in their own crontab.

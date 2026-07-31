@@ -367,3 +367,66 @@ describe("PUT /admin/providers", () => {
     }
   })
 })
+
+describe("GET /admin/providers", () => {
+  it("offers a model runner already going on this machine", async () => {
+    await seedTenant(db, "local-runner")
+    const asked: string[] = []
+    const { url, close } = await startServer({
+      db, provider: new FakeProvider([]), logError: () => {},
+      env: {
+        QUIDCHAT_ADMIN_TOKEN: ADMIN_TOKEN,
+        QUIDCHAT_SECRET_KEY: Buffer.alloc(32, 13).toString("base64"),
+      },
+      fetchImpl: (async (input: string | URL | Request) => {
+        asked.push(String(input))
+        return new Response(JSON.stringify({ data: [{ id: "llama3.2" }, { id: "nomic-embed" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      }) as typeof fetch,
+    })
+    try {
+      const res = await fetch(`${url}/admin/providers?tenantSlug=local-runner`, {
+        headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      })
+      const body = (await res.json()) as {
+        localRunner: { available: boolean; models: string[] }
+      }
+      expect(body.localRunner).toEqual({ available: true, models: ["llama3.2", "nomic-embed"] })
+      // Loopback only. The question is whether THIS server can reach a runner on itself, and a
+      // probe that followed a configured address would be a way to make the server fetch
+      // something else.
+      expect(asked[0]).toBe("http://127.0.0.1:11434/v1/models")
+    } finally {
+      await close()
+    }
+  })
+
+  it("says nothing when the runner has no model pulled", async () => {
+    await seedTenant(db, "runner-empty")
+    const { url, close } = await startServer({
+      db, provider: new FakeProvider([]), logError: () => {},
+      env: {
+        QUIDCHAT_ADMIN_TOKEN: ADMIN_TOKEN,
+        QUIDCHAT_SECRET_KEY: Buffer.alloc(32, 13).toString("base64"),
+      },
+      // A runner answering with an empty list cannot answer a customer either. Offering it would
+      // send an owner to a provider that refuses every question.
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })) as typeof fetch,
+    })
+    try {
+      const res = await fetch(`${url}/admin/providers?tenantSlug=runner-empty`, {
+        headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      })
+      const body = (await res.json()) as { localRunner: { available: boolean } }
+      expect(body.localRunner.available).toBe(false)
+    } finally {
+      await close()
+    }
+  })
+})

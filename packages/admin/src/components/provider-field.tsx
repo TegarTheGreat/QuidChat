@@ -158,6 +158,30 @@ export function ProviderField({
         </p>
       )}
 
+      {data.localRunner?.available && data.configuredFields.length === 0 && (
+        // The answer to "I have no card and no key", which for a small shop is not an edge case
+        // but the first sentence of the conversation. It was reachable only by setting an
+        // environment variable, so the deployments most likely to have a runner going were the
+        // least likely to be told.
+        <div className="space-y-2 rounded-md border border-dashed p-3">
+          <p className="text-sm">
+            A model runner is already going on this server, with{" "}
+            <span className="font-medium">{data.localRunner.models.slice(0, 3).join(", ")}</span>
+            {data.localRunner.models.length > 3 ? " and others" : ""}. Nothing leaves your machine
+            and it costs nothing to run.
+          </p>
+          <Button
+            size="sm"
+            disabled={busy || !data.secretKeyConfigured}
+            onClick={() =>
+              void save({ OLLAMA_BASE_URL: data.localRunnerUrl ?? "http://127.0.0.1:11434/v1" })
+            }
+          >
+            Use it
+          </Button>
+        </div>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-[minmax(0,14rem)_1fr]">
         <div className="space-y-1">
           <Label htmlFor="provider-choice">Provider</Label>

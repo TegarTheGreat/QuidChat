@@ -31,6 +31,43 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body))
 }
 
+/**
+ * Whether a model runner is already listening on this machine.
+ *
+ * Ollama is the answer to "I have no card and no key" — which for a small Indonesian shop is not
+ * an edge case, it is the first sentence of the conversation. It was reachable only by setting an
+ * environment variable, so the deployments most likely to have it running were the least likely
+ * to be told.
+ *
+ * Probed rather than assumed, and only on the loopback address: the question is whether THIS
+ * server can reach a runner on itself, and a probe that followed a configured address would be a
+ * way to make the server fetch something else.
+ *
+ * One second, and failure means "no". A panel that hangs while something on port 11434 refuses to
+ * answer is worse than one that quietly says nothing is there.
+ */
+const LOCAL_RUNNER_URL = "http://127.0.0.1:11434"
+
+async function localRunner(
+  fetchImpl: typeof fetch,
+): Promise<{ available: boolean; models: string[] }> {
+  try {
+    const res = await fetchImpl(`${LOCAL_RUNNER_URL}/v1/models`, {
+      signal: AbortSignal.timeout(1000),
+    })
+    if (!res.ok) return { available: false, models: [] }
+    const body = (await res.json()) as { data?: { id?: unknown }[] }
+    const models = (body.data ?? [])
+      .map((m) => m.id)
+      .filter((id): id is string => typeof id === "string")
+    // A runner with no model pulled cannot answer anything, and offering it would send an owner
+    // to a provider that refuses every question. Saying nothing is the honest state.
+    return { available: models.length > 0, models: models.slice(0, 20) }
+  } catch {
+    return { available: false, models: [] }
+  }
+}
+
 export async function getProviders(
   res: ServerResponse,
   deps: AdminDeps,
@@ -41,6 +78,12 @@ export async function getProviders(
 
   const env = deps.env ?? process.env
   const config = await readProviderConfig(deps.db, tenantId, env)
+  // Only when the tenant has nothing of its own. A shop already answering on its own key does not
+  // need to be told about a runner, and the probe would cost every panel load a second.
+  const runner =
+    config && Object.keys(config.secrets).length > 0
+      ? { available: false, models: [] }
+      : await localRunner(deps.fetchImpl ?? fetch)
   sendJson(res, 200, {
     // Without this the panel would offer a form whose every save fails, which reads as the form
     // being broken rather than as the deployment missing a key.
@@ -48,6 +91,9 @@ export async function getProviders(
     configuredFields: config ? Object.keys(config.secrets).toSorted() : [],
     chatProvider: config?.chatProvider ?? null,
     embedProvider: config?.embedProvider ?? null,
+    /** A model runner on this machine, and what it has pulled. See `localRunner`. */
+    localRunner: runner,
+    localRunnerUrl: `${LOCAL_RUNNER_URL}/v1`,
   })
 }
 

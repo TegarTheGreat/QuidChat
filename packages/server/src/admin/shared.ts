@@ -131,6 +131,9 @@ export type AdminDeps = {
   env?: Record<string, string | undefined>
   /** Bounds guesses at the admin token. Optional so a test can construct deps without one. */
   failedAuthLimiter?: RateLimiter
+  /** Injected so a test can answer the local-runner probe without a runner, and without the
+   *  one-second wait that not having one costs. Production passes nothing. */
+  fetchImpl?: typeof fetch
 }
 
 /** Resolves `slug` to a tenant id via the same public lookup `/chat` uses, sending the
