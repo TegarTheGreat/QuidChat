@@ -39,6 +39,13 @@ const COPY = {
     generating: "Writing an answer…",
     validating: "Checking it against our documents…",
     sourcePrefix: "From",
+    /* Shown when the business has not written its own. An empty panel is the reason a visitor
+       closes the widget without typing: there is nothing to react to and no sign of what it can
+       do. This says who is answering and, just as importantly, that it will admit what it does
+       not know — which is the promise the rest of the product keeps. */
+    defaultGreeting:
+      "Ask me anything about this business. I answer from its own documents, and I will say so when something is not in them.",
+    retry: "Try again",
   },
   id: {
     launcherLabel: "Ada pertanyaan?",
@@ -53,6 +60,9 @@ const COPY = {
     generating: "Menyusun jawaban…",
     validating: "Mencocokkan dengan dokumen…",
     sourcePrefix: "Dari",
+    defaultGreeting:
+      "Tanya apa saja tentang bisnis ini. Saya menjawab dari dokumen resminya, dan akan bilang kalau informasinya memang belum ada.",
+    retry: "Coba lagi",
   },
 }
 
@@ -228,6 +238,7 @@ function buildStyle(theme: WidgetTheme): string {
     .close { width: 44px; height: 44px; }
     .send { width: 48px; height: 48px; }
     .starter { padding: 12px 14px; }
+    .retry { padding: 10px 14px; }
   }
 
   .header {
@@ -302,6 +313,21 @@ function buildStyle(theme: WidgetTheme): string {
     color: #8c1d1d;
     border-radius: 14px;
   }
+  /* Inside the error bubble, so the way out sits with what went wrong rather than somewhere the
+     visitor has to go looking for it. */
+  .retry {
+    margin-top: 9px;
+    padding: 6px 12px;
+    background: var(--qc-surface);
+    border: 1px solid #e3b9b9;
+    border-radius: 9px;
+    color: #8c1d1d;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 550;
+    cursor: pointer;
+  }
+  .retry:hover { background: #fff; border-color: #8c1d1d; }
 
   /*
    * The source chip — the one thing here that no other chat widget can show, and the reason this
@@ -326,14 +352,30 @@ function buildStyle(theme: WidgetTheme): string {
   .citation-mark { width: 12px; height: 12px; flex: none; }
   .citation-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* The opening screen. Quiet on purpose — it is scaffolding a visitor should stop noticing the
-     moment they have typed something, not a second header competing with the real one. */
-  .opener { margin: auto 0; padding: 4px 2px; }
+  /*
+   * The opening screen.
+   *
+   * Anchored to the bottom, not centred: a conversation grows upward from the composer, and a
+   * greeting floating in the middle of an empty panel reads as placeholder text rather than as
+   * something the assistant said.
+   *
+   * The greeting is drawn as the assistant's own first message for the same reason. A line of
+   * grey type is chrome; a bubble is somebody talking, and it shows a visitor what the answer to
+   * their question is going to look like before they have asked it.
+   */
+  .opener { margin-top: auto; padding: 4px 0 2px; }
   .opener-greeting {
-    margin: 0 0 14px;
+    align-self: flex-start;
+    max-width: 86%;
+    margin: 0 0 12px;
+    padding: 11px 14px;
+    background: var(--qc-surface);
+    border: 1px solid var(--qc-line);
+    border-radius: 14px 14px 14px 4px;
+    box-shadow: 0 1px 2px rgba(16, 20, 28, 0.04);
+    color: var(--qc-ink);
     font-size: 14.5px;
     line-height: 1.55;
-    color: var(--qc-muted);
   }
   .starters { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
   /* Left-aligned and full-width-capable rather than centred pills: these are sentences, and a
@@ -345,8 +387,12 @@ function buildStyle(theme: WidgetTheme): string {
     background: var(--qc-surface);
     border: 1px solid var(--qc-line);
     border-radius: 12px;
-    color: var(--qc-ink);
+    /* The brand colour, so a chip does not read as another thing the assistant said. Next to the
+       greeting bubble — same surface, same border — black text made them look like transcript
+       rather than like something to tap. */
+    color: var(--qc-accent);
     font-size: 13.5px;
+    font-weight: 550;
     line-height: 1.45;
     cursor: pointer;
     transition: border-color 120ms ease, transform 120ms ease;
@@ -415,7 +461,7 @@ function buildStyle(theme: WidgetTheme): string {
   @media (prefers-reduced-motion: reduce) {
     .panel, .message { animation: none; }
     .typing-dots i { animation: none; opacity: 0.6; }
-    .launcher, .send, .close, textarea, .starter { transition: none; }
+    .launcher, .send, .close, textarea, .starter, .retry { transition: none; }
   }
 `
 }
@@ -570,12 +616,13 @@ export function mountWidget(
    */
   const opener = doc.createElement("div")
   opener.className = "opener"
-  if (theme.greeting.trim() !== "") {
-    const greeting = doc.createElement("p")
-    greeting.className = "opener-greeting"
-    greeting.textContent = theme.greeting
-    opener.appendChild(greeting)
-  }
+  // Falls back to the shipped line rather than to nothing. A tenant that has not written a
+  // greeting is the ordinary case on day one, and it used to open onto an empty grey rectangle.
+  const greetingText = theme.greeting.trim() !== "" ? theme.greeting : copy.defaultGreeting
+  const greeting = doc.createElement("p")
+  greeting.className = "opener-greeting"
+  greeting.textContent = greetingText
+  opener.appendChild(greeting)
   if (theme.starters.length > 0) {
     const list = doc.createElement("div")
     list.className = "starters"
@@ -673,11 +720,31 @@ export function mountWidget(
     }
   }
 
-  function appendErrorMessage(text: string): void {
+  /**
+   * A failed send, with the way out of it.
+   *
+   * The message used to end at "temporarily unavailable", leaving the visitor to retype a
+   * question the widget still had in hand — on a phone, over a connection that just dropped one
+   * request. The button resends the same question and takes the error away with it, so a
+   * recovered send leaves no wreckage in the transcript.
+   */
+  function appendErrorMessage(text: string, question?: string): void {
     const bubble = appendBubble("error")
     const p = doc.createElement("p")
     p.textContent = text
     bubble.appendChild(p)
+    if (question === undefined) return
+    const again = doc.createElement("button")
+    again.type = "button"
+    again.className = "retry"
+    again.textContent = copy.retry
+    again.addEventListener("click", () => {
+      bubble.remove()
+      // Not echoed: the visitor's question is already above this, and repeating it would make a
+      // retry look like they asked twice.
+      void ask(question, false)
+    })
+    bubble.appendChild(again)
   }
 
   /** Replaces the indicator's text as the server reports each stage. */
@@ -713,8 +780,8 @@ export function mountWidget(
     }
   }
 
-  async function submit(): Promise<void> {
-    const text = input.value.trim()
+  /** Asks one question. `echo` is false on a retry, where the question is already on screen. */
+  async function ask(text: string, echo: boolean): Promise<void> {
     if (text === "" || pending) return
 
     // The visitor's own message appears before the round trip starts, not after —
@@ -723,8 +790,7 @@ export function mountWidget(
     // Gone once a conversation exists: a returning visitor scrolling up should find what they
     // asked, not an invitation to start.
     opener.remove()
-    appendVisitorMessage(text)
-    input.value = ""
+    if (echo) appendVisitorMessage(text)
     setPending(true)
 
     try {
@@ -737,10 +803,17 @@ export function mountWidget(
       rememberConversationId(config, result.conversationId)
       appendResult(result)
     } catch (err) {
-      appendErrorMessage(err instanceof Error ? err.message : String(err))
+      appendErrorMessage(err instanceof Error ? err.message : String(err), text)
     } finally {
       setPending(false)
     }
+  }
+
+  async function submit(): Promise<void> {
+    const text = input.value.trim()
+    if (text === "" || pending) return
+    input.value = ""
+    await ask(text, true)
   }
 
   launcher.addEventListener("click", () => {

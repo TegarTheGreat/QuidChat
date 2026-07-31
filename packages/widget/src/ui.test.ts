@@ -240,3 +240,72 @@ describe("keyboard use", () => {
     expect(shadow.activeElement).toBe(launcher)
   })
 })
+
+describe("the opening screen", () => {
+  it("greets a visitor even when the business wrote no greeting", () => {
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    // A tenant that has not opened the theme editor — the ordinary case on day one, and what
+    // every screenshot of this widget showed: a grey rectangle with nothing in it.
+    mountWidget(container, cfg, { sendMessage: (async () => ({ kind: "refused" })) as never })
+    const shadow = container.shadowRoot!
+
+    const greeting = shadow.querySelector(".opener-greeting")!
+    expect(greeting.textContent).toMatch(/answer from its own documents/i)
+  })
+
+  it("uses the business's own greeting when there is one", () => {
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    mountWidget(
+      container,
+      cfg,
+      { sendMessage: (async () => ({ kind: "refused" })) as never },
+      sanitizeTheme({ greeting: "Halo! Ada yang bisa kami bantu?" }),
+    )
+    const shadow = container.shadowRoot!
+    expect(shadow.querySelector(".opener-greeting")!.textContent).toBe(
+      "Halo! Ada yang bisa kami bantu?",
+    )
+  })
+})
+
+describe("a send that failed", () => {
+  it("offers to resend the same question, and asks it once", async () => {
+    let calls = 0
+    const sent: string[] = []
+    const { send, messageList, shadow } = mount((async (_cfg: never, body: never) => {
+      calls++
+      sent.push((body as unknown as { message: string }).message)
+      if (calls === 1) throw new Error("The assistant is temporarily unavailable.")
+      return {
+        kind: "answered",
+        conversationId: "c1",
+        segments: [{ text: "Garansi satu tahun.", kind: "business_claim", citations: [] }],
+        citations: [],
+        usage: ZERO_USAGE,
+      }
+    }) as never)
+
+    await send("Berapa lama garansinya?")
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const retry = shadow.querySelector<HTMLButtonElement>(".retry")
+    // Without this the visitor retypes a question the widget still has in hand, on the connection
+    // that just dropped it.
+    expect(retry).not.toBeNull()
+
+    retry!.click()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(sent).toEqual(["Berapa lama garansinya?", "Berapa lama garansinya?"])
+    expect(messageList.textContent).toContain("Garansi satu tahun.")
+    // The error goes with the retry, and the question is not echoed a second time: a recovered
+    // send must not read as though the customer asked twice.
+    expect(shadow.querySelector(".message.error")).toBeNull()
+    expect(messageList.querySelectorAll(".message.visitor")).toHaveLength(1)
+  })
+})

@@ -60,7 +60,7 @@ export async function handleWidgetConfig(
     return
   }
 
-  const { theme, cannedQuestions } = await withTenant(db, identity.tenantId, async (tx) => {
+  const { theme, cannedQuestions, tenantName } = await withTenant(db, identity.tenantId, async (tx) => {
     const result = await tx.execute(sql`SELECT widget_theme FROM tenant_settings`)
     const rows = rowsOf(result)
     if (rows.length === 0) throw new Error(`tenant_settings not found for ${identity.tenantId}`)
@@ -76,7 +76,11 @@ export async function handleWidgetConfig(
       sql`SELECT question FROM canned_answers WHERE status = 'approved'
           ORDER BY created_at ASC LIMIT ${MAX_STARTERS}`,
     )
+    // The tenant's own name, for the panel header. `tenants` carries the `tenant_self` policy,
+    // so this returns exactly one row inside `withTenant` — the business asking about itself.
+    const named = rowsOf(await tx.execute(sql`SELECT name FROM tenants`))[0]
     return {
+      tenantName: typeof named?.name === "string" ? named.name : "",
       theme: (rows[0]!.widget_theme ?? {}) as Record<string, unknown>,
       cannedQuestions: rowsOf(canned)
         .map((r) => r.question)
@@ -88,6 +92,18 @@ export async function handleWidgetConfig(
   for (const key of THEME_KEYS) {
     const value = theme[key]
     if (typeof value === "string") body[key] = value
+  }
+
+  /*
+   * The header names the business unless it was given something else to say.
+   *
+   * It read "Chat assistant" on every site that had not opened the theme editor, which tells a
+   * customer nothing and reads like software someone bolted on. The shop's own name is already
+   * on the page around the widget; matching it is what makes the thing look like part of the
+   * shop rather than a third party sitting in the corner of it.
+   */
+  if (typeof body.title !== "string" && tenantName.trim() !== "") {
+    body.title = tenantName
   }
 
   /*

@@ -112,7 +112,12 @@ describe("GET /widget-config", () => {
     try {
       const res = await fetch(`${url}/?tenantSlug=widget-config-extra-keys`)
       const body = await res.text()
-      expect(JSON.parse(body)).toEqual({ primaryColor: "#112233" })
+      // The title is the tenant's own name, filled in because this theme configures none — the
+      // whitelist is what keeps the two keys beside it out.
+      expect(JSON.parse(body)).toEqual({
+        primaryColor: "#112233",
+        title: "widget-config-extra-keys",
+      })
       expect(body).not.toMatch(/renewal negotiation|owner@example\.com/)
     } finally {
       await close()
@@ -168,6 +173,42 @@ describe("opening questions", () => {
       const res = await fetch(`${server.url}/widget-config?tenantSlug=starters-explicit`)
       const body = (await res.json()) as { starters?: string[] }
       expect(body.starters).toEqual(["Jam buka?", "Alamat toko?"])
+    } finally {
+      await server.close()
+    }
+  })
+
+  it("names the business in the header when no title was configured", async () => {
+    const [tenant] = await db
+      .insert(tenants)
+      .values({ slug: "title-default", name: "Toko Berkah" })
+      .returning()
+    await db.insert(tenantSettings).values({ tenantId: tenant!.id })
+    const server = await startServer()
+    try {
+      const res = await fetch(`${server.url}/widget-config?tenantSlug=title-default`)
+      const body = (await res.json()) as Record<string, unknown>
+      // It read "Chat assistant" on every site whose owner never opened the theme editor, which
+      // tells a customer nothing and reads like software bolted onto the page.
+      expect(body.title).toBe("Toko Berkah")
+    } finally {
+      await server.close()
+    }
+  })
+
+  it("lets a configured title win over the business's name", async () => {
+    const [tenant] = await db
+      .insert(tenants)
+      .values({ slug: "title-explicit", name: "PT Sumber Rejeki Abadi" })
+      .returning()
+    await db
+      .insert(tenantSettings)
+      .values({ tenantId: tenant!.id, widgetTheme: { title: "Bantuan Sumber Rejeki" } })
+    const server = await startServer()
+    try {
+      const res = await fetch(`${server.url}/widget-config?tenantSlug=title-explicit`)
+      const body = (await res.json()) as Record<string, unknown>
+      expect(body.title).toBe("Bantuan Sumber Rejeki")
     } finally {
       await server.close()
     }
