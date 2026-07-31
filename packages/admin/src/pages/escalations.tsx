@@ -59,7 +59,30 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
 
   const [answering, setAnswering] = React.useState<Escalation | null>(null)
   const [answer, setAnswer] = React.useState("")
+  const [rowError, setRowError] = React.useState<string | null>(null)
+  const [busyId, setBusyId] = React.useState<string | null>(null)
   const { state: saveState, mutate: saveAnswer } = useMutation(api.createCannedAnswer)
+
+  /**
+   * Marking one handled, or putting it back.
+   *
+   * This used to be a bare `.then()` with nothing on the other side of a failure: the button did
+   * nothing, the row did not change, and the screen said the same as it had before. A queue whose
+   * dismiss button silently fails is worse than one without a dismiss button, because an owner
+   * believes they have cleared it.
+   */
+  async function setResolved(escalation: Escalation, resolved: boolean): Promise<void> {
+    setBusyId(escalation.id)
+    setRowError(null)
+    try {
+      await api.resolveEscalation({ tenantSlug, id: escalation.id, resolved })
+      setReloadKey((k) => k + 1)
+    } catch (cause) {
+      setRowError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusyId(null)
+    }
+  }
 
   function startAnswering(escalation: Escalation) {
     setAnswering(escalation)
@@ -80,7 +103,17 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
     // Marked handled in the same step. Writing the answer IS handling it, and leaving the row
     // open would make this queue grow forever no matter how much work someone did on it. Done
     // after the answer is saved, so a failure to save never marks anything as handled.
-    await api.resolveEscalation({ tenantSlug, id: answering.id, resolved: true })
+    try {
+      await api.resolveEscalation({ tenantSlug, id: answering.id, resolved: true })
+    } catch (cause) {
+      // The answer is saved either way, and saying so matters: retrying from a blank dialog
+      // would write it a second time.
+      setRowError(
+        `The answer was saved, but this row could not be marked handled: ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`,
+      )
+    }
     setAnswering(null)
     setAnswer("")
     setReloadKey((k) => k + 1)
@@ -103,6 +136,7 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
         </div>
       )}
       {escalations.status === "error" && <MutationError message={escalations.message} />}
+      {rowError && <MutationError message={rowError} />}
 
       {escalations.status === "success" && (
         <div className="space-y-4">
@@ -170,18 +204,11 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
                               variant="ghost"
                               size="sm"
                               className="ml-2"
+                              disabled={busyId === escalation.id}
                               // Some escalations need no answer — a provider outage, a budget
                               // that has since been raised. Dismissing one has to be possible
                               // without inventing a canned answer for it.
-                              onClick={() =>
-                                void api
-                                  .resolveEscalation({
-                                    tenantSlug,
-                                    id: escalation.id,
-                                    resolved: !escalation.resolvedAt,
-                                  })
-                                  .then(() => setReloadKey((k) => k + 1))
-                              }
+                              onClick={() => void setResolved(escalation, !escalation.resolvedAt)}
                             >
                               {escalation.resolvedAt ? "Reopen" : "Dismiss"}
                             </Button>

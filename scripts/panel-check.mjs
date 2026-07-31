@@ -289,6 +289,34 @@ check("cancelling is possible", (await clickText("Cancel")) === "clicked")
  * to save was to scroll past all of them, and a form whose primary action is off screen reads as
  * one that cannot be saved.
  */
+/**
+ * The setup assistant.
+ *
+ * The route and the agent behind it shipped with nothing calling them — a capability that could
+ * not be reached from anywhere in the product. The smoke provider answers with no tool calls, so
+ * what this proves is that the panel reaches the endpoint and renders what came back.
+ */
+console.log("setup assistant")
+await open("Setup")
+text = await bodyText()
+check("the setup screen offers the assistant", text.includes("Ask about your setup"), text.slice(0, 400))
+check(
+  "it opens with questions rather than an empty box",
+  text.includes("Why is my assistant refusing questions?"),
+  text.slice(0, 400),
+)
+check(
+  "asking works",
+  (await clickText("Is anything blocking it from answering?")) === "clicked",
+)
+await sleep(4000)
+text = await bodyText()
+check(
+  "the answer comes back on the screen",
+  text.includes("Is anything blocking it from answering?"),
+  text.slice(0, 500),
+)
+
 console.log("settings")
 await send("Page.navigate", { url: `${BASE}/panel` })
 await sleep(2000)

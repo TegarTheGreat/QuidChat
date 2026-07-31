@@ -235,7 +235,16 @@ export async function runSetupTurn(args: {
   history: { role: "user" | "assistant"; content: string }[]
   message: string
   execute: SetupExecutor
+  /**
+   * Which tools the model is told it has. Defaults to all of them.
+   *
+   * The caller passes the subset its executor can actually run. Offering a tool that answers
+   * "not available in this build" is worse than not offering it: the model spends a round
+   * calling it, then explains to the owner why it could not do the thing it just offered to do.
+   */
+  tools?: readonly ToolDefinition[]
 }): Promise<SetupTurn> {
+  const tools = args.tools ?? SETUP_TOOLS
   const ran: string[] = []
   const history = [...args.history]
   let currentTurn = args.message
@@ -244,7 +253,7 @@ export async function runSetupTurn(args: {
     const result = await args.provider.complete({
       model: args.model,
       prompt: { system: SYSTEM, history, currentTurn },
-      tools: [...SETUP_TOOLS],
+      tools: [...tools],
     })
 
     const calls = result.toolCalls ?? []

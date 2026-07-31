@@ -78,6 +78,9 @@ function AdminApp() {
           {selectedTenant && section === "setup" && (
             <SetupPage
               tenantSlug={selectedTenant}
+              {...(tenantList.find((t) => t.slug === selectedTenant)?.id
+                ? { tenantId: tenantList.find((t) => t.slug === selectedTenant)!.id }
+                : {})}
               onGoTo={setSection}
               onOpenSettings={() => setSettingsOpen(true)}
             />

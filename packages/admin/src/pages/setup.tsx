@@ -7,6 +7,7 @@ import { Skeleton } from "../components/ui/skeleton"
 import { useFetch } from "../hooks/use-fetch"
 import { Button } from "../components/ui/button"
 import type { Section } from "../components/app-sidebar"
+import { SetupAssistant } from "../components/setup-assistant"
 import { api, type SetupFinding } from "../lib/api"
 
 /**
@@ -88,10 +89,14 @@ const TONE: Record<
  */
 export function SetupPage({
   tenantSlug,
+  tenantId,
   onGoTo,
   onOpenSettings,
 }: {
   tenantSlug: string
+  /** The assistant below is scoped by id, so no tool it runs can name another tenant. Absent
+   *  while the tenant list is still loading, and the assistant simply does not render. */
+  tenantId?: string
   /** Navigates to the screen that owns a finding. Both are optional so the page still renders in
    *  isolation — a test or a future embed should not have to supply navigation to see it. */
   onGoTo?: (section: Section) => void
@@ -174,6 +179,10 @@ export function SetupPage({
             </Card>
             )
           })}
+
+          {/* Below the findings, not above them: the cards are the answer to "what is wrong",
+              and this is for the questions they raise. */}
+          {tenantId && <SetupAssistant tenantId={tenantId} />}
         </div>
       )}
     </div>

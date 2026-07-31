@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest"
 import { Readable } from "node:stream"
-import { postSetupChat, requiresConfirmation } from "./setup-agent.js"
+import { readFileSync } from "node:fs"
+import { SETUP_TOOLS } from "@quidchat/core"
+import {
+  executorForTest,
+  OFFERED_SETUP_TOOLS,
+  postSetupChat,
+  requiresConfirmation,
+} from "./setup-agent.js"
 import type { AdminDeps } from "./shared.js"
 
 function request(body: unknown): never {
@@ -65,3 +72,37 @@ describe("the route's own confirmation gate", () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe("what the model is told it can do", () => {
+  it("offers only tools the executor actually runs", () => {
+    /*
+     * Ten tool definitions used to go to the model while two were implemented, so it would offer
+     * to create a skill, call the tool, and then explain to the owner why the thing it had just
+     * offered had not happened. Every offered name has to have a case in the executor.
+     *
+     * Read from the source rather than from a second list here: a copy of the switch statement
+     * would agree with itself forever.
+     */
+    const source = readFileSync(new URL("./setup-agent.ts", import.meta.url), "utf8")
+    for (const tool of OFFERED_SETUP_TOOLS) {
+      expect(source, tool.name).toContain(`case "${tool.name}":`)
+    }
+    expect(OFFERED_SETUP_TOOLS.length).toBeGreaterThan(0)
+    // And it must be a real subset — offering everything again is the bug this guards.
+    expect(OFFERED_SETUP_TOOLS.length).toBeLessThan(SETUP_TOOLS.length)
+  })
+
+  it("explains a setting from this build rather than from the model's memory", async () => {
+    const executor = executorForTest()
+    const good = await executor({ id: "1", name: "explain_setting", input: { name: "answer mode" } })
+    // Spelled as an owner says it, matched to the column the panel writes.
+    expect(good.ok).toBe(true)
+    expect(good.ok && good.detail).toMatch(/answer_mode/)
+
+    const bad = await executor({ id: "2", name: "explain_setting", input: { name: "turbo" } })
+    // Naming the settings that do exist turns a dead end into the next question.
+    expect(bad.ok).toBe(false)
+    expect(bad.ok === false && bad.error).toMatch(/retention_days/)
+  })
+})
+

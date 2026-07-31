@@ -2,6 +2,7 @@ import {
   describeAction,
   runSetupTurn,
   GATED_TOOLS,
+  SETUP_TOOLS,
   type SetupExecutor,
   type SetupToolResult,
   type ToolCall,
@@ -30,6 +31,60 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body))
 }
 
+/**
+ * What this build can actually do.
+ *
+ * The model used to be handed all ten tool definitions while the executor implemented two, so it
+ * would offer to create a skill, call the tool, and then have to explain to the owner why the
+ * thing it had just offered did not happen. Offering exactly what runs removes a whole class of
+ * that — and the test beside this file asserts the two lists cannot drift apart.
+ */
+const IMPLEMENTED = new Set(["run_diagnostics", "list_knowledge_sources", "explain_setting"])
+
+export const OFFERED_SETUP_TOOLS = SETUP_TOOLS.filter((tool) => IMPLEMENTED.has(tool.name))
+
+/**
+ * What each setting does, in the words the panel uses.
+ *
+ * Written here rather than left to the model's memory, which is the point of the tool: a model
+ * recalling "retention_days" from its training describes some other product's setting, and an
+ * owner acts on the description.
+ */
+const SETTING_NOTES: Record<string, string> = {
+  answer_mode:
+    "How an answer is produced. `static` uses only approved canned answers and refuses anything " +
+    "else, which costs nothing per question. `thrifty` searches your documents and writes from " +
+    "them. `full` also rewrites the question first, which finds more but costs more.",
+  chat_model: "The model that writes answers. Changing it changes cost and quality, nothing else.",
+  embedding_model:
+    "The model that turns your documents into searchable vectors. Changing it means every " +
+    "document has to be indexed again — vectors from two models cannot be compared, so a " +
+    "half-changed library searches worse than either.",
+  refusal_text:
+    "What a customer reads when the documents do not cover their question. It is sent word for " +
+    "word, so write it as your business would say it.",
+  escalation_mode: "What happens when the assistant gives up: record it only, or notify you.",
+  escalation_target: "Where a notification goes — a webhook address you control.",
+  monthly_budget_cents:
+    "The most this assistant may spend on the provider in a calendar month. Reaching it stops " +
+    "answers rather than running up a bill. Zero means no limit at all, which is not the same " +
+    "as zero spending.",
+  retention_days:
+    "How long transcripts are kept before they are deleted automatically. It does not answer a " +
+    "customer asking you to erase theirs today — the Conversations screen does that.",
+  high_risk_topics:
+    "Subjects the assistant must never answer from inference: price, discounts, warranty, " +
+    "refunds, legal terms, stock. It answers on these only from a document that says so plainly.",
+  allowed_origins:
+    "The websites allowed to open your widget. A site not listed is refused, which is what stops " +
+    "someone else embedding your assistant and spending your budget.",
+  max_handoffs_per_turn: "How many times skills may pass one question along before answering it.",
+  max_handoffs_per_conversation: "The same limit, across a whole conversation.",
+  widget_theme:
+    "The widget's look: colour, side of the screen, title, language, greeting and the questions " +
+    "offered on the opening screen.",
+}
+
 /** Builds the executor for one tenant. Every tool is scoped to that tenant by construction —
  *  no tool takes a tenant argument, so the model cannot name someone else's. */
 function executorFor(deps: AdminDeps, tenantId: string, hasProvider: boolean): SetupExecutor {
@@ -52,9 +107,22 @@ function executorFor(deps: AdminDeps, tenantId: string, hasProvider: boolean): S
           detail: `${snapshot.sourceCount} source(s), ${snapshot.chunkCount} indexed chunk(s).`,
         }
       }
-      // The rest are not wired yet. Saying so is the honest answer: a tool that silently does
-      // nothing and reports success would have the assistant tell an owner their document is
-      // indexed when it is not.
+      case "explain_setting": {
+        const name = typeof call.input.name === "string" ? call.input.name.trim() : ""
+        // Both spellings, because an owner says "monthly budget" and the model passes it through.
+        const key = name.toLowerCase().replace(/[\s-]+/g, "_")
+        const note = SETTING_NOTES[key]
+        if (!note) {
+          return {
+            ok: false,
+            error: `there is no setting called ${name || "that"}. The settings are: ${Object.keys(SETTING_NOTES).join(", ")}.`,
+          }
+        }
+        return { ok: true, detail: `${key}: ${note}` }
+      }
+      // Anything else is not offered to the model at all — see OFFERED_SETUP_TOOLS. This stays
+      // as the answer for a confirmed action arriving from an older panel, where saying so
+      // honestly beats a tool that silently does nothing and reports success.
       default:
         return {
           ok: false,
@@ -106,6 +174,7 @@ export async function postSetupChat(
     history,
     message,
     execute: executorFor(deps, tenantId, true),
+    tools: OFFERED_SETUP_TOOLS,
   })
 
   if (turn.kind === "needs_confirmation") {
@@ -126,3 +195,14 @@ export function requiresConfirmation(call: ToolCall): boolean {
 }
 
 export { describeAction }
+
+/**
+ * The tenant-scoped executor, for tests.
+ *
+ * Only the tools that need no database are reachable through it — `explain_setting` is answered
+ * from the notes above and nothing else. A fake `deps` is enough for exactly that, which is the
+ * point: the explanation must not depend on anything but this build.
+ */
+export function executorForTest(): SetupExecutor {
+  return executorFor({ db: null } as unknown as AdminDeps, "test-tenant", true)
+}

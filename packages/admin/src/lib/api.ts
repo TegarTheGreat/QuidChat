@@ -216,6 +216,14 @@ export interface RoutingRule {
   enabled: boolean
 }
 
+export interface SetupChatReply {
+  kind: "reply" | "needs_confirmation"
+  text: string
+  /** Tool names the assistant ran this turn — shown so an owner can see what it touched. */
+  ran?: string[]
+  pending?: { call: { id: string; name: string; input: Record<string, unknown> }; summary: string }
+}
+
 // ---- Endpoints ------------------------------------------------------------
 
 export interface CannedAnswer {
@@ -418,6 +426,19 @@ export const api = {
 
   /** Skills, their linked sources and the routing rules together — they are only
    *  meaningful together, and an owner debugging a misrouted question needs all three. */
+  /** One turn with the setup assistant. Takes the tenant's id, not its slug: the route is
+   *  scoped by id so no tool can name another tenant. */
+  setupChat: (body: {
+    tenantId: string
+    message: string
+    history?: { role: "user" | "assistant"; content: string }[]
+    confirm?: { call: { id: string; name: string; input: Record<string, unknown> }; confirmed: true }
+  }) =>
+    request<SetupChatReply>("/v1/admin/setup/chat", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   getSkills: (tenantSlug: string) =>
     request<{ skills: Skill[]; rules: RoutingRule[] }>(`/v1/admin/skills${query({ tenantSlug })}`),
 
