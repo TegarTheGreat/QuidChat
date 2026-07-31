@@ -435,6 +435,37 @@ describe("createStore", () => {
       expect(found).toContain("Refund")
     })
 
+    it("matches a word the language has bent out of shape", async () => {
+      // "garansinya" and "bergaransi" share no token, so the keyword arm cannot see they are the
+      // same word — the simple configuration stems nothing, deliberately, because Postgres ships
+      // no Indonesian dictionary. Indonesian does this constantly, and it is the market this is
+      // built for. The embedding here is far from the question, so only the trigram arm can
+      // find it: measured word similarity 0.636 against 0.18 and 0.09 for unrelated chunks.
+      const [t] = await db.insert(tenants).values({ slug: "trgm", name: "trgm" }).returning()
+      await db.insert(tenantSettings).values({ tenantId: t!.id })
+      const [s4] = await db.insert(knowledgeSources)
+        .values({ tenantId: t!.id, kind: "text", uri: "a.txt", status: "ready" }).returning()
+      const [d4] = await db.insert(documents)
+        .values({ tenantId: t!.id, sourceId: s4!.id, title: "Kebijakan" }).returning()
+      await db.insert(chunks).values([
+        { tenantId: t!.id, documentId: d4!.id, ordinal: 0,
+          content: "Semua produk bergaransi resmi 12 bulan sejak tanggal pembelian.",
+          embedding: fakeEmbedding(900), embeddingModel: "test" },
+        { tenantId: t!.id, documentId: d4!.id, ordinal: 1,
+          content: "Servis unit dilakukan setiap hari kerja pukul sembilan sampai lima sore.",
+          embedding: fakeEmbedding(1), embeddingModel: "test" },
+        { tenantId: t!.id, documentId: d4!.id, ordinal: 2,
+          content: "Pembayaran melalui transfer bank dan kartu kredit.",
+          embedding: fakeEmbedding(2), embeddingModel: "test" },
+      ])
+
+      const hits = await createStore(db).searchChunks({
+        tenantId: t!.id, query: "berapa lama garansinya?",
+        embedding: fakeEmbedding(1), embeddingModel: "test", limit: 3,
+      })
+      expect(hits[0]!.content).toContain("bergaransi")
+    })
+
     it("does not fall over on a question with no words in it", async () => {
       // `string_agg` over nothing is NULL, and `@@ NULL` matches nothing rather than erroring.
       const [t] = await db.insert(tenants).values({ slug: "fts3", name: "fts3" }).returning()

@@ -84,6 +84,8 @@ So only the **rarest** words of the question survive: those matching the fewest 
 
 The limit is honest: in a two-chunk shop, "the" and "warranty" each appear once and no frequency rule can tell them apart. It needs a corpus to learn from.
 
+**There is a third arm, for words a language bends.** The `simple` configuration stems nothing, so "garansinya" and "bergaransi" share no token and the keyword arm is blind to the match — Indonesian does this constantly, and it is the market this is built for. Trigram word similarity sees it: 0.636 on that pair against 0.18 and 0.09 for unrelated chunks. Its terms are deliberately **not** the keyword arm's selective ones, because a word matching nothing lexically is exactly the case it exists for.
+
 ## Behind a proxy, three controls silently become no-ops
 
 `req.socket.remoteAddress` is the proxy, identically for every visitor — and every deployment that serves HTTPS has one. That collapses the per-visitor rate limit into a single shared bucket, makes an attacker's failed admin-token guesses lock out the real administrator, and leaves `conversations.visitor_id` the same for everyone, which turns the ownership check on a supplied `conversationId` into nothing.

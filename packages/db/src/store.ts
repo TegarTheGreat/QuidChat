@@ -154,6 +154,29 @@ export function createStore(db: QuidDb): Store {
           ) AS ranked
           WHERE ranked.n = ranked.rarest
         )`
+        /*
+         * Words for the trigram arm.
+         *
+         * Deliberately NOT the keyword arm's selective terms. That set drops any word matching no
+         * chunk at all — and a word matching nothing lexically is exactly the case this arm
+         * exists for: "garansinya" matches no token in a corpus that says "bergaransi", which is
+         * why the keyword arm is blind to it.
+         *
+         * Short words are dropped instead. Three characters of trigram overlap is noise in any
+         * language, and Indonesian is full of short function words: "di", "ke", "dan", "yang".
+         */
+        const trigramTerms = sql`(
+          SELECT array_agg(t.w)
+          FROM regexp_split_to_table(lower(${query}), '[^[:alnum:]]+') AS t(w)
+          WHERE length(t.w) >= 4
+        )`
+
+        // Postgres defaults the word-similarity threshold to 0.6, which sits right on top of the
+        // 0.636 measured for a true Indonesian match — close enough that a slightly longer chunk
+        // falls the wrong side of it. 0.45 clears that pair comfortably and leaves the unrelated
+        // ones (0.18, 0.09) far below. SET LOCAL, so it dies with the transaction.
+        await tx.execute(sql`SET LOCAL pg_trgm.word_similarity_threshold = 0.45`)
+
         const res = await tx.execute(sql`
           WITH kw AS (
             SELECT c.id,
@@ -167,6 +190,34 @@ export function createStore(db: QuidDb): Store {
             ORDER BY ts_rank(c.tsv, ${tsq}) DESC, c.id
             LIMIT ${poolSize}
           ),
+          /*
+           * The trigram arm: for words a language's grammar bends.
+           *
+           * The simple text-search configuration stems nothing, so "garansinya" and "bergaransi"
+           * share no token and the keyword arm cannot see they are the same word. Indonesian
+           * does this constantly - "harga"/"harganya", "kirim"/"pengiriman" - and it is the
+           * market this is built for. A bag-of-words embedding misses it for the same reason,
+           * and the tier with no good embedding model is exactly the beginner tier.
+           *
+           * Measured on the real pair: word similarity 0.636 for the warranty chunk against
+           * 0.182 and 0.091 for two unrelated ones. The operator uses the trigram index rather
+           * than scoring every chunk the tenant owns.
+           */
+          trg AS (
+            SELECT c.id,
+                   row_number() OVER (
+                     ORDER BY max(word_similarity(t.w, c.content)) DESC, c.id
+                   ) AS rnk
+            FROM chunks c
+            JOIN documents d ON d.id = c.document_id
+            CROSS JOIN LATERAL unnest(COALESCE(${trigramTerms}, ARRAY[]::text[])) AS t(w)
+            WHERE c.content %> t.w
+              ${sourceFilter}
+            GROUP BY c.id
+            ORDER BY max(word_similarity(t.w, c.content)) DESC, c.id
+            LIMIT ${poolSize}
+          ),
+
           sem AS (
             SELECT c.id,
                    row_number() OVER (ORDER BY c.embedding <=> ${vec}::vector, c.id) AS rnk
@@ -200,7 +251,11 @@ export function createStore(db: QuidDb): Store {
             -- range (0.09091 > 0.04762) and STILL makes presence in both lists
             -- advantageous (0.18182 > 0.09091) — just no longer absolute.
             SELECT id, SUM(1.0 / (10 + rnk)) AS score
-            FROM (SELECT id, rnk FROM kw UNION ALL SELECT id, rnk FROM sem) u
+            FROM (
+              SELECT id, rnk FROM kw
+              UNION ALL SELECT id, rnk FROM sem
+              UNION ALL SELECT id, rnk FROM trg
+            ) u
             GROUP BY id
           )
           SELECT c.id, c.content, d.title, f.score

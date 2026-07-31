@@ -99,6 +99,8 @@ Price lists, warranty terms and delivery policies live in PDFs at most businesse
 
 A page is reduced to its readable prose. Scripts and stylesheets go because they are not language — they match nothing a customer would type and cost an embedding call each. Menus, headers and footers go too: a menu repeated across ninety pages becomes ninety near-identical chunks that crowd the real answer out of the retrieval window.
 
+Retrieval fuses three rankings. Keyword matching on the words of the question that are rarest in your own documents; vector similarity on meaning; and trigram similarity for the words a language bends — Indonesian writes "garansi" as "garansinya" and "bergaransi", which share no token at all, so without it a customer asking "berapa lama garansinya?" reaches nothing.
+
 Reading a URL means the server makes a request to an address someone else chose, so it is guarded rather than trusted. Only `http` and `https`. Loopback, the private ranges, carrier-grade NAT and IPv6 link-local are all refused — including `169.254.169.254`, the instance metadata endpoint that hands out cloud credentials to anything that asks. The check runs on every redirect hop, because a redirect is a second chance to name a target, and a hostname resolving to several addresses is refused if *any* of them is private. Non-text responses are refused with the type named, since a PDF embedded as binary noise costs money and makes retrieval worse.
 
 If a page builds its content in the browser there is nothing on the wire to read. QuidChat says so and tells you to paste the text instead, rather than indexing an empty shell.
