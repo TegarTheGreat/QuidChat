@@ -64,6 +64,41 @@ export function resolvePanelPath(pathname: string): string | null {
 }
 
 /** `GET /panel` and everything under it. */
+/**
+ * Sent with the panel's HTML, not with its hashed assets.
+ *
+ * The admin token lives in this page's `sessionStorage`, and a token is the whole product: it
+ * renames tenants, reads every transcript and deletes a business outright. So the question worth
+ * answering is what an injected script could do here, and `script-src 'self'` is the answer —
+ * the build emits one module tag and one stylesheet, no inline script anywhere, so nothing is
+ * given up by refusing them.
+ *
+ * `'unsafe-inline'` stays on styles because the panel's menus and dialogs position themselves by
+ * writing a `style` attribute, and CSP does not distinguish that from an injected stylesheet. A
+ * style attribute cannot execute; dropping it would break every dropdown to buy nothing.
+ *
+ * `connect-src` is deliberately absent. The panel is served by the API it talks to in every
+ * documented deployment, but `VITE_API_BASE` exists so it can be built against another origin,
+ * and a header that silently breaks that deployment is worse than the exfiltration path it would
+ * close after an attacker already has script execution.
+ */
+const SECURITY_HEADERS: Record<string, string> = {
+  "content-security-policy": [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self' data:",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    // Says the same thing as x-frame-options to browsers that read this instead.
+    "frame-ancestors 'none'",
+  ].join("; "),
+  // A panel URL can carry a tenant slug, and there is no reason for it to travel to anyone.
+  "referrer-policy": "no-referrer",
+}
+
 export async function handlePanelAsset(res: ServerResponse, pathname: string): Promise<void> {
   const filePath = resolvePanelPath(pathname)
   if (!filePath) {
@@ -99,6 +134,7 @@ export async function handlePanelAsset(res: ServerResponse, pathname: string): P
   const isHtml = filePath.endsWith(".html")
   res.writeHead(200, {
     "content-type": contentTypeFor(filePath),
+    ...(isHtml ? SECURITY_HEADERS : {}),
     // Vite puts a content hash in every asset filename, so those are immutable. index.html
     // is not hashed and must never be cached, or a browser keeps loading yesterday's HTML
     // pointing at asset names that no longer exist.

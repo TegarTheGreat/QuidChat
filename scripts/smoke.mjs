@@ -230,6 +230,14 @@ async function main() {
 
     const panel = await fetch(`${base}/panel`)
     check("panel is served", panel.status === 200 && (await panel.text()).includes("<div"))
+    // The page that holds the admin token. The browser checks below are what prove the policy
+    // does not break it — a CSP that silently blanks the panel would pass a header assertion.
+    const csp = panel.headers.get("content-security-policy") ?? ""
+    check(
+      "the panel is served with a script-src policy",
+      csp.includes("script-src 'self'") && csp.includes("frame-ancestors 'none'"),
+      csp,
+    )
 
     const widget = await fetch(`${base}/quidchat.js`)
     check("widget bundle is served", widget.status === 200 && (await widget.text()).length > 1000)
