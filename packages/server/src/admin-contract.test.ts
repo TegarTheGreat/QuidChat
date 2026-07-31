@@ -147,6 +147,34 @@ describe("the admin panel's client against the admin API", () => {
     expect(updated.answer_mode).toBe("thrifty")
   })
 
+  it("saves the settings row the way the dialog actually saves it", async () => {
+    /*
+     * The dialog reads the whole row and writes it back. Doing that failed twice over, and every
+     * save from the panel returned 400 — models, refusal text, budget, retention, origins,
+     * handoff limits and the entire widget theme were unreachable, on a product whose rule is
+     * that configuration lives in the panel.
+     *
+     * Both halves were invisible to a test that patches one field at a time: the row carries
+     * `tenant_id`, which the API refuses as unknown, and it carries `escalation_target: null`
+     * for any tenant that has never set a webhook, which the API refused as "must be a string".
+     * This test round-trips the row, which is the thing the dialog does.
+     */
+    const api = await client()
+    const { settingsPayload } = await import("../../admin/src/components/settings-payload.js")
+
+    const fetched = await api.getSettings("contract")
+    expect(fetched).toHaveProperty("tenant_id")
+    expect(fetched.escalation_target).toBeNull()
+
+    const saved = await api.updateSettings({
+      ...settingsPayload(fetched, { primaryColor: "#123456", locale: "id" }),
+      tenantSlug: "contract",
+    })
+
+    expect(saved.widget_theme).toMatchObject({ primaryColor: "#123456", locale: "id" })
+    expect(saved.escalation_target).toBeNull()
+  })
+
   it("gets a skill, a rule and a source link back in the shape the screen groups by", async () => {
     const api = await client()
     const { skill } = await api.createSkill({ tenantSlug: "contract", name: "Sales" })

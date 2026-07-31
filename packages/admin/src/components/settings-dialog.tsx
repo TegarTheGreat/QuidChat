@@ -3,6 +3,8 @@ import { Blocks, Gauge, MessageSquareWarning, Palette } from "lucide-react"
 
 import { MutationError } from "./mutation-error"
 import { OriginsField } from "./origins-field"
+import { settingsPayload } from "./settings-payload"
+import { mergeWidgetTheme } from "./settings-theme"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -68,10 +70,28 @@ export function SettingsDialog({
   // The theme is edited as fields, not as JSON. A business owner should not have to know that
   // the column is jsonb, and a hand-typed object is a way to store a colour the widget will
   // silently reject — which reads as the setting not working.
-  const [theme, setTheme] = React.useState<{ primaryColor: string; position: string; title: string }>({
+  /**
+   * The theme is a jsonb blob, and this form knows only part of it. `handleSave` used to rebuild
+   * it from the fields on screen, so a shop that changed its accent colour silently lost its
+   * language, greeting and opening questions — reverting its customers to English chrome with no
+   * questions to tap, with nothing said about it. Everything stored is kept and edited fields are
+   * merged over the top, which also means a key added later survives a save from an older panel.
+   */
+  const [storedTheme, setStoredTheme] = React.useState<Record<string, unknown>>({})
+  const [theme, setTheme] = React.useState<{
+    primaryColor: string
+    position: string
+    title: string
+    locale: string
+    greeting: string
+    starters: string[]
+  }>({
     primaryColor: "#1a56db",
     position: "right",
     title: "Chat assistant",
+    locale: "en",
+    greeting: "",
+    starters: [],
   })
   const [saved, setSaved] = React.useState(false)
 
@@ -84,12 +104,18 @@ export function SettingsDialog({
     if (fetched.status === "success") {
       setDraft(fetched.data)
       const stored = (fetched.data.widget_theme ?? {}) as Record<string, unknown>
+      setStoredTheme(stored)
       setTheme({
         // Falls back to the widget's own defaults, so an unset theme shows what a visitor
         // actually sees rather than an empty field.
         primaryColor: typeof stored.primaryColor === "string" ? stored.primaryColor : "#1a56db",
         position: stored.position === "left" ? "left" : "right",
         title: typeof stored.title === "string" && stored.title !== "" ? stored.title : "Chat assistant",
+        locale: stored.locale === "id" ? "id" : "en",
+        greeting: typeof stored.greeting === "string" ? stored.greeting : "",
+        starters: Array.isArray(stored.starters)
+          ? stored.starters.filter((q): q is string => typeof q === "string")
+          : [],
       })
       setSaved(false)
     }
@@ -104,13 +130,11 @@ export function SettingsDialog({
 
   async function handleSave() {
     if (!draft || !tenantSlug) return
-    const widget_theme: Record<string, unknown> = {
-      primaryColor: theme.primaryColor,
-      position: theme.position,
-      title: theme.title,
-    }
+    const widget_theme = mergeWidgetTheme(storedTheme, theme)
     try {
-      await save({ ...draft, tenantSlug, widget_theme })
+      // Only the editable fields. Spreading `draft` sent `tenant_id` too, which the API refuses,
+      // so every save from this dialog returned 400 and nothing in it could be changed.
+      await save({ ...settingsPayload(draft, widget_theme), tenantSlug })
       setSaved(true)
     } catch {
       // Error text is shown from `saveState`; nothing further to do here.
@@ -364,6 +388,55 @@ export function SettingsDialog({
                             <SelectItem value="left">bottom left</SelectItem>
                           </SelectContent>
                         </Select>
+                      </Field>
+                      <Field label="Language of the buttons and placeholder">
+                        <Select
+                          value={theme.locale}
+                          onValueChange={(next) => {
+                            setTheme((t) => ({ ...t, locale: next }))
+                            setSaved(false)
+                          }}
+                        >
+                          <SelectTrigger aria-label="Widget language">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="id">Bahasa Indonesia</SelectItem>
+                            <SelectItem value="en">English</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Only the parts you do not write — the send button, the placeholder, the
+                          progress lines. Your greeting and answers stay in whatever language you
+                          write them.
+                        </p>
+                      </Field>
+                      <Field label="First thing a customer reads">
+                        <Textarea
+                          value={theme.greeting}
+                          rows={2}
+                          onChange={(e) => {
+                            setTheme((t) => ({ ...t, greeting: e.target.value }))
+                            setSaved(false)
+                          }}
+                          placeholder="Halo! Ada yang bisa kami bantu?"
+                          aria-label="Widget greeting"
+                        />
+                      </Field>
+                      <Field label="Questions offered before they type">
+                        <TagInput
+                          value={theme.starters}
+                          onChange={(next) => {
+                            setTheme((t) => ({ ...t, starters: next }))
+                            setSaved(false)
+                          }}
+                          placeholder="e.g. Berapa lama garansinya?"
+                          aria-label="Opening questions"
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Leave empty and your approved canned answers are offered instead —
+                          questions you already know you get, and that are guaranteed answerable.
+                        </p>
                       </Field>
                       <Field label="Title your customers see">
                         <Input

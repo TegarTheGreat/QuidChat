@@ -123,10 +123,18 @@ export async function patchSettings(
       }
       setClauses.push(sql`${sql.raw(key)} = ${value}`)
     } else if (key === "escalation_target") {
+      // `null` is the column's own resting state — a tenant that has never set a webhook — and it
+      // is also the only way to clear one. Rejecting it meant a tenant with no target could not
+      // save ANY setting: the panel reads the row, sends it back, and this refused the value it
+      // had just handed out. Found by driving the settings dialog in a browser.
+      if (value === null) {
+        setClauses.push(sql`${sql.raw(key)} = NULL`)
+        continue
+      }
       // Only checked for shape, not reachability. A target that is not a URL at all would
       // fail on every escalation with nothing but a log line to show for it.
       if (typeof value !== "string") {
-        sendJson(res, 400, { error: "escalation_target must be a string" })
+        sendJson(res, 400, { error: "escalation_target must be a string or null" })
         return
       }
       if (value.trim() !== "" && !/^https?:\/\//.test(value.trim())) {

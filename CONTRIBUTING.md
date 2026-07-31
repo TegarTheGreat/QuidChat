@@ -86,6 +86,14 @@ The limit is honest: in a two-chunk shop, "the" and "warranty" each appear once 
 
 **There is a third arm, for words a language bends.** The `simple` configuration stems nothing, so "garansinya" and "bergaransi" share no token and the keyword arm is blind to the match — Indonesian does this constantly, and it is the market this is built for. Trigram word similarity sees it: 0.636 on that pair against 0.18 and 0.09 for unrelated chunks. Its terms are deliberately **not** the keyword arm's selective ones, because a word matching nothing lexically is exactly the case it exists for.
 
+## The settings dialog writes back what it read — so send only what is editable
+
+It saved by spreading the whole fetched row. That row carries `tenant_id`, which the API refuses as an unknown field, and `escalation_target: null` for any tenant that never set a webhook, which it refused as "must be a string". Every save from the panel returned 400: models, refusal text, budget, retention, origins, handoff limits and the whole widget theme were unreachable, on a product whose rule is that configuration lives in the panel.
+
+`settingsPayload` lists the editable keys rather than subtracting the read-only ones, so a column added to the response later cannot break saving again. `admin-contract.test.ts` round-trips the row the way the dialog does — patching one field at a time was what hid both halves.
+
+And a partial form must not rewrite a whole jsonb blob: the widget theme is merged over what is stored, because rebuilding it from the fields on screen silently deleted the language, greeting and opening questions of any shop that changed its accent colour.
+
 ## Behind a proxy, three controls silently become no-ops
 
 `req.socket.remoteAddress` is the proxy, identically for every visitor — and every deployment that serves HTTPS has one. That collapses the per-visitor rate limit into a single shared bucket, makes an attacker's failed admin-token guesses lock out the real administrator, and leaves `conversations.visitor_id` the same for everyone, which turns the ownership check on a supplied `conversationId` into nothing.
