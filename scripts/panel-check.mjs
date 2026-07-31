@@ -98,6 +98,30 @@ await send("Page.navigate", { url: `${BASE}/panel` })
 await sleep(1500)
 await evaluate(`sessionStorage.setItem("quidchat-admin-token", ${JSON.stringify(TOKEN)})`)
 
+/** Radix opens a menu on `pointerdown`; a plain `.click()` leaves it shut. */
+const pointerClick = (selector) => evaluate(`(() => {
+  const el = document.querySelector(${JSON.stringify(selector)})
+  if (!el) return "no element"
+  for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+    el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0 }))
+  }
+  return "clicked"
+})()`)
+
+const menuItems = () => evaluate(
+  `[...document.querySelectorAll('[role="menuitem"]')].map(i => i.textContent.trim())`,
+)
+
+const clickMenuItem = (label) => evaluate(`(() => {
+  const item = [...document.querySelectorAll('[role="menuitem"]')]
+    .find(i => i.textContent.trim() === ${JSON.stringify(label)})
+  if (!item) return "no item"
+  for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+    item.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0 }))
+  }
+  return "clicked"
+})()`)
+
 async function open(section) {
   await send("Page.navigate", { url: `${BASE}/panel` })
   await sleep(1800)
@@ -126,23 +150,61 @@ const clickText = (text) => evaluate(`(() => {
 
 const bodyText = () => evaluate(`document.body.innerText`)
 
+/**
+ * Skills.
+ *
+ * The forms moved into dialogs and the actions into a per-row menu, so this drives the screen the
+ * way a person now does: open the dialog, fill it, save, then act on the row that appears.
+ *
+ * `pointerClick` exists because Radix opens a dropdown on `pointerdown`, not on `click` — an
+ * `element.click()` leaves the menu shut and every assertion after it failing for the wrong
+ * reason.
+ */
 console.log("skills")
 await open("Skills & routing")
-check("the add button is disabled before a name is typed", (await clickText("Add skill")) === "disabled")
+
+await clickText("Add skill")
+await sleep(700)
+check(
+  "the save button is disabled before a name is typed",
+  (await clickText("Save")) === "disabled",
+)
 await typeInto("#skill-name", "Sales")
 await typeInto("#skill-prompt", "Be brief and always mention delivery times.")
-check("submitting the form works", (await clickText("Add skill")) === "clicked")
+check("saving the dialog works", (await clickText("Save")) === "clicked")
 await sleep(2000)
 let text = await bodyText()
 check("the new skill appears without a reload", text.includes("Sales"), text.slice(0, 160))
-check("it says the skill is unreachable until a rule points at it", text.includes("No rule points here"))
+check(
+  "it says nothing routes to the skill yet",
+  text.includes("nothing points here"),
+  text.slice(0, 200),
+)
 
 console.log("routing")
-await typeInto("input[aria-label='Keyword']", "price")
+await pointerClick(`[aria-label="Actions for Sales"]`)
+await sleep(600)
+check("the row menu offers the actions", (await menuItems()).includes("Add routing rule"))
+await clickMenuItem("Add routing rule")
+await sleep(700)
+await typeInto("#rule-pattern", "price")
 check("adding a keyword rule works", (await clickText("Add rule")) === "clicked")
 await sleep(2000)
 text = await bodyText()
-check("the rule is listed with its pattern", text.includes("price") && text.includes("keyword"), text.slice(0, 200))
+check(
+  "the rule is listed with its pattern",
+  text.includes("price") && text.includes("keyword"),
+  text.slice(0, 200),
+)
+
+console.log("row actions")
+await pointerClick(`[aria-label="Actions for Sales"]`)
+await sleep(600)
+await clickMenuItem("Disable")
+await sleep(1800)
+text = await bodyText()
+// The action a skill never had: it could be created and then never switched off.
+check("a skill can be switched off from its row", text.includes("off"), text.slice(0, 200))
 
 console.log("canned answers")
 await open("Canned answers")
@@ -155,19 +217,32 @@ check("the answer is listed as live", text.includes("Do you deliver on Sunday?")
 
 console.log("knowledge")
 await open("Knowledge")
+// The forms moved into one dialog with a tab per way in — pasted text, a page, a PDF.
+await clickText("Add source")
+await sleep(700)
 await typeInto("#source-title", "Opening Hours")
 await typeInto("#source-text", "We are open from nine in the morning until five in the afternoon.")
-check("adding a text source works", (await clickText("Add source")) === "clicked")
+check("adding a text source works", (await clickText("Index this text")) === "clicked")
 await sleep(4000)
 text = await bodyText()
 check("the source appears in the table", text.includes("Opening Hours"), text.slice(0, 200))
 
 console.log("deleting")
-check("the delete button opens a confirmation", (await clickText("Delete")) === "clicked")
+// Destructive actions live under the row menu now, below a separator, rather than as a button
+// sitting next to the safe ones where a mis-tap reaches them.
+await pointerClick(`[aria-label="Actions for Opening Hours"]`)
+await sleep(600)
+check("the row menu offers deletion", (await menuItems()).includes("Delete"))
+await clickMenuItem("Delete")
 await sleep(1200)
 text = await bodyText()
-check("the dialog names what will be deleted", /Delete .*(Opening Hours|Store Policy|Example)/.test(text), text.slice(0, 200))
-check("cancelling is possible", (await clickText("Keep it")) === "clicked")
+check(
+  "the dialog names what will be deleted",
+  /Delete .*(Opening Hours|Store Policy|Example)/.test(text),
+  text.slice(0, 200),
+)
+// A confirmation that cannot be refused is not a confirmation.
+check("cancelling is possible", (await clickText("Cancel")) === "clicked")
 
 console.log("")
 console.log(`uncaught exceptions: ${errors.length}${errors.length ? ` — ${errors.join(" | ")}` : ""}`)

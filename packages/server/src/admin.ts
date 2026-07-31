@@ -35,6 +35,7 @@ import {
   updateSkill,
 } from "./admin/skills.js"
 import {
+  createPdfSource,
   createTextSource,
   createUrlSource,
   deleteSource,
@@ -145,6 +146,7 @@ export async function handleAdminRequest(
   if (method === "GET" && sub === "/sources") return listSources(res, deps, searchParams)
   if (method === "POST" && sub === "/sources/text") return createTextSource(req, res, deps)
   if (method === "POST" && sub === "/sources/url") return createUrlSource(req, res, deps)
+  if (method === "POST" && sub === "/sources/pdf") return createPdfSource(req, res, deps)
   if (method === "POST" && sub === "/sources/reindex") return reindexSource(req, res, deps)
   if (method === "DELETE" && sub === "/sources") return deleteSource(req, res, deps)
   if (method === "GET" && sub === "/conversations") return listConversations(res, deps, searchParams)

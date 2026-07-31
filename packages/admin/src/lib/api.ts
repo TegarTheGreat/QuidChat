@@ -105,7 +105,7 @@ export interface Source {
   title: string
   /** Where it came from: the URL for a page, the title itself for pasted text. */
   uri?: string
-  kind?: "text" | "url" | (string & {})
+  kind?: "text" | "url" | "file" | (string & {})
   status: SourceStatus
   error?: string | null
   lastIndexedAt?: string | null
@@ -325,6 +325,12 @@ export const api = {
 
   /** Reports what indexing produced, not a `Source` row: the count is the useful part, and a
    *  source that failed to embed comes back with `status: "error"` and the reason. */
+  createPdfSource: (body: { tenantSlug: string; title: string; data: string }) =>
+    request<{ sourceId: string; status: string; pageCount?: number; chunkCount?: number }>(
+      "/v1/admin/sources/pdf",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
   createTextSource: (body: { tenantSlug: string; title: string; text: string }) =>
     request<{
       sourceId: string

@@ -1,8 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { withTenant } from "@quidchat/db"
-import { fetchPage, indexSource, UrlFetchError } from "@quidchat/ingest"
+import { extractPdfText, fetchPage, indexSource, UrlFetchError } from "@quidchat/ingest"
 import { sql } from "drizzle-orm"
-import { readJsonBody, resolveTenantOr404, rowsOf, sendJson, type AdminDeps } from "./shared.js"
+import {
+  MAX_UPLOAD_BODY_BYTES,
+  readJsonBody,
+  resolveTenantOr404,
+  rowsOf,
+  sendJson,
+  type AdminDeps,
+} from "./shared.js"
 
 // Part of the admin API. The router and the shared helpers live in `../admin.ts`.
 
@@ -328,5 +335,93 @@ export async function reindexSource(
   } catch (e) {
     deps.logError("indexSource failed on re-index", e)
     sendJson(res, 200, { status: "error", error: e instanceof Error ? e.message : String(e) })
+  }
+}
+
+/**
+ * `POST /admin/sources/pdf` — index a document the owner has on their computer.
+ *
+ * Price lists, warranty terms and delivery policies are PDFs at most businesses, and until now
+ * the only way in was the command line. Pasting the text by hand is the step where an owner gives
+ * up, after which the assistant refuses questions the business has answered in writing for years.
+ *
+ * Base64 in JSON rather than multipart: the panel is the only client, one encoder is less to get
+ * wrong than a parser, and the size ceiling belongs to this route rather than to a shared one.
+ * A scan is refused with the reason — it draws its letters as pictures, so "0 chunks indexed"
+ * would leave an owner believing the file was read and their assistant simply unhelpful.
+ */
+export async function createPdfSource(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res, MAX_UPLOAD_BODY_BYTES)
+  if (!raw) return
+
+  const title = typeof raw.title === "string" ? raw.title.trim() : ""
+  const encoded = typeof raw.data === "string" ? raw.data : ""
+  if (!title) {
+    sendJson(res, 400, { error: "title is required" })
+    return
+  }
+  if (!encoded) {
+    sendJson(res, 400, { error: "data is required" })
+    return
+  }
+
+  let bytes: Uint8Array
+  try {
+    bytes = new Uint8Array(Buffer.from(encoded, "base64"))
+  } catch {
+    sendJson(res, 400, { error: "data is not valid base64" })
+    return
+  }
+
+  let extracted: Awaited<ReturnType<typeof extractPdfText>>
+  try {
+    extracted = await extractPdfText(bytes)
+  } catch (e) {
+    // The message from `extractPdfText` is written for the person who uploaded the file — that
+    // it is not a PDF, that it is too large, that a scan needs OCR first. Replacing it with a
+    // status code would throw away the only actionable part.
+    sendJson(res, 400, { error: e instanceof Error ? e.message : "that PDF could not be read" })
+    return
+  }
+
+  const tenantId = await resolveTenantOr404(
+    res,
+    deps.db,
+    typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
+  )
+  if (tenantId === null) return
+
+  const { embeddingModel } = await deps.store.getTenantConfig(tenantId)
+  const sourceId = await withTenant(deps.db, tenantId, async (tx) => {
+    const result = await tx.execute(sql`
+      INSERT INTO knowledge_sources (tenant_id, kind, uri, status)
+      -- 'file' rather than a new 'pdf' kind: the schema has carried that vocabulary for uploads
+      -- since the first migration, and inventing a second name for the same thing would mean a
+      -- constraint change plus two words for one idea.
+      VALUES (${tenantId}, 'file', ${title}, 'pending')
+      RETURNING id
+    `)
+    return rowsOf(result)[0]!.id as string
+  })
+
+  try {
+    const indexed = await indexSource({
+      tenantId, sourceId, title, text: extracted.text,
+      embeddingModel, store: deps.store, provider: deps.provider,
+    })
+    sendJson(res, 201, {
+      sourceId, documentId: indexed.documentId, chunkCount: indexed.chunkCount,
+      pageCount: extracted.pageCount, title, status: "ready",
+    })
+  } catch (e) {
+    deps.logError("indexSource failed for a PDF source", e)
+    sendJson(res, 201, {
+      sourceId, title, status: "error",
+      error: e instanceof Error ? e.message : String(e),
+    })
   }
 }

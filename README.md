@@ -82,7 +82,7 @@ Nothing reaches your customer unvalidated, which is why answers are not streamed
 
 ## Giving it knowledge
 
-Five ways in, all equivalent once the text is chunked: paste it in the panel, pipe it through `add-text`, point at a page with `add-url` or **Knowledge → Read a page from your site**, or point at the whole site with `add-site`.
+Five ways in, all equivalent once the text is chunked — and pasted text, a page and a PDF can all be added from the panel, not only from a terminal: paste it in the panel, pipe it through `add-text`, point at a page with `add-url` or **Knowledge → Read a page from your site**, or point at the whole site with `add-site`.
 
 ```bash
 node packages/cli/dist/main.mjs add-site my-shop https://myshop.example --max-pages 25

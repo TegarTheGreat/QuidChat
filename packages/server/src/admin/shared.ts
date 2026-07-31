@@ -36,7 +36,20 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
  */
 export const MAX_ADMIN_BODY_BYTES = 4 * 1024 * 1024
 
-export async function readBoundedBody(req: IncomingMessage): Promise<string | null> {
+/**
+ * A document upload is the one admin request that is legitimately large.
+ *
+ * Base64 costs a third on top of the file, so this is the ceiling on the encoded body, not on the
+ * PDF — about 9 MB of actual document, which covers the price lists and warranty booklets this is
+ * for. The general admin cap stays where it is: it protects every other route from a body nobody
+ * has a reason to send.
+ */
+export const MAX_UPLOAD_BODY_BYTES = 12 * 1024 * 1024
+
+export async function readBoundedBody(
+  req: IncomingMessage,
+  limit: number = MAX_ADMIN_BODY_BYTES,
+): Promise<string | null> {
   return new Promise((resolve, reject) => {
     let size = 0
     let tooLarge = false
@@ -44,7 +57,7 @@ export async function readBoundedBody(req: IncomingMessage): Promise<string | nu
     req.on("data", (chunk: Buffer) => {
       if (tooLarge) return
       size += chunk.length
-      if (size > MAX_ADMIN_BODY_BYTES) {
+      if (size > limit) {
         tooLarge = true
         req.destroy()
         resolve(null)
@@ -64,13 +77,14 @@ export async function readBoundedBody(req: IncomingMessage): Promise<string | nu
 export async function readJsonBody(
   req: IncomingMessage,
   res: ServerResponse,
+  limit: number = MAX_ADMIN_BODY_BYTES,
 ): Promise<Record<string, unknown> | undefined> {
   const contentType = req.headers["content-type"] ?? ""
   if (!contentType.toLowerCase().includes("application/json")) {
     sendJson(res, 400, { error: "expected application/json" })
     return undefined
   }
-  const raw = await readBoundedBody(req)
+  const raw = await readBoundedBody(req, limit)
   if (raw === null) {
     sendJson(res, 400, { error: "request body too large" })
     return undefined
