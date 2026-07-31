@@ -175,6 +175,79 @@ describe("the admin panel's client against the admin API", () => {
     expect(saved.escalation_target).toBeNull()
   })
 
+  it("can change and remove a skill, not only create one", async () => {
+    /*
+     * A skill could be created and then never touched: no rename, no edit, no way to switch it
+     * off, no way to delete it. A business whose Sales persona was wrong had to create a second
+     * one and leave the first still answering customers.
+     */
+    const api = await client()
+    const { skill } = await api.createSkill({ tenantSlug: "contract", name: "Temporary" })
+
+    await api.updateSkill({ tenantSlug: "contract", id: skill.id, name: "Renamed", enabled: false })
+    let listed = await api.getSkills("contract")
+    let found = listed.skills.find((s) => s.id === skill.id)
+    expect(found?.name).toBe("Renamed")
+    expect(found?.enabled).toBe(false)
+
+    await api.updateSkill({ tenantSlug: "contract", id: skill.id, enabled: true })
+    listed = await api.getSkills("contract")
+    expect(listed.skills.find((s) => s.id === skill.id)?.enabled).toBe(true)
+
+    await api.deleteSkill({ tenantSlug: "contract", id: skill.id })
+    listed = await api.getSkills("contract")
+    expect(listed.skills.some((s) => s.id === skill.id)).toBe(false)
+  })
+
+  it("keeps exactly one fallback when a second is promoted", async () => {
+    // Two fallbacks would make routing depend on row order, which an owner cannot see or reason
+    // about; none would leave unmatched questions nowhere to go.
+    const api = await client()
+    const first = (await api.createSkill({ tenantSlug: "contract", name: "FallbackA" })).skill
+    const second = (await api.createSkill({ tenantSlug: "contract", name: "FallbackB" })).skill
+
+    await api.updateSkill({ tenantSlug: "contract", id: first.id, isFallback: true })
+    await api.updateSkill({ tenantSlug: "contract", id: second.id, isFallback: true })
+
+    const listed = await api.getSkills("contract")
+    expect(listed.skills.filter((s) => s.isFallback).map((s) => s.id)).toEqual([second.id])
+
+    await api.deleteSkill({ tenantSlug: "contract", id: first.id })
+    await api.deleteSkill({ tenantSlug: "contract", id: second.id })
+  })
+
+  it("can remove a routing rule, not only add one", async () => {
+    // Rules could be created and never removed. A keyword typed wrongly sat in the ladder
+    // forever, catching messages meant for the skill below it.
+    const api = await client()
+    const { skill } = await api.createSkill({ tenantSlug: "contract", name: "RuleOwner" })
+    const rule = await api.createRoutingRule({
+      tenantSlug: "contract", skillId: skill.id, kind: "keyword", pattern: "typo",
+    })
+
+    await api.deleteRoutingRule({ tenantSlug: "contract", id: rule.rule.id })
+    const listed = await api.getSkills("contract")
+    expect(listed.rules.some((r) => r.id === rule.rule.id)).toBe(false)
+    await api.deleteSkill({ tenantSlug: "contract", id: skill.id })
+  })
+
+  it("sends an edited answer back for approval", async () => {
+    // The approval was for the old words. Letting an edit keep `approved` would put text nobody
+    // read in front of customers, which is the one thing the draft state exists to prevent.
+    const api = await client()
+    const created = await api.createCannedAnswer({
+      tenantSlug: "contract", question: "Price?", answer: "Ten.",
+    })
+    await api.setCannedAnswerStatus({ tenantSlug: "contract", id: created.cannedAnswer.id, approved: true })
+
+    const edited = await api.updateCannedAnswer({
+      tenantSlug: "contract", id: created.cannedAnswer.id, answer: "Twelve.",
+    })
+    expect(edited.cannedAnswer.status).toBe("draft")
+
+    await api.deleteCannedAnswer({ tenantSlug: "contract", id: created.cannedAnswer.id })
+  })
+
   it("gets a skill, a rule and a source link back in the shape the screen groups by", async () => {
     const api = await client()
     const { skill } = await api.createSkill({ tenantSlug: "contract", name: "Sales" })

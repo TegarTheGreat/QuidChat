@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { withTenant } from "@quidchat/db"
-import { sql } from "drizzle-orm"
+import { sql, type SQL } from "drizzle-orm"
 import { readJsonBody, resolveTenantOr404, rowsOf, sendJson, type AdminDeps } from "./shared.js"
 
 // Part of the admin API. The router and the shared helpers live in `../admin.ts`.
@@ -179,4 +179,66 @@ export async function deleteCannedAnswer(
     return
   }
   sendJson(res, 200, { ok: true })
+}
+
+/**
+ * `PATCH /canned-answers` — correct the wording of an answer.
+ *
+ * An answer could be written and approved and then never touched. A price that changed, or a
+ * sentence that read badly, could only be deleted and retyped — and because deleting is the only
+ * way, the safe move was to leave the wrong one live. Editing an approved answer sends it back to
+ * `draft`, deliberately: the approval was for the old words, and a person should read the new ones
+ * before a customer does.
+ */
+export async function updateCannedAnswer(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+
+  const id = typeof raw.id === "string" ? raw.id : ""
+  const question = typeof raw.question === "string" ? raw.question.trim() : null
+  const answer = typeof raw.answer === "string" ? raw.answer.trim() : null
+
+  if (!id) {
+    sendJson(res, 400, { error: "id is required" })
+    return
+  }
+  if (question === null && answer === null) {
+    sendJson(res, 400, { error: "nothing to change" })
+    return
+  }
+  if (question === "" || answer === "") {
+    sendJson(res, 400, { error: "question and answer cannot be empty" })
+    return
+  }
+
+  const tenantId = await resolveTenantOr404(
+    res,
+    deps.db,
+    typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
+  )
+  if (tenantId === null) return
+
+  const sets: SQL[] = []
+  if (question !== null) sets.push(sql`question = ${question}`)
+  if (answer !== null) sets.push(sql`answer = ${answer}`)
+  // Back to draft, always. The approval was for words that no longer exist.
+  sets.push(sql`status = 'draft'`)
+
+  const updated = await withTenant(deps.db, tenantId, async (tx) =>
+    rowsOf(
+      await tx.execute(sql`
+        UPDATE canned_answers SET ${sql.join(sets, sql`, `)} WHERE id = ${id}
+        RETURNING id, question, answer, status
+      `),
+    )[0],
+  )
+  if (!updated) {
+    sendJson(res, 404, { error: "no such answer" })
+    return
+  }
+  sendJson(res, 200, { cannedAnswer: updated })
 }

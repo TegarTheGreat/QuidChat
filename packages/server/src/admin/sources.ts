@@ -249,3 +249,84 @@ export async function deleteSource(
   }
   sendJson(res, 200, { ok: true, chunksRemoved: removed.chunkCount })
 }
+
+/**
+ * `POST /admin/sources/reindex` — read a URL source again.
+ *
+ * A page indexed once is frozen. When a shop changes its delivery terms, the assistant keeps
+ * answering from the old wording and cites the same URL while doing it — confidently wrong with a
+ * citation attached, which is the exact failure this product exists to prevent. The only way out
+ * was to delete the source and add it back, which loses every skill link pointing at it.
+ *
+ * Only URL sources: pasted text has no upstream to re-read, and a PDF would have to be uploaded
+ * again. Both are refused by name rather than silently doing nothing.
+ */
+export async function reindexSource(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const id = typeof raw.id === "string" ? raw.id : ""
+  if (!id) {
+    sendJson(res, 400, { error: "id is required" })
+    return
+  }
+  const tenantId = await resolveTenantOr404(
+    res,
+    deps.db,
+    typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
+  )
+  if (tenantId === null) return
+
+  const source = await withTenant(deps.db, tenantId, async (tx) =>
+    rowsOf(
+      await tx.execute(sql`SELECT id, kind, uri FROM knowledge_sources WHERE id = ${id}`),
+    )[0],
+  )
+  if (!source) {
+    sendJson(res, 404, { error: "no such source" })
+    return
+  }
+  if (source.kind !== "url") {
+    sendJson(res, 400, {
+      error: `only a page can be re-read; this source is ${String(source.kind)}`,
+    })
+    return
+  }
+
+  let page: Awaited<ReturnType<typeof fetchPage>>
+  try {
+    page = await fetchPage(String(source.uri))
+  } catch (e) {
+    const message = e instanceof UrlFetchError ? e.message : "that page could not be read"
+    // The source is left exactly as it was. A failed re-read must not replace working answers
+    // with nothing — the old text is still the best this business has.
+    sendJson(res, 200, { status: "error", error: message })
+    return
+  }
+
+  const { embeddingModel } = await deps.store.getTenantConfig(tenantId)
+  try {
+    const indexed = await indexSource({
+      tenantId,
+      sourceId: id,
+      title: page.title,
+      url: page.finalUrl,
+      text: page.text,
+      embeddingModel,
+      store: deps.store,
+      provider: deps.provider,
+    })
+    sendJson(res, 200, {
+      status: "ready",
+      documentId: indexed.documentId,
+      chunkCount: indexed.chunkCount,
+      title: page.title,
+    })
+  } catch (e) {
+    deps.logError("indexSource failed on re-index", e)
+    sendJson(res, 200, { status: "error", error: e instanceof Error ? e.message : String(e) })
+  }
+}

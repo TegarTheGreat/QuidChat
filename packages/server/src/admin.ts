@@ -6,6 +6,7 @@ import {
   deleteCannedAnswer,
   listCannedAnswers,
   setCannedAnswerStatus,
+  updateCannedAnswer,
 } from "./admin/canned-answers.js"
 import { deleteChannel, listChannels, putChannel } from "./admin/channels.js"
 import {
@@ -27,13 +28,17 @@ import { sendJson, type AdminDeps } from "./admin/shared.js"
 import {
   createRoutingRule,
   createSkill,
+  deleteRoutingRule,
+  deleteSkill,
   getSkills,
   linkSkillSource,
+  updateSkill,
 } from "./admin/skills.js"
 import {
   createTextSource,
   createUrlSource,
   deleteSource,
+  reindexSource,
   listSources,
 } from "./admin/sources.js"
 import { createOrUpdateTenant, listTenants } from "./admin/tenants.js"
@@ -140,6 +145,7 @@ export async function handleAdminRequest(
   if (method === "GET" && sub === "/sources") return listSources(res, deps, searchParams)
   if (method === "POST" && sub === "/sources/text") return createTextSource(req, res, deps)
   if (method === "POST" && sub === "/sources/url") return createUrlSource(req, res, deps)
+  if (method === "POST" && sub === "/sources/reindex") return reindexSource(req, res, deps)
   if (method === "DELETE" && sub === "/sources") return deleteSource(req, res, deps)
   if (method === "GET" && sub === "/conversations") return listConversations(res, deps, searchParams)
   if (method === "GET" && sub === "/conversation") return getConversation(res, deps, searchParams)
@@ -156,9 +162,13 @@ export async function handleAdminRequest(
   if (method === "POST" && sub === "/skills") return createSkill(req, res, deps)
   if (method === "POST" && sub === "/skills/sources") return linkSkillSource(req, res, deps)
   if (method === "POST" && sub === "/routing-rules") return createRoutingRule(req, res, deps)
+  if (method === "DELETE" && sub === "/routing-rules") return deleteRoutingRule(req, res, deps)
+  if (method === "PATCH" && sub === "/skills") return updateSkill(req, res, deps)
+  if (method === "DELETE" && sub === "/skills") return deleteSkill(req, res, deps)
   if (method === "GET" && sub === "/canned-answers") return listCannedAnswers(res, deps, searchParams)
   if (method === "POST" && sub === "/canned-answers") return createCannedAnswer(req, res, deps)
   if (method === "POST" && sub === "/canned-answers/status") return setCannedAnswerStatus(req, res, deps)
+  if (method === "PATCH" && sub === "/canned-answers") return updateCannedAnswer(req, res, deps)
   if (method === "DELETE" && sub === "/canned-answers") return deleteCannedAnswer(req, res, deps)
   if (method === "GET" && sub === "/channels") return listChannels(res, deps, searchParams)
   if (method === "PUT" && sub === "/channels") return putChannel(req, res, deps)

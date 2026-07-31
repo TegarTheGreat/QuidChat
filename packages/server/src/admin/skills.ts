@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { withTenant } from "@quidchat/db"
-import { sql } from "drizzle-orm"
+import { sql, type SQL } from "drizzle-orm"
 import { readJsonBody, resolveTenantOr404, rowsOf, sendJson, type AdminDeps } from "./shared.js"
 
 // Part of the admin API. The router and the shared helpers live in `../admin.ts`.
@@ -192,4 +192,174 @@ export async function createRoutingRule(
     return rowsOf(result)[0]
   })
   sendJson(res, 201, { rule: created })
+}
+
+/**
+ * `PATCH /skills` — rename a skill, rewrite its persona, turn it off, make it the fallback.
+ *
+ * A skill could be created and then never changed: no rename, no edit, no way to switch it off.
+ * A business whose Sales persona was wrong had to create a second skill and leave the first one
+ * answering customers, because nothing could touch it.
+ *
+ * Fields are optional and only what is sent is written, so the panel can offer one control at a
+ * time — a toggle in a row does not have to send the persona back with it.
+ */
+export async function updateSkill(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+
+  const id = typeof raw.id === "string" ? raw.id : ""
+  if (!id) {
+    sendJson(res, 400, { error: "id is required" })
+    return
+  }
+
+  const sets: SQL[] = []
+  if (raw.name !== undefined) {
+    if (typeof raw.name !== "string" || raw.name.trim() === "") {
+      sendJson(res, 400, { error: "name must be a non-empty string" })
+      return
+    }
+    sets.push(sql`name = ${raw.name.trim()}`)
+  }
+  if (raw.systemPrompt !== undefined) {
+    // Null clears it: a skill with no persona of its own falls back to the tenant's rules, and
+    // that is a state an owner may want back after trying one.
+    if (raw.systemPrompt !== null && typeof raw.systemPrompt !== "string") {
+      sendJson(res, 400, { error: "systemPrompt must be a string or null" })
+      return
+    }
+    sets.push(sql`system_prompt = ${raw.systemPrompt}`)
+  }
+  if (raw.enabled !== undefined) {
+    if (typeof raw.enabled !== "boolean") {
+      sendJson(res, 400, { error: "enabled must be true or false" })
+      return
+    }
+    sets.push(sql`enabled = ${raw.enabled}`)
+  }
+  if (raw.answerMode !== undefined) {
+    if (raw.answerMode !== null && !["static", "thrifty", "full"].includes(String(raw.answerMode))) {
+      sendJson(res, 400, { error: "answerMode must be static, thrifty, full or null" })
+      return
+    }
+    sets.push(sql`answer_mode = ${raw.answerMode}`)
+  }
+  if (raw.isFallback !== undefined) {
+    if (typeof raw.isFallback !== "boolean") {
+      sendJson(res, 400, { error: "isFallback must be true or false" })
+      return
+    }
+    sets.push(sql`is_fallback = ${raw.isFallback}`)
+  }
+
+  if (sets.length === 0) {
+    sendJson(res, 400, { error: "no fields to change" })
+    return
+  }
+
+  const tenantId = await resolveTenantOr404(
+    res,
+    deps.db,
+    typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
+  )
+  if (tenantId === null) return
+
+  const updated = await withTenant(deps.db, tenantId, async (tx) => {
+    // Exactly one fallback per tenant. Two would make routing depend on row order, which is not
+    // something an owner can see or reason about; none would leave unmatched questions nowhere.
+    if (raw.isFallback === true) {
+      await tx.execute(sql`UPDATE skills SET is_fallback = false WHERE id <> ${id}`)
+    }
+    return rowsOf(
+      await tx.execute(sql`
+        UPDATE skills SET ${sql.join(sets, sql`, `)} WHERE id = ${id}
+        RETURNING id, name, enabled, is_fallback, answer_mode
+      `),
+    )[0]
+  })
+
+  // An id belonging to another tenant is invisible under RLS, so it arrives here as not found —
+  // the same answer an id that never existed gets, which is the honest one.
+  if (!updated) {
+    sendJson(res, 404, { error: "no such skill" })
+    return
+  }
+  sendJson(res, 200, { skill: updated })
+}
+
+/**
+ * `DELETE /skills` — remove a skill entirely.
+ *
+ * Its routing rules and source links go with it, by the foreign keys. What does NOT go is the
+ * conversations it answered: those rows carry `skill_id` for the owner's own reporting, and
+ * deleting a persona should not rewrite the history of what customers were told.
+ */
+export async function deleteSkill(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const id = typeof raw.id === "string" ? raw.id : ""
+  if (!id) {
+    sendJson(res, 400, { error: "id is required" })
+    return
+  }
+  const tenantId = await resolveTenantOr404(
+    res,
+    deps.db,
+    typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
+  )
+  if (tenantId === null) return
+
+  const removed = await withTenant(deps.db, tenantId, async (tx) =>
+    rowsOf(await tx.execute(sql`DELETE FROM skills WHERE id = ${id} RETURNING id`))[0],
+  )
+  if (!removed) {
+    sendJson(res, 404, { error: "no such skill" })
+    return
+  }
+  sendJson(res, 200, { ok: true })
+}
+
+/**
+ * `DELETE /routing-rules` — remove a rule.
+ *
+ * Rules could be created and never removed. A keyword typed wrongly sat in the ladder forever,
+ * catching messages meant for the skill below it, and the only way out was to disable the skill
+ * it pointed at — which took the skill down with it.
+ */
+export async function deleteRoutingRule(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const id = typeof raw.id === "string" ? raw.id : ""
+  if (!id) {
+    sendJson(res, 400, { error: "id is required" })
+    return
+  }
+  const tenantId = await resolveTenantOr404(
+    res,
+    deps.db,
+    typeof raw.tenantSlug === "string" ? raw.tenantSlug : null,
+  )
+  if (tenantId === null) return
+
+  const removed = await withTenant(deps.db, tenantId, async (tx) =>
+    rowsOf(await tx.execute(sql`DELETE FROM routing_rules WHERE id = ${id} RETURNING id`))[0],
+  )
+  if (!removed) {
+    sendJson(res, 404, { error: "no such rule" })
+    return
+  }
+  sendJson(res, 200, { ok: true })
 }

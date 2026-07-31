@@ -393,6 +393,46 @@ export const api = {
     body: JSON.stringify(body),
   }),
 
+  updateSkill: (body: {
+    tenantSlug: string
+    id: string
+    name?: string
+    systemPrompt?: string | null
+    enabled?: boolean
+    isFallback?: boolean
+    answerMode?: string | null
+  }) =>
+    request<{ skill: { id: string; name: string } }>("/v1/admin/skills", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  deleteSkill: (body: { tenantSlug: string; id: string }) =>
+    request<{ ok: true }>("/v1/admin/skills", { method: "DELETE", body: JSON.stringify(body) }),
+
+  deleteRoutingRule: (body: { tenantSlug: string; id: string }) =>
+    request<{ ok: true }>("/v1/admin/routing-rules", {
+      method: "DELETE",
+      body: JSON.stringify(body),
+    }),
+
+  updateCannedAnswer: (body: {
+    tenantSlug: string
+    id: string
+    question?: string
+    answer?: string
+  }) =>
+    request<{ cannedAnswer: { id: string; status: string } }>("/v1/admin/canned-answers", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  reindexSource: (body: { tenantSlug: string; id: string }) =>
+    request<{ status: string; chunkCount?: number; error?: string }>("/v1/admin/sources/reindex", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   linkSkillSource: (body: {
     tenantSlug: string
     skillId: string
