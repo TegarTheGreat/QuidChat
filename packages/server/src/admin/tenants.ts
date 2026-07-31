@@ -73,3 +73,78 @@ export async function createOrUpdateTenant(
   `)
   sendJson(res, 201, { id: tenantId, slug, name, created: true })
 }
+
+/**
+ * `PATCH /tenants` — rename a business.
+ *
+ * The name is what appears in the panel's picker and nowhere a customer sees, so this is a label
+ * an owner should be able to fix. The slug deliberately cannot change: it is in every embed script
+ * tag already pasted onto a website, and renaming it would silently break every one of them with
+ * no way for the shop to know why the widget stopped working.
+ */
+export async function renameTenant(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const slug = typeof raw.slug === "string" ? raw.slug.trim() : ""
+  const name = typeof raw.name === "string" ? raw.name.trim() : ""
+  if (!slug || !name) {
+    sendJson(res, 400, { error: "slug and name are required" })
+    return
+  }
+
+  // Cross-tenant by nature, like `listTenants` above: there is no single tenant context to scope
+  // a rename of the tenant row itself under.
+  const updated = rowsOf(
+    await deps.db.execute(
+      sql`UPDATE tenants SET name = ${name} WHERE slug = ${slug} RETURNING id, slug, name`,
+    ),
+  )[0]
+  if (!updated) {
+    sendJson(res, 404, { error: "no such tenant" })
+    return
+  }
+  sendJson(res, 200, { tenant: updated })
+}
+
+/**
+ * `DELETE /tenants` — remove a business and everything belonging to it.
+ *
+ * Every table carrying `tenant_id` references `tenants(id)` with `ON DELETE CASCADE`, so this
+ * takes the documents, the chunks, the conversations, the transcripts, the channel credentials
+ * and the provider key with it. There is no undo and no backup taken here.
+ *
+ * The caller must send the slug twice, in `slug` and in `confirm`. That is not ceremony: a tenant
+ * is the largest thing this product can destroy, the panel offers it in the same menu as a rename,
+ * and an id in a request body is easy to get wrong when two businesses have similar names.
+ */
+export async function deleteTenant(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const slug = typeof raw.slug === "string" ? raw.slug.trim() : ""
+  const confirm = typeof raw.confirm === "string" ? raw.confirm.trim() : ""
+  if (!slug) {
+    sendJson(res, 400, { error: "slug is required" })
+    return
+  }
+  if (confirm !== slug) {
+    sendJson(res, 400, { error: "confirm must repeat the tenant's slug exactly" })
+    return
+  }
+
+  const removed = rowsOf(
+    await deps.db.execute(sql`DELETE FROM tenants WHERE slug = ${slug} RETURNING id`),
+  )[0]
+  if (!removed) {
+    sendJson(res, 404, { error: "no such tenant" })
+    return
+  }
+  sendJson(res, 200, { ok: true })
+}

@@ -98,7 +98,7 @@ function AdminApp() {
               tenants={tenantList}
               selectedTenant={selectedTenant}
               onSelectTenant={setTenant}
-              onTenantCreated={() => setTenantsReloadKey((k) => k + 1)}
+              onTenantsChanged={() => setTenantsReloadKey((k) => k + 1)}
             />
           )}
         </div>

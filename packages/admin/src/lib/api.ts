@@ -275,6 +275,16 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  renameTenant: (body: { slug: string; name: string }) =>
+    request<{ tenant: { slug: string; name: string } }>("/v1/admin/tenants", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  /** `confirm` must repeat the slug — see the route's own note on why. */
+  deleteTenant: (body: { slug: string; confirm: string }) =>
+    request<{ ok: true }>("/v1/admin/tenants", { method: "DELETE", body: JSON.stringify(body) }),
+
   getSettings: (tenantSlug: string) =>
     request<Settings>(`/v1/admin/settings${query({ tenantSlug })}`),
 

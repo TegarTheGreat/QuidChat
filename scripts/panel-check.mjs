@@ -247,6 +247,57 @@ check(
 // A confirmation that cannot be refused is not a confirmation.
 check("cancelling is possible", (await clickText("Cancel")) === "clicked")
 
+/**
+ * Tenants.
+ *
+ * The page listed businesses and let one be switched to; there was no rename and no removal, in
+ * either the panel or the API. A typo in the name was permanent and a tenant made while trying the
+ * product out could never be cleared away.
+ *
+ * Deleting is driven end to end here rather than stopped at the dialog, because the confirmation
+ * is the interesting part: the delete button must stay dead until the slug is typed back.
+ */
+console.log("tenants")
+await open("Tenants")
+await clickText("Add tenant")
+await sleep(700)
+await typeInto("#tenant-name", "Smoke Test Shop")
+await typeInto("#tenant-slug", "smoke-test-shop")
+// The dialog's own button is "Add this tenant": two buttons reading "Add tenant" on one screen
+// is ambiguous for a person and picks the wrong one here.
+check("adding a tenant works", (await clickText("Add this tenant")) === "clicked")
+await sleep(2500)
+await open("Tenants")
+text = await bodyText()
+check("the tenant is listed", text.includes("Smoke Test Shop"), text.slice(0, 300))
+
+await pointerClick(`[aria-label="Actions for Smoke Test Shop"]`)
+await sleep(600)
+let items = await menuItems()
+check("the row menu offers rename and delete", items.includes("Rename") && items.includes("Delete"), items)
+await clickMenuItem("Rename")
+await sleep(700)
+await typeInto("#tenant-rename", "Smoke Test Warung")
+check("renaming works", (await clickText("Save name")) === "clicked")
+await sleep(2000)
+text = await bodyText()
+check("the new name shows without a reload", text.includes("Smoke Test Warung"), text.slice(0, 300))
+
+await pointerClick(`[aria-label="Actions for Smoke Test Warung"]`)
+await sleep(600)
+await clickMenuItem("Delete")
+await sleep(900)
+check(
+  "deleting stays disabled until the slug is typed",
+  (await clickText("Delete this tenant")) === "disabled",
+)
+await typeInto("#tenant-confirm", "smoke-test-shop")
+check("deleting works once it is", (await clickText("Delete this tenant")) === "clicked")
+await sleep(2500)
+await open("Tenants")
+text = await bodyText()
+check("the tenant is gone", !text.includes("Smoke Test Warung"), text.slice(0, 300))
+
 console.log("")
 console.log(`uncaught exceptions: ${errors.length}${errors.length ? ` — ${errors.join(" | ")}` : ""}`)
 if (errors.length) failures++

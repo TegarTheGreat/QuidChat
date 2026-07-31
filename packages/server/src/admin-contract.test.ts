@@ -2,7 +2,9 @@ import type { AddressInfo } from "node:net"
 import { FakeProvider } from "@quidchat/core/testing"
 import { tenants, tenantSettings, type QuidDb } from "@quidchat/db"
 import { freshPglite } from "@quidchat/db/testing"
+import { sql } from "drizzle-orm"
 import { beforeAll, describe, expect, it, vi } from "vitest"
+import { rowsOf } from "./admin/shared.js"
 import { createServer } from "./server.js"
 
 /**
@@ -379,6 +381,44 @@ describe("channel credentials", () => {
     await expect(
       api.deleteChannel({ tenantSlug: "contract", channel: "telegram" }),
     ).rejects.toThrow(/not configured/)
+  })
+
+  it("renames a tenant without touching its slug", async () => {
+    const api = await client()
+    const renamed = await api.renameTenant({ slug: "contract", name: "Contract Renamed" })
+    expect(renamed.tenant).toMatchObject({ slug: "contract", name: "Contract Renamed" })
+    // Read it back from the list the picker is built from, not from the reply: the point is that
+    // the panel shows the new name after a refresh.
+    const listed = (await api.listTenants()).find((t) => t.slug === "contract")
+    expect(listed?.name).toBe("Contract Renamed")
+    await api.renameTenant({ slug: "contract", name: "Contract" })
+  })
+
+  it("deletes a tenant only when the slug is repeated, and takes its knowledge with it", async () => {
+    const api = await client()
+    await api.createTenant({ slug: "throwaway", name: "Throwaway", origins: [] })
+    await api.createTextSource({
+      tenantSlug: "throwaway",
+      title: "Harga",
+      text: "Ongkir Jakarta gratis di atas Rp200.000.",
+    })
+
+    // A wrong confirmation must not delete anything. This is the guard the panel's type-the-slug
+    // dialog relies on; without it the dialog is decoration a script could skip.
+    await expect(
+      api.deleteTenant({ slug: "throwaway", confirm: "throwaways" }),
+    ).rejects.toThrow(/confirm/)
+    expect((await api.listTenants()).some((t) => t.slug === "throwaway")).toBe(true)
+
+    expect(await api.deleteTenant({ slug: "throwaway", confirm: "throwaway" })).toEqual({ ok: true })
+    expect((await api.listTenants()).some((t) => t.slug === "throwaway")).toBe(false)
+    // The row was the easy part. What matters is that nothing it owned outlived it — a source left
+    // behind would be a shop's price list still sitting in a database it no longer has a login for.
+    const orphans = await db.execute(
+      sql`SELECT count(*)::int AS n FROM knowledge_sources ks
+          LEFT JOIN tenants t ON t.id = ks.tenant_id WHERE t.id IS NULL`,
+    )
+    expect(rowsOf(orphans)[0]).toMatchObject({ n: 0 })
   })
 })
 

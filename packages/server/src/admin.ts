@@ -42,7 +42,12 @@ import {
   reindexSource,
   listSources,
 } from "./admin/sources.js"
-import { createOrUpdateTenant, listTenants } from "./admin/tenants.js"
+import {
+  createOrUpdateTenant,
+  deleteTenant,
+  listTenants,
+  renameTenant,
+} from "./admin/tenants.js"
 
 /**
  * The admin API's front door: authenticate, then dispatch.
@@ -141,6 +146,8 @@ export async function handleAdminRequest(
 
   if (method === "GET" && sub === "/tenants") return listTenants(res, deps)
   if (method === "POST" && sub === "/tenants") return createOrUpdateTenant(req, res, deps)
+  if (method === "PATCH" && sub === "/tenants") return renameTenant(req, res, deps)
+  if (method === "DELETE" && sub === "/tenants") return deleteTenant(req, res, deps)
   if (method === "GET" && sub === "/settings") return getSettings(res, deps, searchParams)
   if (method === "PATCH" && sub === "/settings") return patchSettings(req, res, deps)
   if (method === "GET" && sub === "/sources") return listSources(res, deps, searchParams)
