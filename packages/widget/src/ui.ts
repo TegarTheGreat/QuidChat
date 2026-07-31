@@ -95,6 +95,10 @@ const SEND_MARK =
  * literal `"left"` or `"right"` — so neither can contain a `;`, a `}`, or anything
  * else that could close this declaration and inject further rules.
  */
+export function buildStyleForTest(theme: WidgetTheme): string {
+  return buildStyle(theme)
+}
+
 function buildStyle(theme: WidgetTheme): string {
   const side = theme.position
   const other = side === "right" ? "left" : "right"
@@ -179,13 +183,51 @@ function buildStyle(theme: WidgetTheme): string {
 
   /* On a phone a 384px box floating in a 390px screen is cramped to read and to type in, while
      most of the display goes unused. Below this width it takes the screen like a messaging app. */
+  /*
+   * Phones, measured rather than guessed.
+   *
+   * 100dvh, because the static viewport unit is the height with the browser chrome hidden, so
+   * inset:0 put the composer behind the URL bar until the visitor scrolled. The dynamic unit
+   * follows the bar as it shows and hides, and the keyboard as it opens.
+   *
+   * The safe-area insets are what keep the composer above an iPhone's home indicator and the
+   * close button out from under the notch. Without them the send button is a strip of glass the
+   * visitor swipes instead of taps.
+   */
   @media (max-width: 480px) {
     .panel {
       inset: 0;
-      width: auto; max-width: none; height: auto; max-height: none;
+      width: auto; max-width: none;
+      height: 100dvh; max-height: none;
       border: none; border-radius: 0;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
     }
+    .header { padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
     .message { max-width: 92%; }
+    /* The pill covers a phone's content and says what a single tap would reveal anyway. */
+    .launcher { padding: 0; width: 56px; height: 56px; border-radius: 50%; justify-content: center; }
+    .launcher span { display: none; }
+    .launcher { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+  }
+
+  /*
+   * Touch. Two rules, both from measurement rather than taste.
+   *
+   * 16px on the input: below that, iOS Safari zooms the whole page on focus, so tapping the
+   * message box scales the shop's own site up and the visitor has to pinch back out. It is the
+   * most common way an embedded widget feels broken on a phone.
+   *
+   * 44px targets: the close button was 32 square and the send button 40, both under the size a
+   * finger reliably hits. On a pointer device they stay as drawn, because a mouse does not need
+   * the room and the padding would look clumsy.
+   */
+  @media (pointer: coarse) {
+    textarea { font-size: 16px; }
+    .close { width: 44px; height: 44px; }
+    .send { width: 48px; height: 48px; }
+    .starter { padding: 12px 14px; }
   }
 
   .header {

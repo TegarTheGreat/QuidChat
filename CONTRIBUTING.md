@@ -62,6 +62,12 @@ Nothing else. The server reads credentials from the environment and from a tenan
 
 `Provider` is a public interface — a self-hosted deployment can supply its own. Read new fields defensively; a provider written before `toolCalls` existed once took down every turn with a `TypeError` the customer saw as a refusal.
 
+## Phone rules are asserted against the stylesheet, not a rendered page
+
+The touch rules sit behind `pointer: coarse`, which a desktop browser never matches however small you make the window — so a rendering test reports them working while they are absent on every real phone. `mobile.test.ts` asserts the CSS itself.
+
+What they fix, all measured on a 390x844 viewport first: the input was 14.5px, and below 16px iOS zooms the host page when someone taps it; the close button was 32 square and send 40, both under the 44px a finger reliably hits; `inset: 0` is the height with the browser chrome hidden, so the composer sat behind the URL bar (`100dvh` follows it); and without safe-area insets the composer sits under the home indicator.
+
 ## The widget is somebody else's page
 
 Three constraints follow from that, and each has already been learned the hard way:

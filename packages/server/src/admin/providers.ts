@@ -59,13 +59,6 @@ export async function putProviders(
   const body = await readJsonBody(req, res)
   if (!body) return
 
-  const tenantId = await resolveTenantOr404(
-    res,
-    deps.db,
-    typeof body.tenantSlug === "string" ? body.tenantSlug : null,
-  )
-  if (tenantId === null) return
-
   const raw = body.secrets
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     sendJson(res, 400, { error: "secrets must be an object" })
@@ -85,8 +78,51 @@ export async function putProviders(
       sendJson(res, 400, { error: `${name} must be a string` })
       return
     }
-    if (value.trim() !== "") secrets[name] = value.trim()
+    const trimmed = value.trim()
+    if (trimmed === "") continue
+
+    /*
+     * A base URL is fetched by this server, from this server. `GET /models` goes to whatever
+     * address is stored here, so the value decides where the process makes a request.
+     *
+     * Loopback and private addresses cannot be refused the way `fetch-url.ts` refuses them for
+     * page ingestion: a local runner IS a loopback address, and pointing at Ollama on the same
+     * machine is one of the reasons to use this product. What is refused is anything that is not
+     * plain http or https, and any address carrying credentials — neither is a thing a model
+     * endpoint needs, and both are how a URL field becomes a way to reach something else.
+     *
+     * The residual risk is stated rather than hidden: an admin can aim this at an internal
+     * address. It is bounded by the admin token, and the response body never leaves the server —
+     * only model ids do.
+     */
+    if (name.endsWith("_BASE_URL")) {
+      let parsed: URL
+      try {
+        parsed = new URL(trimmed)
+      } catch {
+        sendJson(res, 400, { error: `${name} is not a URL` })
+        return
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        sendJson(res, 400, { error: `${name} must be an http or https address` })
+        return
+      }
+      if (parsed.username !== "" || parsed.password !== "") {
+        sendJson(res, 400, { error: `${name} must not carry a username or password` })
+        return
+      }
+    }
+    secrets[name] = trimmed
   }
+
+  // Shape first, database second: a malformed request should not cost a tenant lookup, and this
+  // ordering is what lets the rules above be tested without one.
+  const tenantId = await resolveTenantOr404(
+    res,
+    deps.db,
+    typeof body.tenantSlug === "string" ? body.tenantSlug : null,
+  )
+  if (tenantId === null) return
 
   if (Object.keys(secrets).length === 0) {
     // Saving nothing is how an owner goes back to the deployment's provider, and deleting the row
