@@ -150,7 +150,7 @@ export async function putProviders(
    * Since the panel can never read a stored credential back, this merge can only happen here.
    */
   const existing = await readProviderConfig(deps.db, tenantId, deps.env ?? process.env)
-  const merged = { ...(existing?.secrets ?? {}), ...secrets }
+  const merged = { ...existing?.secrets, ...secrets }
   for (const name of removals) delete merged[name]
 
   if (Object.keys(merged).length === 0) {
