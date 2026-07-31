@@ -66,6 +66,7 @@ export async function putProviders(
   }
 
   const secrets: Record<string, string> = {}
+  const removals: string[] = []
   for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
     // Credential names are environment-variable names, and they are read back into an env map.
     // Anything else is refused rather than stored: a name with punctuation in it could only ever
@@ -79,7 +80,11 @@ export async function putProviders(
       return
     }
     const trimmed = value.trim()
-    if (trimmed === "") continue
+    // An empty value is how one credential is removed while the others stay. See the merge below.
+    if (trimmed === "") {
+      removals.push(name)
+      continue
+    }
 
     /*
      * A base URL is fetched by this server, from this server. `GET /models` goes to whatever
@@ -124,9 +129,31 @@ export async function putProviders(
   )
   if (tenantId === null) return
 
-  if (Object.keys(secrets).length === 0) {
+  if (Object.keys(secrets).length === 0 && removals.length === 0) {
     // Saving nothing is how an owner goes back to the deployment's provider, and deleting the row
     // says that plainly — an empty blob would read as "configured, with nothing in it".
+    await deleteProviderConfig(deps.db, tenantId)
+    sendJson(res, 200, { configuredFields: [], chatProvider: null, embedProvider: null })
+    return
+  }
+
+  /*
+   * Merged with what is already stored, not written over it.
+   *
+   * The panel used to send every credential box at once, so replacing the blob was the same as
+   * updating it. It sends one provider at a time now — which is what a shop actually does — and a
+   * plain replace would have deleted the others silently. That is not hypothetical: Groq serves
+   * no embedding model, so "Groq for answers, OpenAI for search" is an ordinary pairing, and
+   * saving the second one would have taken the first one's key with it and left the assistant
+   * unable to search at all.
+   *
+   * Since the panel can never read a stored credential back, this merge can only happen here.
+   */
+  const existing = await readProviderConfig(deps.db, tenantId, deps.env ?? process.env)
+  const merged = { ...(existing?.secrets ?? {}), ...secrets }
+  for (const name of removals) delete merged[name]
+
+  if (Object.keys(merged).length === 0) {
     await deleteProviderConfig(deps.db, tenantId)
     sendJson(res, 200, { configuredFields: [], chatProvider: null, embedProvider: null })
     return
@@ -136,7 +163,11 @@ export async function putProviders(
     await writeProviderConfig(
       deps.db,
       tenantId,
-      { secrets, chatProvider: asString(body.chatProvider), embedProvider: asString(body.embedProvider) },
+      {
+        secrets: merged,
+        chatProvider: asString(body.chatProvider),
+        embedProvider: asString(body.embedProvider),
+      },
       deps.env ?? process.env,
     )
   } catch (e) {
@@ -146,7 +177,7 @@ export async function putProviders(
   }
 
   sendJson(res, 200, {
-    configuredFields: Object.keys(secrets).toSorted(),
+    configuredFields: Object.keys(merged).toSorted(),
     chatProvider: asString(body.chatProvider),
     embedProvider: asString(body.embedProvider),
   })

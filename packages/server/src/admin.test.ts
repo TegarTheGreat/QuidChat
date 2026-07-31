@@ -324,3 +324,46 @@ describe("GET /admin/usage", () => {
     }
   })
 })
+
+describe("PUT /admin/providers", () => {
+  it("keeps the credentials it was not sent, and removes the one sent empty", async () => {
+    await seedTenant(db, "provider-merge")
+    const { url, close } = await startServer({
+      db, provider: new FakeProvider([]), logError: () => {},
+      env: {
+        QUIDCHAT_ADMIN_TOKEN: ADMIN_TOKEN,
+        QUIDCHAT_SECRET_KEY: Buffer.alloc(32, 11).toString("base64"),
+      },
+    })
+    const save = async (secrets: Record<string, string>) => {
+      const res = await fetch(`${url}/admin/providers`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify({ tenantSlug: "provider-merge", secrets }),
+      })
+      return (await res.json()) as { configuredFields: string[] }
+    }
+
+    try {
+      expect((await save({ OPENAI_API_KEY: "sk-one" })).configuredFields).toEqual([
+        "OPENAI_API_KEY",
+      ])
+
+      // The panel sends one provider at a time now. A plain replace would have deleted the key
+      // above — and "Groq for answers, OpenAI for search" is an ordinary pairing, because Groq
+      // serves no embedding model. The shop would have been left unable to search at all.
+      expect((await save({ GROQ_API_KEY: "gsk-two" })).configuredFields).toEqual([
+        "GROQ_API_KEY",
+        "OPENAI_API_KEY",
+      ])
+
+      // An empty value removes exactly that one.
+      expect((await save({ OPENAI_API_KEY: "" })).configuredFields).toEqual(["GROQ_API_KEY"])
+
+      // Sending nothing at all still means "go back to the deployment's own provider".
+      expect((await save({})).configuredFields).toEqual([])
+    } finally {
+      await close()
+    }
+  })
+})

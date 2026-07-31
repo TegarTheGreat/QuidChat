@@ -1,7 +1,15 @@
 import * as React from "react"
+import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select"
 import { api, type ProvidersResponse } from "../lib/api"
 import { useFetch } from "../hooks/use-fetch"
 
@@ -13,23 +21,65 @@ import { useFetch } from "../hooks/use-fetch"
  * had done everything else correctly still had an assistant that refused every question, and
  * nothing in the panel said why.
  *
+ * One provider at a time, chosen from a list. It used to be six credential boxes open at once —
+ * a column of empty password fields, five of which nobody was going to fill in, pushing the save
+ * button off the bottom of the dialog. A shop picks one provider and pastes one key.
+ *
  * Only the common few are offered. Fourteen presets is the right number for a resolver and the
- * wrong number for a form — the shortest path from "I have a key" to "it answers" matters more
+ * wrong number for a form: the shortest path from "I have a key" to "it answers" matters more
  * here than covering every vendor, and anything not listed still works through the environment.
  */
 
-const OFFERED = [
-  { name: "OPENAI_API_KEY", label: "OpenAI", hint: "sk-…, from platform.openai.com" },
-  { name: "GROQ_API_KEY", label: "Groq", hint: "gsk_…, free tier available" },
-  { name: "GEMINI_API_KEY", label: "Google Gemini", hint: "from aistudio.google.com" },
-  { name: "ANTHROPIC_API_KEY", label: "Anthropic", hint: "sk-ant-…" },
-  { name: "OPENROUTER_API_KEY", label: "OpenRouter", hint: "sk-or-…, one key for many models" },
+type Offered = {
+  name: string
+  label: string
+  hint: string
+  /** Where the key comes from, said plainly enough to follow without a tab open. */
+  where: string
+}
+
+const OFFERED: Offered[] = [
+  {
+    name: "OPENAI_API_KEY",
+    label: "OpenAI",
+    hint: "sk-…",
+    where: "platform.openai.com → API keys",
+  },
+  {
+    name: "GROQ_API_KEY",
+    label: "Groq",
+    hint: "gsk_…",
+    where: "console.groq.com → API keys. Has a free tier, and is the fastest of these.",
+  },
+  {
+    name: "GEMINI_API_KEY",
+    label: "Google Gemini",
+    hint: "AIza…",
+    where: "aistudio.google.com → Get API key. Has a free tier.",
+  },
+  {
+    name: "ANTHROPIC_API_KEY",
+    label: "Anthropic",
+    hint: "sk-ant-…",
+    where: "console.anthropic.com → API keys",
+  },
+  {
+    name: "OPENROUTER_API_KEY",
+    label: "OpenRouter",
+    hint: "sk-or-…",
+    where: "openrouter.ai → Keys. One key reaches models from every vendor above.",
+  },
   {
     name: "OLLAMA_BASE_URL",
-    label: "Ollama (on your own machine)",
-    hint: "http://localhost:11434/v1 — no key needed, and nothing leaves your server",
+    label: "Ollama, on your own machine",
+    hint: "http://localhost:11434/v1",
+    where: "No key and no account. Nothing leaves your server, and it costs nothing to run.",
   },
 ]
+
+function labelFor(field: string): string {
+  return OFFERED.find((o) => o.name === field)?.label ?? field
+}
 
 export function ProviderField({
   tenantSlug,
@@ -44,7 +94,8 @@ export function ProviderField({
     () => api.getProviders(tenantSlug),
     [tenantSlug, reloadKey],
   )
-  const [values, setValues] = React.useState<Record<string, string>>({})
+  const [choice, setChoice] = React.useState<string>(OFFERED[0]!.name)
+  const [value, setValue] = React.useState("")
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -52,13 +103,15 @@ export function ProviderField({
     return <p className="text-sm text-muted-foreground">Loading…</p>
   }
   const data = state.data
+  const selected = OFFERED.find((o) => o.name === choice) ?? OFFERED[0]!
+  const isUrl = selected.name.endsWith("_BASE_URL")
 
   async function save(next: Record<string, string>) {
     setBusy(true)
     setError(null)
     try {
       await api.saveProviders({ tenantSlug, secrets: next })
-      setValues({})
+      setValue("")
       setReloadKey((k) => k + 1)
       onSaved?.()
     } catch (e) {
@@ -80,48 +133,78 @@ export function ProviderField({
       )}
 
       {data.configuredFields.length > 0 ? (
-        <p className="text-sm">
-          Answering with your own key:{" "}
-          <span className="font-medium">
-            {data.configuredFields
-              .map((f) => OFFERED.find((o) => o.name === f)?.label ?? f)
-              .join(", ")}
-          </span>
-        </p>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span>Answering with your own key:</span>
+          {data.configuredFields.map((field) => (
+            <Badge key={field} variant="secondary" className="gap-1 pr-1">
+              {labelFor(field)}
+              <button
+                type="button"
+                aria-label={`Remove the ${labelFor(field)} key`}
+                disabled={busy}
+                // An empty value removes exactly this one and leaves the rest, which matters when
+                // a shop answers with one provider and searches with another.
+                onClick={() => void save({ [field]: "" })}
+                className="rounded-sm px-1 leading-none hover:bg-background"
+              >
+                ×
+              </button>
+            </Badge>
+          ))}
+        </div>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Using whatever this server was started with. Paste a key below to bill your own account.
+          Using whatever this server was started with. Add a key below to bill your own account.
         </p>
       )}
 
-      <div className="space-y-3">
-        {OFFERED.map((option) => (
-          <div key={option.name} className="space-y-1">
-            <Label htmlFor={`provider-${option.name}`}>{option.label}</Label>
-            <Input
-              id={`provider-${option.name}`}
-              type={option.name.endsWith("_BASE_URL") ? "text" : "password"}
-              autoComplete="off"
-              disabled={!data.secretKeyConfigured || busy}
-              value={values[option.name] ?? ""}
-              onChange={(e) => setValues((v) => ({ ...v, [option.name]: e.target.value }))}
-              placeholder={
-                data.configuredFields.includes(option.name) ? "stored — type to replace" : option.hint
-              }
-            />
-          </div>
-        ))}
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,14rem)_1fr]">
+        <div className="space-y-1">
+          <Label htmlFor="provider-choice">Provider</Label>
+          <Select value={choice} onValueChange={setChoice}>
+            <SelectTrigger id="provider-choice" disabled={!data.secretKeyConfigured || busy}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {OFFERED.map((option) => (
+                <SelectItem key={option.name} value={option.name}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="provider-secret">{isUrl ? "Address" : "API key"}</Label>
+          <Input
+            id="provider-secret"
+            // A key is hidden; an address is not. Masking something that is not a secret only
+            // makes it harder to check for a typo.
+            type={isUrl ? "text" : "password"}
+            autoComplete="off"
+            disabled={!data.secretKeyConfigured || busy}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={
+              data.configuredFields.includes(selected.name)
+                ? "stored — type to replace"
+                : selected.hint
+            }
+          />
+        </div>
       </div>
+
+      <p className="text-xs text-muted-foreground">{selected.where}</p>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
-          disabled={busy || !data.secretKeyConfigured || Object.values(values).every((v) => v.trim() === "")}
-          onClick={() => void save(values)}
+          disabled={busy || !data.secretKeyConfigured || value.trim() === ""}
+          onClick={() => void save({ [selected.name]: value.trim() })}
         >
-          Save key
+          {busy ? "Saving…" : `Use ${selected.label}`}
         </Button>
         {data.configuredFields.length > 0 && (
           <Button

@@ -477,18 +477,27 @@ export function SettingsDialog({
                   )}
 
                   {saveState.status === "error" && <MutationError message={saveState.message} />}
-
-                  <div className="flex items-center gap-3 border-t pt-4">
-                    <Button onClick={handleSave} disabled={saveState.status === "pending"}>
-                      {saveState.status === "pending" ? "Saving…" : "Save changes"}
-                    </Button>
-                    {saved && saveState.status === "success" && (
-                      <span className="text-sm text-muted-foreground">Saved.</span>
-                    )}
-                  </div>
                 </>
               )}
             </div>
+            {/*
+             * Outside the scrolling area, not at the bottom of it.
+             *
+             * It used to sit after the last field, so on the Models tab — six credential boxes
+             * long — the only way to save was to scroll past every one of them to find the
+             * button. A form whose primary action is off screen reads as a form that cannot be
+             * saved, which is the report that started this.
+             */}
+            {tenantSlug && fetched.status === "success" && (
+              <footer className="flex shrink-0 items-center gap-3 border-t p-4">
+                <Button onClick={handleSave} disabled={saveState.status === "pending"}>
+                  {saveState.status === "pending" ? "Saving…" : "Save changes"}
+                </Button>
+                {saved && saveState.status === "success" && (
+                  <span className="text-sm text-muted-foreground">Saved.</span>
+                )}
+              </footer>
+            )}
           </main>
         </SidebarProvider>
       </DialogContent>

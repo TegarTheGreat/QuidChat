@@ -248,6 +248,31 @@ check(
 check("cancelling is possible", (await clickText("Cancel")) === "clicked")
 
 /**
+ * Settings.
+ *
+ * The dialog is where a model gets chosen and a key gets pasted. Its save button used to sit at
+ * the end of the scrolling form, so on the Models tab — six credential boxes long — the only way
+ * to save was to scroll past all of them, and a form whose primary action is off screen reads as
+ * one that cannot be saved.
+ */
+console.log("settings")
+await send("Page.navigate", { url: `${BASE}/panel` })
+await sleep(2000)
+await evaluate(`[...document.querySelectorAll("button")].find(e=>e.textContent.trim()==="Settings")?.click()`)
+await sleep(2500)
+text = await bodyText()
+check("the settings dialog opens", text.includes("AI provider"), text.slice(0, 200))
+check(
+  "the provider is chosen from a list rather than six open boxes",
+  text.includes("Provider") && text.includes("API key"),
+  text.slice(0, 400),
+)
+check("saving is reachable without scrolling the form", (await clickText("Save changes")) === "clicked")
+await sleep(2000)
+text = await bodyText()
+check("it says it saved", text.includes("Saved."), text.slice(0, 300))
+
+/**
  * Overview.
  *
  * It showed spend, budget left, and a count of escalation rows. Two of those are about money and
