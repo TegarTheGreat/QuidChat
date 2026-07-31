@@ -74,6 +74,12 @@ Three constraints follow from that, and each has already been learned the hard w
 
 The source chip is the signature, and it is deliberately not the tenant's accent colour: a citation is QuidChat's guarantee that the sentence came from the business's own document, not the shop's decoration.
 
+## The keyword arm of hybrid search must not AND the question
+
+Retrieval fuses a keyword rank and a vector rank with RRF. The keyword side used `plainto_tsquery`, which ANDs every token: `"how long is the warranty?"` became `'how' & 'long' & 'is' & 'the' & 'warranty'`, so a chunk had to contain all five words. A policy saying "Official warranty 12 months" matched none of it — **the keyword arm returned nothing for any question phrased as a sentence**, which is how every customer asks one, and hybrid search silently became vector-only exactly where lexical matching earns its keep: model numbers, prices, SKUs, product names.
+
+The terms are OR-ed now and `ts_rank` orders by how much of the question a chunk contains. The `'simple'` text-search configuration stays, because it stems and stops nothing — which is what makes it usable for Indonesian and every other language Postgres ships no configuration for. That is also why the fix is OR-ing rather than a stopword list.
+
 ## Opening questions come from data that already exists
 
 A blank message log is why widgets go unused: a visitor has to invent a question and guess whether the thing can answer it. The opening screen defaults its suggestions to the tenant's **approved** canned answers — questions the business already knows it gets, and that are guaranteed answerable, so a shop that has done that setup gets openers for free. `widget_theme.starters` overrides them.

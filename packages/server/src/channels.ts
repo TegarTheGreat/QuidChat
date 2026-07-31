@@ -1,6 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Provider, Store } from "@quidchat/core"
-import { answer } from "@quidchat/core"
 import {
   adapterFromEnv,
   adapterFromStoredSecrets,
@@ -10,9 +9,9 @@ import {
 } from "@quidchat/channels"
 import { sql } from "drizzle-orm"
 import { withTenant, type QuidDb } from "@quidchat/db"
+import { answerTurn } from "./answer-turn.js"
 import { lookupTenantBySlug } from "./tenant-lookup.js"
 import { decryptSecrets, readSecretKey } from "./secrets.js"
-import { notifyEscalationInBackground } from "./escalation-notify.js"
 import type { ChatRateLimiter } from "./rate-limit.js"
 
 function rowsOf(res: unknown): Record<string, unknown>[] {
@@ -280,27 +279,19 @@ export async function handleChannelWebhook(
           incoming.visitorId,
         )
         const history = await historyFor(deps.db, identity.tenantId, conversationId)
-        const outcome = await answer({
+        // `answerTurn`, not `answer`: it carries the budget guard and the usage recording that
+        // this path used to skip entirely — see the note on that function.
+        const outcome = await answerTurn({
+          db: deps.db,
           store: deps.store,
           provider: deps.provider,
           tenantId: identity.tenantId,
           conversationId,
           history,
           question: incoming.text,
+          channel: adapter.id,
+          logError: deps.logError,
         })
-        if (outcome.kind === "refused") {
-          // Same signal as on the web, and the channel is carried through so the business can
-          // tell a WhatsApp customer waiting on them from a website visitor.
-          notifyEscalationInBackground({
-            db: deps.db,
-            notice: {
-              tenantId: identity.tenantId, conversationId, question: incoming.text,
-              reason: outcome.reason, channel: adapter.id,
-            },
-            logError: deps.logError,
-          })
-        }
-
         return outcome.kind === "answered"
           ? {
               kind: "answered",

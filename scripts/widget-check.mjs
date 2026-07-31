@@ -108,7 +108,11 @@ await evaluate(`(() => {
   return "typed"
 })()`)
 const stages = []
-const sendBtn = `[...[...document.querySelectorAll("*")].find(e=>e.shadowRoot).shadowRoot.querySelectorAll("button")].find(b=>b.textContent.trim()==="Send")`
+// Selected structurally, not by its label. This used to look for a button whose text was
+// exactly "Send"; the button became icon-only, so it matched nothing, `?.click()` quietly did
+// nothing, and no message was ever sent — while the assertions below still passed. A submit
+// button inside the composer form is what the widget is, in any language.
+const sendBtn = `[...document.querySelectorAll("*")].find(e=>e.shadowRoot).shadowRoot.querySelector("form button[type=submit]")`
 await evaluate(`${sendBtn}?.click()`)
 for (let i = 0; i < 20; i++) {
   await sleep(250)
@@ -140,8 +144,22 @@ if (/not authorized/i.test(finalText ?? "")) {
 } else {
   // The answer and its citation are the product's whole promise, and both travel over the
   // cross-origin request that used to be blocked outright.
-  check("the question is answered", /warranty|deliver|return|sorry/i.test(finalText ?? ""), (finalText ?? "").slice(-160))
-  check("the answer names its source", /Source:/.test(finalText ?? ""), (finalText ?? "").slice(-160))
+  // Matched against the ANSWER, not against anything on the page. The old pattern accepted
+  // "deliver" and "warranty", both of which appear in the page's own copy and in the question
+  // itself, so it passed while nothing had been answered at all.
+  check(
+    "the question is answered",
+    /warranty covering|Sorry|unavailable/i.test(finalText ?? ""),
+    (finalText ?? "").slice(-160),
+  )
+  // Asserts the DOCUMENT is named, not that a particular English word appears. The chip used to
+  // read "Source: X" and now reads "From X", and follows the tenant's locale — checking the
+  // wording made this fail on a copy change while the promise it guards was intact.
+  check(
+    "the answer names its source",
+    /Store Policy/.test(finalText ?? ""),
+    (finalText ?? "").slice(-160),
+  )
 }
 check("no uncaught exceptions on the page", errors.length === 0, errors.join(" | "))
 

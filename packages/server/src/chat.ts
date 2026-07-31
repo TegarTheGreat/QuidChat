@@ -1,11 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { answer, type Provider, type Store } from "@quidchat/core"
 import { withTenant, type QuidDb } from "@quidchat/db"
 import { sql } from "drizzle-orm"
-import { monthlyBudgetCents, recordUsage, spentThisMonthCents } from "./budget.js"
 import { lookupTenantBySlug } from "./tenant-lookup.js"
 import { openEventStream, sendProgress, sendResult, sendStreamError } from "./stream.js"
-import { notifyEscalationInBackground } from "./escalation-notify.js"
+import type { Provider, Store } from "@quidchat/core"
+import { answerTurn } from "./answer-turn.js"
 import type { ChatRateLimiter } from "./rate-limit.js"
 
 /** Normalizes the `execute()` result, whose shape differs between drivers — see the
@@ -307,81 +306,22 @@ export async function handleChat(
     )
     const history = await loadHistory(deps.db, identity.tenantId, conversationId)
 
-    // The budget guard. `monthlyBudgetCents === 0` means unlimited — see budget.ts —
-    // so `spentThisMonthCents` is only even queried when there's a real limit to
-    // compare against, and the provider is never touched when the tenant is over it.
-    const budget = await monthlyBudgetCents(deps.db, identity.tenantId)
-    if (budget > 0 && (await spentThisMonthCents(deps.db, identity.tenantId)) >= budget) {
-      const config = await deps.store.getTenantConfig(identity.tenantId)
-      // Recorded the same way `answer()` records any other refusal, so a business
-      // owner reviewing the transcript sees the question that went unanswered,
-      // rather than a silent gap.
-      await deps.store.recordUserTurn({ tenantId: identity.tenantId, conversationId, text: chatRequest.message })
-      await deps.store.recordEscalation({
-        tenantId: identity.tenantId, conversationId, reason: "budget_exhausted",
-      })
-      await deps.store.recordAnswer({
-        tenantId: identity.tenantId,
-        conversationId,
-        segments: [{ kind: "general", text: config.refusalText }],
-        citedChunkIds: [],
-      })
-      notifyEscalationInBackground({
-        db: deps.db,
-        notice: {
-          tenantId: identity.tenantId, conversationId, question: chatRequest.message,
-          reason: "budget_exhausted", channel: "web",
-        },
-        logError: deps.logError,
-      })
-      sendJson(res, 200, {
-        conversationId, kind: "refused", text: config.refusalText, reason: "budget_exhausted",
-      })
-      return
-    }
-
     if (stream) openEventStream(res)
 
-    const result = await answer({
+    // The budget guard, the usage recording and the escalation notice all live in `answerTurn`,
+    // shared with the channel path — which did none of the three until this was extracted.
+    const result = await answerTurn({
+      db: deps.db,
       store: deps.store,
       provider: deps.provider,
       tenantId: identity.tenantId,
       conversationId,
       history,
       question: chatRequest.message,
-      ...(stream ? { onProgress: (stage) => sendProgress(res, stage) } : {}),
+      channel: "web",
+      logError: deps.logError,
+      ...(stream ? { onProgress: (stage: string) => sendProgress(res, stage as never) } : {}),
     })
-
-    // Recorded for refusals as well as answers, and using the provider's own token
-    // counts rather than an estimate. The `ungrounded` path generates twice and shows
-    // the visitor nothing, so billing only successes would leave the most expensive
-    // outcome in the system unbilled and therefore unbounded by any budget.
-    //
-    // Skipped only when nothing was generated at all — an empty knowledge base refuses
-    // before the first completion, and a zero-cost row would just be noise in the
-    // tenant's usage history.
-    if (result.usage.inputTokens > 0 || result.usage.outputTokens > 0) {
-      const config = await deps.store.getTenantConfig(identity.tenantId)
-      await recordUsage(deps.db, {
-        tenantId: identity.tenantId,
-        model: config.chatModel,
-        usage: result.usage,
-      })
-    }
-
-    // A refusal IS the escalation signal — the assistant declining is exactly the moment a
-    // person needs to take over — so the notice goes out here rather than from inside the
-    // pipeline, which stays free of network and configuration concerns.
-    if (result.kind === "refused") {
-      notifyEscalationInBackground({
-        db: deps.db,
-        notice: {
-          tenantId: identity.tenantId, conversationId, question: chatRequest.message,
-          reason: result.reason, channel: "web",
-        },
-        logError: deps.logError,
-      })
-    }
 
     const payload = { conversationId, ...result }
     if (stream) sendResult(res, payload)

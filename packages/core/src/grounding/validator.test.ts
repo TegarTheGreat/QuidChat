@@ -68,3 +68,47 @@ describe("validateGrounding", () => {
     if (!v.ok) expect(v.violation).toBe("empty_answer")
   })
 })
+
+describe("an answer that renders as nothing", () => {
+  const sources = [{ id: "c1", content: "Warranty is 12 months.", documentTitle: "Policy" }]
+
+  it("rejects a reply whose only segment is empty", () => {
+    // `asAnswer` accepts "" because it is a string, and this used to pass validation, be
+    // recorded as a success, and leave the visitor looking at an empty bubble.
+    const verdict = validateGrounding({
+      answer: { segments: [{ kind: "general", text: "" }] },
+      candidates: sources,
+      highRiskTopics: [],
+    })
+    expect(verdict.ok).toBe(false)
+    if (!verdict.ok) expect(verdict.violation).toBe("empty_answer")
+  })
+
+  it("rejects a blank business claim even when it carries a valid citation", () => {
+    // The worse shape: an empty bubble with a source chip attached — the product's one promise
+    // pointing at nothing.
+    const verdict = validateGrounding({
+      answer: { segments: [{ kind: "business_claim", text: "   \n ", citations: ["c1"] }] },
+      candidates: sources,
+      highRiskTopics: [],
+    })
+    expect(verdict.ok).toBe(false)
+  })
+
+  it("keeps an answer that has real text beside a blank segment", () => {
+    // The harm is a reply with nothing visible in it. A stray empty segment next to a real one
+    // costs the visitor nothing, and failing the turn would spend a repair round on it.
+    const verdict = validateGrounding({
+      answer: {
+        segments: [
+          { kind: "general", text: "" },
+          { kind: "business_claim", text: "Warranty is 12 months.", citations: ["c1"] },
+        ],
+      },
+      candidates: sources,
+      highRiskTopics: [],
+    })
+    expect(verdict.ok).toBe(true)
+    if (verdict.ok) expect(verdict.citedChunkIds).toEqual(["c1"])
+  })
+})

@@ -297,4 +297,79 @@ describe("createStore", () => {
     expect(counts.citations).toBe(1)
     expect(counts.escalations).toBe(1)
   })
+
+  describe("a question asked the way a customer asks it", () => {
+    it("still reaches the document, instead of losing the keyword arm entirely", async () => {
+      // `plainto_tsquery` ANDs every token, so "how long is the warranty?" became
+      // `'how' & 'long' & 'is' & 'the' & 'warranty'` and required a chunk to contain all five. A
+      // policy saying "Official warranty 12 months" matched none of it. The keyword arm returned
+      // nothing for any question phrased as a sentence — which is how every customer asks one —
+      // and hybrid search quietly became vector-only.
+      const [t] = await db.insert(tenants).values({ slug: "fts", name: "fts" }).returning()
+      await db.insert(tenantSettings).values({ tenantId: t!.id })
+      const [s] = await db.insert(knowledgeSources)
+        .values({ tenantId: t!.id, kind: "text", uri: "a.txt", status: "ready" }).returning()
+      const [d] = await db.insert(documents)
+        .values({ tenantId: t!.id, sourceId: s!.id, title: "Policy" }).returning()
+      await db.insert(chunks).values([
+        // Matches the question's words, embedding FAR from it — the same shape as the tests
+        // above, so the keyword arm is the only thing that can lift it.
+        { tenantId: t!.id, documentId: d!.id, ordinal: 0,
+          content: "Official warranty 12 months from the purchase date.",
+          embedding: fakeEmbedding(90), embeddingModel: "test" },
+        // Shares NOT ONE word with the question, embedding IDENTICAL to it. Without a working
+        // keyword arm this is the only chunk retrieval can rank, and it wins.
+        { tenantId: t!.id, documentId: d!.id, ordinal: 1,
+          content: "Kami buka pukul sembilan pagi sampai lima sore.",
+          embedding: fakeEmbedding(1), embeddingModel: "test" },
+      ])
+
+      const store = createStore(db)
+      const hits = await store.searchChunks({
+        tenantId: t!.id,
+        query: "how long is the warranty?",
+        embedding: fakeEmbedding(1),
+        embeddingModel: "test",
+        limit: 2,
+      })
+
+      expect(hits.length).toBeGreaterThan(0)
+      expect(hits[0]!.content).toContain("warranty")
+    })
+
+    it("still ranks a bare keyword the same way", async () => {
+      const [t] = await db.insert(tenants).values({ slug: "fts2", name: "fts2" }).returning()
+      await db.insert(tenantSettings).values({ tenantId: t!.id })
+      const [s] = await db.insert(knowledgeSources)
+        .values({ tenantId: t!.id, kind: "text", uri: "a.txt", status: "ready" }).returning()
+      const [d] = await db.insert(documents)
+        .values({ tenantId: t!.id, sourceId: s!.id, title: "Policy" }).returning()
+      await db.insert(chunks).values([
+        { tenantId: t!.id, documentId: d!.id, ordinal: 0,
+          content: "Official warranty 12 months.", embedding: fakeEmbedding(90), embeddingModel: "test" },
+        { tenantId: t!.id, documentId: d!.id, ordinal: 1,
+          content: "Open nine to five.", embedding: fakeEmbedding(91), embeddingModel: "test" },
+      ])
+
+      const store = createStore(db)
+      const hits = await store.searchChunks({
+        tenantId: t!.id, query: "warranty",
+        embedding: fakeEmbedding(500), embeddingModel: "test", limit: 2,
+      })
+      expect(hits[0]!.content).toContain("warranty")
+    })
+
+    it("does not fall over on a question with no words in it", async () => {
+      // `string_agg` over nothing is NULL, and `@@ NULL` matches nothing rather than erroring.
+      const [t] = await db.insert(tenants).values({ slug: "fts3", name: "fts3" }).returning()
+      await db.insert(tenantSettings).values({ tenantId: t!.id })
+      const store = createStore(db)
+      await expect(
+        store.searchChunks({
+          tenantId: t!.id, query: "???", embedding: fakeEmbedding(1),
+          embeddingModel: "test", limit: 2,
+        }),
+      ).resolves.toEqual([])
+    })
+  })
 })

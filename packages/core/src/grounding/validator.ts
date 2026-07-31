@@ -20,6 +20,26 @@ export function validateGrounding(args: {
     return { ok: false, violation: "empty_answer", detail: "no segments" }
   }
 
+  /*
+   * An answer whose segments are all blank renders as nothing.
+   *
+   * `asAnswer` only requires `text` to be a string, and "" is a string, so
+   * `{"segments":[{"kind":"general","text":""}]}` passed every check, was recorded as a
+   * successful answer, and left the visitor looking at an empty bubble. With a
+   * `business_claim` it was worse: an empty bubble carrying a source chip — this product's one
+   * promise attached to nothing.
+   *
+   * Checked across the whole answer rather than per segment, because the harm is a reply with
+   * no visible text. One blank segment beside a real one costs the visitor nothing, and failing
+   * the turn over it would spend a repair round to fix something nobody can see.
+   *
+   * Small local models — the ones QuidChat exists to support — produce this often enough that
+   * it cannot be treated as impossible.
+   */
+  if (answer.segments.every((seg) => seg.text.trim() === "")) {
+    return { ok: false, violation: "empty_answer", detail: "every segment is blank" }
+  }
+
   const allowed = new Set(candidates.map((c) => c.id))
   const cited = new Set<string>()
 

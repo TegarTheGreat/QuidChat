@@ -100,17 +100,41 @@ export function createStore(db: QuidDb): Store {
         // see the full reasoning there. Whether the planner actually picks the index
         // at production scale hasn't been measured; the small-table tests on PGlite
         // always pick a sequential scan because it's genuinely cheaper there.
+        // The lexical query, OR-ed rather than AND-ed.
+        //
+        // This was `plainto_tsquery`, which ANDs every token: "how long is the warranty?" became
+        // `'how' & 'long' & 'is' & 'the' & 'warranty'`, and a chunk had to contain all five. A
+        // policy document saying "Official warranty 12 months" matched none of it, so the keyword
+        // arm returned NOTHING for any question phrased as a sentence — which is how every
+        // customer asks one. Hybrid search silently degraded to vector-only exactly where the
+        // lexical half earns its keep: model numbers, prices, SKUs, product names, the tokens an
+        // embedding blurs together.
+        //
+        // The `'simple'` configuration is kept deliberately: it stems and stops nothing, which is
+        // what makes it usable for Indonesian and every other language Postgres ships no
+        // configuration for. That is also why the stopwords cannot simply be dropped, and why
+        // OR-ing is the fix rather than a stopword list — `ts_rank` then orders by how much of
+        // the question a chunk actually contains.
+        //
+        // Tokenised by Postgres, from a bound parameter, so nothing is concatenated into SQL.
+        // A query with no word characters yields NULL, which matches nothing — the same as
+        // before, and safe.
+        const tsq = sql`(
+          SELECT to_tsquery('simple', string_agg(w, ' | '))
+          FROM regexp_split_to_table(lower(${query}), '[^[:alnum:]]+') AS w
+          WHERE w <> ''
+        )`
         const res = await tx.execute(sql`
           WITH kw AS (
             SELECT c.id,
                    row_number() OVER (
-                     ORDER BY ts_rank(c.tsv, plainto_tsquery('simple', ${query})) DESC, c.id
+                     ORDER BY ts_rank(c.tsv, ${tsq}) DESC, c.id
                    ) AS rnk
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
-            WHERE c.tsv @@ plainto_tsquery('simple', ${query})
+            WHERE c.tsv @@ ${tsq}
               ${sourceFilter}
-            ORDER BY ts_rank(c.tsv, plainto_tsquery('simple', ${query})) DESC, c.id
+            ORDER BY ts_rank(c.tsv, ${tsq}) DESC, c.id
             LIMIT ${poolSize}
           ),
           sem AS (
