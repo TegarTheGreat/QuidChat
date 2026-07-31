@@ -117,7 +117,7 @@ export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
               separate lists. */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Alur pesan masuk</CardTitle>
+              <CardTitle className="text-base">How an incoming message is routed</CardTitle>
             </CardHeader>
             <CardContent>
               <RoutingGraph skills={data.data.skills} rules={data.data.rules} />

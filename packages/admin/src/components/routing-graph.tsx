@@ -27,9 +27,9 @@ import type { RoutingRule, Skill } from "../lib/api"
 import { buildRows, ROW, TOP } from "./routing-graph-logic.js"
 
 function ruleSummary(rule: RoutingRule): string {
-  if (rule.kind === "fallback") return "Semua pesan lain"
-  if (rule.kind === "keyword") return rule.pattern ? `Mengandung “${rule.pattern}”` : "Tanpa kata kunci"
-  return rule.kind === "semantic" ? "Kemiripan makna" : "Diputuskan model"
+  if (rule.kind === "fallback") return "Everything else"
+  if (rule.kind === "keyword") return rule.pattern ? `Contains “${rule.pattern}”` : "No keyword set"
+  return rule.kind === "semantic" ? "Similar in meaning" : "Decided by the model"
 }
 
 export function RoutingGraph({
@@ -47,7 +47,7 @@ export function RoutingGraph({
   if (rows.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-        Belum ada aturan. Semua pesan langsung dijawab tanpa memilih skill.
+        No rules yet. Every message is answered directly, without choosing a skill.
       </div>
     )
   }
@@ -75,17 +75,17 @@ export function RoutingGraph({
                   <span className="text-xs text-muted-foreground">{row.rule.kind}</span>
                   {!row.rule.enabled && (
                     <Badge variant="outline" className="h-4 px-1 text-[10px]">
-                      nonaktif
+                      off
                     </Badge>
                   )}
                   {row.notImplemented && (
                     <Badge variant="outline" className="h-4 px-1 text-[10px]">
-                      belum aktif
+                      not built yet
                     </Badge>
                   )}
                   {row.unreachable && (
                     <Badge variant="destructive" className="h-4 px-1 text-[10px]">
-                      tak pernah dijalankan
+                      never reached
                     </Badge>
                   )}
                 </div>
@@ -135,14 +135,14 @@ export function RoutingGraph({
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                   {skill.isFallback && (
                     <Badge variant="secondary" className="h-4 px-1 text-[10px]">
-                      cadangan
+                      fallback
                     </Badge>
                   )}
                   {skill.answerMode && (
                     <span className="text-xs text-muted-foreground">{skill.answerMode}</span>
                   )}
                   <span className="text-xs text-muted-foreground">
-                    {skill.sources.length} sumber
+                    {skill.sources.length} source{skill.sources.length === 1 ? "" : "s"}
                   </span>
                 </div>
               </div>
@@ -155,18 +155,17 @@ export function RoutingGraph({
         // Not an error — a skill can legitimately exist only to receive handoffs. But an owner
         // who thinks they routed to it deserves to see that no rule does.
         <p className="text-xs text-muted-foreground">
-          Tidak ada aturan yang menuju{" "}
+          No rule leads to{" "}
           <span className="font-medium text-foreground">
             {handoffOnly.map((s) => s.name).join(", ")}
           </span>
-          . Skill ini hanya menerima operan dari skill lain.
+          . These are reachable only when another skill hands a question over.
         </p>
       )}
 
       <p className="text-xs text-muted-foreground">
-        Aturan dijalankan berurutan dari atas; yang pertama cocok yang dipakai. Selain itu, skill
-        yang sedang menjawab bisa mengoper pertanyaan ke skill lain saat menyadari itu bukan
-        bidangnya.
+        Rules run top to bottom, and the first match wins. Beyond that, the skill answering can
+        hand a question to another one when it turns out not to be its subject.
       </p>
     </div>
   )

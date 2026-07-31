@@ -180,6 +180,13 @@ check(
   text.includes("nothing points here"),
   text.slice(0, 200),
 )
+// The panel is an operator's screen and is English throughout. The routing graph was written in
+// Indonesian, so one card on it addressed a different reader than the rest of the product.
+check(
+  "the routing graph reads in the panel's own language",
+  text.includes("How an incoming message is routed"),
+  text.slice(0, 300),
+)
 
 console.log("routing")
 await pointerClick(`[aria-label="Actions for Sales"]`)
