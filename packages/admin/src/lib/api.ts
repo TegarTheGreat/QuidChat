@@ -372,6 +372,14 @@ export const api = {
       `/v1/admin/conversation${query({ tenantSlug, id })}`,
     ).then((r) => r.conversation),
 
+  /** Erases one transcript. A customer asking for their messages to be removed is entitled to
+   *  it, and retention-by-age does not answer that. */
+  deleteConversation: (body: { tenantSlug: string; id: string }) =>
+    request<{ ok: true }>("/v1/admin/conversation", {
+      method: "DELETE",
+      body: JSON.stringify(body),
+    }),
+
   listEscalations: (tenantSlug: string) =>
     request<{ escalations: Escalation[] }>(`/v1/admin/escalations${query({ tenantSlug })}`).then(
       (r) => r.escalations,

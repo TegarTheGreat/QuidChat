@@ -15,6 +15,7 @@ import {
   setChannelEnabled,
 } from "./admin/channels.js"
 import {
+  deleteConversation,
   getConversation,
   listConversations,
   listEscalations,
@@ -163,6 +164,7 @@ export async function handleAdminRequest(
   if (method === "DELETE" && sub === "/sources") return deleteSource(req, res, deps)
   if (method === "GET" && sub === "/conversations") return listConversations(res, deps, searchParams)
   if (method === "GET" && sub === "/conversation") return getConversation(res, deps, searchParams)
+  if (method === "DELETE" && sub === "/conversation") return deleteConversation(req, res, deps)
   if (method === "GET" && sub === "/escalations") return listEscalations(res, deps, searchParams)
   if (method === "POST" && sub === "/escalations/resolve") return resolveEscalation(req, res, deps)
   if (method === "GET" && sub === "/usage") return getUsage(res, deps, searchParams)

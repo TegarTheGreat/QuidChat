@@ -180,6 +180,47 @@ export async function getConversation(
   })
 }
 
+/**
+ * `DELETE /admin/conversation` — erase one transcript.
+ *
+ * Retention deletes by age, which answers "we do not keep this forever" but not "delete what you
+ * hold about me": a customer asking for their messages to be removed is entitled to have that
+ * happen today, and Indonesia's PDP law puts a deadline on it. Until now the only way was SQL
+ * against the database, which is not a thing a shop owner has.
+ *
+ * The messages and their citations go with it through the cascade, and the escalations raised
+ * from it too. What is left is the aggregate spend, which carries no message text and is what a
+ * business is billed on.
+ */
+export async function deleteConversation(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const tenantSlug = typeof raw.tenantSlug === "string" ? raw.tenantSlug : null
+  const id = typeof raw.id === "string" ? raw.id : ""
+
+  const tenantId = await resolveTenantOr404(res, deps.db, tenantSlug)
+  if (tenantId === null) return
+  if (!id) {
+    sendJson(res, 400, { error: "id is required" })
+    return
+  }
+
+  const deleted = await withTenant(deps.db, tenantId, async (tx) =>
+    rowsOf(
+      await tx.execute(sql`DELETE FROM conversations WHERE id = ${id} RETURNING id`),
+    )[0],
+  )
+  if (!deleted) {
+    sendJson(res, 404, { error: "conversation not found" })
+    return
+  }
+  sendJson(res, 200, { ok: true })
+}
+
 export async function listEscalations(
   res: ServerResponse,
   deps: AdminDeps,

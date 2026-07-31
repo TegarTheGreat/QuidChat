@@ -248,6 +248,44 @@ check(
 check("cancelling is possible", (await clickText("Cancel")) === "clicked")
 
 /**
+ * Conversations.
+ *
+ * The screen could only be read. The two things an owner wants while reading are to write the
+ * answer the assistant did not have — which meant retyping the question from memory on another
+ * screen — and to erase a transcript a customer asked them to erase, which meant SQL.
+ */
+console.log("conversations")
+await open("Conversations")
+await sleep(1200)
+text = await bodyText()
+check("a transcript is shown", text.includes("warranty"), text.slice(0, 300))
+check(
+  "an answer can be turned into a canned answer",
+  (await clickText("Write the answer for this")) === "clicked",
+)
+await sleep(800)
+text = await bodyText()
+check(
+  "the question comes in already filled",
+  text.includes("Write the answer for this question"),
+  text.slice(0, 300),
+)
+check("it can be saved and used", (await clickText("Save and use it")) === "clicked")
+await sleep(2000)
+
+await pointerClick(`[aria-label^="Actions for the conversation"]`)
+await sleep(600)
+check("a transcript can be erased", (await menuItems()).includes("Delete transcript"))
+await clickMenuItem("Delete transcript")
+await sleep(1000)
+text = await bodyText()
+check("erasing asks first", /Delete the transcript with/.test(text), text.slice(0, 300))
+check("erasing works", (await clickText("Delete it")) === "clicked")
+await sleep(2000)
+text = await bodyText()
+check("the transcript is gone", text.includes("No conversations yet"), text.slice(0, 300))
+
+/**
  * Channels.
  *
  * The page was eight cards with every credential box open at once — around twenty empty password

@@ -383,6 +383,45 @@ describe("channel credentials", () => {
     ).rejects.toThrow(/not configured/)
   })
 
+  it("erases a transcript and the messages under it", async () => {
+    const api = await client()
+    const tenantId = rowsOf(
+      await db.execute(sql`SELECT id FROM tenants WHERE slug = 'contract'`),
+    )[0]!["id"] as string
+    const conversationId = rowsOf(
+      await db.execute(sql`
+        INSERT INTO conversations (tenant_id, channel, visitor_id)
+        VALUES (${tenantId}, 'web', 'visitor-erasure') RETURNING id
+      `),
+    )[0]!["id"] as string
+    await db.execute(sql`
+      INSERT INTO messages (tenant_id, conversation_id, role, content)
+      VALUES (${tenantId}, ${conversationId}, 'user', 'Please delete my data')
+    `)
+
+    expect((await api.listConversations("contract")).some((c) => c.id === conversationId)).toBe(true)
+    expect(await api.deleteConversation({ tenantSlug: "contract", id: conversationId })).toEqual({
+      ok: true,
+    })
+    expect((await api.listConversations("contract")).some((c) => c.id === conversationId)).toBe(
+      false,
+    )
+    // The row is the easy half. A message left behind is the customer's words still on disk after
+    // being told they were erased, which is the thing this route exists to prevent.
+    const left = rowsOf(
+      await db.execute(
+        sql`SELECT count(*)::int AS n FROM messages WHERE conversation_id = ${conversationId}`,
+      ),
+    )[0]
+    expect(left).toMatchObject({ n: 0 })
+
+    // Deleting the same one twice must not report success: an owner clicking again should learn
+    // it is already gone.
+    await expect(
+      api.deleteConversation({ tenantSlug: "contract", id: conversationId }),
+    ).rejects.toThrow(/not found/)
+  })
+
   it("renames a tenant without touching its slug", async () => {
     const api = await client()
     const renamed = await api.renameTenant({ slug: "contract", name: "Contract Renamed" })
