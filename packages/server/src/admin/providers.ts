@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { hasSecretKey } from "../secrets.js"
 import {
+  credentialsForTenant,
   deleteProviderConfig,
   readProviderConfig,
   writeProviderConfig,
@@ -131,4 +132,34 @@ export async function deleteProviders(
 
   await deleteProviderConfig(deps.db, tenantId)
   sendJson(res, 200, { ok: true })
+}
+
+/**
+ * `GET /admin/providers/models` — what the configured service actually offers.
+ *
+ * The panel used to make an owner type a model name. A typo produces `unknown_model` on every
+ * question a customer asks, reported by the vendor at answer time to someone with no way to
+ * connect it back to the box they typed in. Asking the service is also the only list that cannot
+ * go stale, and it doubles as the check that a pasted key works at all.
+ */
+export async function getProviderModels(
+  res: ServerResponse,
+  deps: AdminDeps,
+  searchParams: URLSearchParams,
+): Promise<void> {
+  const tenantId = await resolveTenantOr404(res, deps.db, searchParams.get("tenantSlug"))
+  if (tenantId === null) return
+
+  if (!deps.listModels) {
+    sendJson(res, 200, { models: [], error: "this server cannot list models" })
+    return
+  }
+  const env = await credentialsForTenant({ db: deps.db, tenantId, env: deps.env ?? process.env })
+  try {
+    sendJson(res, 200, { models: await deps.listModels(env), error: null })
+  } catch (e) {
+    // 200 with an error string, not a 5xx: the panel shows a free-text box and the reason, which
+    // is a screen someone can still finish. A failed request would just look broken.
+    sendJson(res, 200, { models: [], error: e instanceof Error ? e.message : "could not list models" })
+  }
 }

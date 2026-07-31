@@ -3,6 +3,7 @@ import { Blocks, Gauge, MessageSquareWarning, Palette } from "lucide-react"
 
 import { MutationError } from "./mutation-error"
 import { OriginsField } from "./origins-field"
+import { ModelField } from "./model-field"
 import { ProviderField } from "./provider-field"
 import { settingsPayload } from "./settings-payload"
 import { mergeWidgetTheme } from "./settings-theme"
@@ -78,6 +79,15 @@ export function SettingsDialog({
    * questions to tap, with nothing said about it. Everything stored is kept and edited fields are
    * merged over the top, which also means a key added later survives a save from an older panel.
    */
+  // Refetched when the provider changes, so a key pasted above fills these in without a reload.
+  const [modelsKey, setModelsKey] = React.useState(0)
+  const modelList = useFetch(
+    () => (tenantSlug ? api.getProviderModels(tenantSlug) : Promise.resolve({ models: [], error: null })),
+    [tenantSlug, modelsKey],
+  )
+  const models = modelList.status === "success" ? modelList.data.models : []
+  const modelsError = modelList.status === "success" ? modelList.data.error : null
+
   const [storedTheme, setStoredTheme] = React.useState<Record<string, unknown>>({})
   const [theme, setTheme] = React.useState<{
     primaryColor: string
@@ -204,24 +214,33 @@ export function SettingsDialog({
                       {/* First, because it is the one setting without which nothing else in this
                           dialog matters: no provider means every question is refused. */}
                       <Field label="AI provider">
-                        <ProviderField tenantSlug={tenantSlug ?? ""} />
+                        <ProviderField tenantSlug={tenantSlug ?? ""} onSaved={() => setModelsKey((k) => k + 1)} />
                       </Field>
                       <Field label="Chat model">
-                        <Input
+                        <ModelField
                           value={draft.chat_model}
-                          onChange={(e) => update("chat_model", e.target.value)}
+                          models={models}
+                          error={modelsError}
+                          ariaLabel="Chat model"
+                          onChange={(next) => update("chat_model", next)}
                         />
                       </Field>
                       <Field label="Rewrite model">
-                        <Input
+                        <ModelField
                           value={draft.rewrite_model}
-                          onChange={(e) => update("rewrite_model", e.target.value)}
+                          models={models}
+                          error={modelsError}
+                          ariaLabel="Rewrite model"
+                          onChange={(next) => update("rewrite_model", next)}
                         />
                       </Field>
                       <Field label="Embedding model">
-                        <Input
+                        <ModelField
                           value={draft.embedding_model}
-                          onChange={(e) => update("embedding_model", e.target.value)}
+                          models={models}
+                          error={modelsError}
+                          ariaLabel="Embedding model"
+                          onChange={(next) => update("embedding_model", next)}
                         />
                       </Field>
                     </div>

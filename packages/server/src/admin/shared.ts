@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Provider, Store } from "@quidchat/core"
 import type { QuidDb } from "@quidchat/db"
 import type { RateLimiter } from "../rate-limit.js"
+import type { ModelLister } from "../tenant-provider.js"
 import { lookupTenantBySlug } from "../tenant-lookup.js"
 
 /**
@@ -108,6 +109,8 @@ export type AdminDeps = {
   /** `undefined` exactly when `QUIDCHAT_ADMIN_TOKEN` is not set in the environment —
    *  every admin route then refuses with `503` rather than defaulting to open. */
   adminToken: string | undefined
+  /** Asks a tenant's provider which models it has — see `tenant-provider.ts`. */
+  listModels?: ModelLister
   /** The process environment, for `QUIDCHAT_SECRET_KEY`. Injected rather than read from
    *  `process.env` here so a test can exercise a missing or wrong key without touching real
    *  process state — the same reason `adminToken` is passed in. */

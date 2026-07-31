@@ -295,6 +295,11 @@ export const api = {
   getProviders: (tenantSlug: string) =>
     request<ProvidersResponse>(`/v1/admin/providers${query({ tenantSlug })}`),
 
+  getProviderModels: (tenantSlug: string) =>
+    request<{ models: string[]; error: string | null }>(
+      `/v1/admin/providers/models${query({ tenantSlug })}`,
+    ),
+
   saveProviders: (body: {
     tenantSlug: string
     secrets: Record<string, string>

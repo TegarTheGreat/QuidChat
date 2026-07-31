@@ -31,7 +31,14 @@ const OFFERED = [
   },
 ]
 
-export function ProviderField({ tenantSlug }: { tenantSlug: string }): React.ReactElement {
+export function ProviderField({
+  tenantSlug,
+  onSaved,
+}: {
+  tenantSlug: string
+  /** So the model lists above refresh against the key just saved, without a reload. */
+  onSaved?: () => void
+}): React.ReactElement {
   const [reloadKey, setReloadKey] = React.useState(0)
   const state = useFetch<ProvidersResponse>(
     () => api.getProviders(tenantSlug),
@@ -53,6 +60,7 @@ export function ProviderField({ tenantSlug }: { tenantSlug: string }): React.Rea
       await api.saveProviders({ tenantSlug, secrets: next })
       setValues({})
       setReloadKey((k) => k + 1)
+      onSaved?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : "could not save")
     } finally {

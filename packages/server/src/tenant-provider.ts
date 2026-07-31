@@ -22,6 +22,28 @@ export type ProviderResolver = (
   env: Record<string, string | undefined>,
 ) => Provider | null
 
+/** Asks the configured service which models it has. Injected for the same reason as above. */
+export type ModelLister = (env: Record<string, string | undefined>) => Promise<string[]>
+
+/**
+ * The credentials to use when talking to a tenant's provider — its own if it has any, otherwise
+ * the deployment's. Kept separate from `providerForTenant` because listing models needs the
+ * credentials themselves, not a built provider.
+ */
+export async function credentialsForTenant(args: {
+  db: QuidDb
+  tenantId: string
+  env: Record<string, string | undefined>
+}): Promise<Record<string, string | undefined>> {
+  const config = await readProviderConfig(args.db, args.tenantId, args.env)
+  if (!config || Object.keys(config.secrets).length === 0) return args.env
+
+  const env: Record<string, string | undefined> = { ...config.secrets }
+  if (config.chatProvider) env.QUIDCHAT_CHAT_PROVIDER = config.chatProvider
+  if (config.embedProvider) env.QUIDCHAT_EMBED_PROVIDER = config.embedProvider
+  return env
+}
+
 function rowsOf(res: unknown): Record<string, unknown>[] {
   return Array.isArray(res)
     ? (res as Record<string, unknown>[])

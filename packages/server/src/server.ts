@@ -5,7 +5,7 @@ import { handleAdminRequest } from "./admin.js"
 import { handleChannelWebhook } from "./channels.js"
 import { handleChat } from "./chat.js"
 import { trustedProxyHops } from "./client-address.js"
-import type { ProviderResolver } from "./tenant-provider.js"
+import type { ModelLister, ProviderResolver } from "./tenant-provider.js"
 import { handlePanelAsset } from "./panel-asset.js"
 import { handleWidgetConfig } from "./widget-config.js"
 import { handleWidgetAsset } from "./widget-asset.js"
@@ -31,6 +31,8 @@ export type ServerDeps = {
    * tenant answers on the provider built at startup.
    */
   resolveProvider?: ProviderResolver
+  /** Asks a tenant's provider which models it has — see `tenant-provider.ts`. */
+  listModels?: ModelLister
   /** Defaults to `process.env`. Injectable so a test can exercise the admin token gate
    *  (unset vs. set, valid vs. invalid) without mutating real process state — see
    *  `admin.ts`'s `checkAdminAuth`. */
@@ -178,6 +180,7 @@ export function createServer(deps: ServerDeps): Server {
         db: deps.db, store, provider: deps.provider, logError,
         ...(deps.resolveProvider ? { resolveProvider: deps.resolveProvider } : {}),
         adminToken: env.QUIDCHAT_ADMIN_TOKEN, env, failedAuthLimiter,
+        ...(deps.listModels ? { listModels: deps.listModels } : {}),
       }).catch((e: unknown) => {
         logError("unhandled error in admin route", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })

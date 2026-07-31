@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto"
 import { applyMigrations, createDb } from "@quidchat/db"
-import { resolveProviders, type ResolveResult } from "@quidchat/providers"
+import { listModels, resolveProviders, type ResolveResult } from "@quidchat/providers"
 import { createServer, reportIntegrity, startRetentionSchedule } from "@quidchat/server"
 import { readServeConfig } from "./config.js"
 
@@ -62,6 +62,9 @@ export async function serve(args: {
     // A tenant that has stored its own key is then resolved through exactly this path, rather
     // than through a second implementation that would drift from the search order documented here.
     resolveProvider: (env) => resolveProviders(env).provider,
+    // Same reason: the panel offers real models rather than a text box, and the list comes from
+    // the service itself so it cannot go stale.
+    listModels: (env) => listModels(env),
   })
   await new Promise<void>((resolve) => server.listen(config.port, () => resolve()))
 
