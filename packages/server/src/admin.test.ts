@@ -1,6 +1,14 @@
 import type { AddressInfo } from "node:net"
 import { FakeProvider } from "@quidchat/core/testing"
-import { chunks, tenants, tenantSettings, type QuidDb } from "@quidchat/db"
+import {
+  chunks,
+  conversations,
+  escalations,
+  messages,
+  tenants,
+  tenantSettings,
+  type QuidDb,
+} from "@quidchat/db"
 import { freshPglite } from "@quidchat/db/testing"
 import { eq } from "drizzle-orm"
 import { beforeAll, describe, expect, it } from "vitest"
@@ -270,6 +278,47 @@ describe("guessing the admin token", () => {
         headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
       })
       expect(authorized.status).toBe(200)
+    } finally {
+      await close()
+    }
+  })
+})
+
+describe("GET /admin/usage", () => {
+  it("counts customer questions, refusals, and what is still waiting", async () => {
+    const tenantId = await seedTenant(db, "usage-counts")
+    const [conversation] = await db
+      .insert(conversations)
+      .values({ tenantId, channel: "web", visitorId: "v1" })
+      .returning()
+    // Two questions from a customer, and one reply. The reply must not be counted: it would
+    // double every figure and make the answered share meaningless.
+    await db.insert(messages).values([
+      { tenantId, conversationId: conversation!.id, role: "user", content: "Ada garansi?" },
+      { tenantId, conversationId: conversation!.id, role: "assistant", content: "Satu tahun." },
+      { tenantId, conversationId: conversation!.id, role: "user", content: "Bisa COD?" },
+    ])
+    // One declined and answered since, one still waiting. "Waiting" is the figure an owner acts
+    // on, so a handled escalation must drop out of it.
+    await db.insert(escalations).values([
+      { tenantId, conversationId: conversation!.id, reason: "no_source", resolvedAt: new Date() },
+      { tenantId, conversationId: conversation!.id, reason: "no_source" },
+    ])
+
+    const { url, close } = await startServer({
+      db, provider: new FakeProvider([]), logError: () => {},
+      env: { QUIDCHAT_ADMIN_TOKEN: ADMIN_TOKEN },
+    })
+    try {
+      const res = await fetch(`${url}/admin/usage?tenantSlug=usage-counts`, {
+        headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({
+        questions: 2,
+        refusals: 2,
+        openEscalations: 1,
+      })
     } finally {
       await close()
     }

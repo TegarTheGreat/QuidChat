@@ -292,6 +292,11 @@ describe("usage and escalations", () => {
     expect(typeof usage.costCents).toBe("number")
     expect(typeof usage.inputTokens).toBe("number")
     expect(typeof usage.outputTokens).toBe("number")
+    // The activity figures the overview leads with. Cost alone said what the month spent and
+    // nothing about whether customers were helped.
+    expect(typeof usage.questions).toBe("number")
+    expect(typeof usage.refusals).toBe("number")
+    expect(typeof usage.openEscalations).toBe("number")
   })
 
   it("marks an escalation handled and puts it back", async () => {

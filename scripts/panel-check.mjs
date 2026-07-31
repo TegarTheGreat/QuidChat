@@ -248,6 +248,26 @@ check(
 check("cancelling is possible", (await clickText("Cancel")) === "clicked")
 
 /**
+ * Overview.
+ *
+ * It showed spend, budget left, and a count of escalation rows. Two of those are about money and
+ * the third counted rows without saying whether any still needed a person, so nothing on the
+ * first screen said whether customers were being helped.
+ */
+console.log("overview")
+await open("Overview")
+await sleep(1200)
+text = await bodyText()
+check("it leads with what customers asked", text.includes("Questions this month"), text.slice(0, 300))
+check(
+  "it says how much came from the shop's own documents",
+  text.includes("Answered from your documents"),
+  text.slice(0, 300),
+)
+check("it says what is still waiting", text.includes("Waiting for an answer"), text.slice(0, 300))
+check("spend is named as dollars", /US\$/.test(text), text.slice(0, 300))
+
+/**
  * Conversations.
  *
  * The screen could only be read. The two things an owner wants while reading are to write the

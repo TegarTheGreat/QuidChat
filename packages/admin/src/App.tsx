@@ -82,7 +82,12 @@ function AdminApp() {
               onOpenSettings={() => setSettingsOpen(true)}
             />
           )}
-          {selectedTenant && section === "overview" && <OverviewPage tenantSlug={selectedTenant} />}
+          {selectedTenant && section === "overview" && (
+            <OverviewPage
+              tenantSlug={selectedTenant}
+              onOpenEscalations={() => setSection("escalations")}
+            />
+          )}
           {selectedTenant && section === "knowledge" && <KnowledgePage tenantSlug={selectedTenant} />}
           {selectedTenant && section === "conversations" && (
             <ConversationsPage tenantSlug={selectedTenant} />

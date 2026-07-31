@@ -18,7 +18,7 @@ export async function getUsage(
   const tenantId = await resolveTenantOr404(res, deps.db, params.get("tenantSlug"))
   if (tenantId === null) return
 
-  const row = await withTenant(deps.db, tenantId, async (tx) => {
+  const { row, counts } = await withTenant(deps.db, tenantId, async (tx) => {
     // Mirrors `budget.ts`'s `spentThisMonthCents`, but broken out by token direction
     // rather than collapsed to a single cost figure — this is what the admin panel
     // shows a business owner, not what `chat.ts` compares against a budget.
@@ -29,12 +29,32 @@ export async function getUsage(
       FROM usage_events
       WHERE created_at >= date_trunc('month', now())
     `)
-    return rowsOf(result)[0]!
+    /*
+     * The figures a shop owner can act on.
+     *
+     * Cost alone told them what the month had spent and nothing about whether it was worth
+     * spending. How many customers asked, how many got an answer, and how many are still waiting
+     * for one is the difference between an overview and a meter — and the ratio between the first
+     * two is the number that says whether the knowledge base is doing its job.
+     */
+    const activity = await tx.execute(sql`
+      SELECT
+        (SELECT count(*) FROM messages
+          WHERE role = 'user' AND created_at >= date_trunc('month', now()))::int AS questions,
+        (SELECT count(*) FROM escalations
+          WHERE occurred_at >= date_trunc('month', now()))::int AS refusals,
+        (SELECT count(*) FROM escalations WHERE resolved_at IS NULL)::int AS open_escalations
+    `)
+    return { row: rowsOf(result)[0]!, counts: rowsOf(activity)[0]! }
   })
   sendJson(res, 200, {
     inputTokens: Number(row.input_tokens),
     outputTokens: Number(row.output_tokens),
     costCents: Number(row.cost_cents),
+    questions: Number(counts.questions),
+    refusals: Number(counts.refusals),
+    /** Not this month's — every one still waiting for an answer, whenever it was asked. */
+    openEscalations: Number(counts.open_escalations),
   })
 }
 

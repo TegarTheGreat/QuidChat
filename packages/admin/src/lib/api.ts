@@ -172,6 +172,13 @@ export interface Usage {
   inputTokens: number
   outputTokens: number
   costCents: number
+  /** Customer questions this month. Cost without this says what was spent, not whether it
+   *  was worth spending. */
+  questions: number
+  /** Questions the assistant declined this month, rather than guessing at. */
+  refusals: number
+  /** Every declined question still waiting for an answer, whenever it was asked. */
+  openEscalations: number
 }
 
 
