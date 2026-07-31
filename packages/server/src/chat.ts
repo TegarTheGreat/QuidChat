@@ -5,6 +5,7 @@ import { lookupTenantBySlug } from "./tenant-lookup.js"
 import { openEventStream, sendProgress, sendResult, sendStreamError } from "./stream.js"
 import type { Provider, Store } from "@quidchat/core"
 import { answerTurn } from "./answer-turn.js"
+import { clientAddress } from "./client-address.js"
 import type { ChatRateLimiter } from "./rate-limit.js"
 
 /** Normalizes the `execute()` result, whose shape differs between drivers — see the
@@ -39,6 +40,9 @@ export type ChatDeps = {
   /** Shared across every route so one client cannot get a fresh allowance by switching
    *  between the streaming and non-streaming endpoints. */
   rateLimiter: ChatRateLimiter
+  /** How many reverse proxies sit in front, from `QUIDCHAT_TRUST_PROXY`. Parsed once at
+   *  construction rather than per request — see `client-address.ts` for why it is opt-in. */
+  trustedProxyHops: number
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -283,7 +287,9 @@ export async function handleChat(
     return
   }
 
-  const visitorId = req.socket.remoteAddress ?? "unknown"
+  // Proxy-aware: behind one, the socket address is the proxy for every visitor, which turns
+  // both the per-visitor rate limit and the conversation-ownership check into no-ops.
+  const visitorId = clientAddress(req, deps.trustedProxyHops)
 
   // After the origin check, because an unauthorized caller has already been refused and
   // should not be able to consume a legitimate tenant's allowance by being rejected. Before

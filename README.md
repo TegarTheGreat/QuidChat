@@ -182,6 +182,8 @@ Your site and the QuidChat server are different origins, so every request the wi
 
 What decides whether a site may actually use your assistant is the per-tenant origin allowlist. It runs on the request itself and answers `403`, and the CORS header is sent on that `403` deliberately: withholding it would hide the refusal and its message from the widget, turning the most common setup mistake into an unexplained one. The admin API has no CORS at all — the panel is served by the same process, so it is already same-origin.
 
+If you run QuidChat behind a reverse proxy — which you do, if it serves HTTPS — set `QUIDCHAT_TRUST_PROXY` to the number of proxies in front of it, usually `1`. Without it the server sees the proxy's address for every visitor, so the per-visitor rate limit becomes one bucket shared by everyone, a wrong admin token guessed by an attacker locks out the administrator, and the check that stops one visitor resuming another's conversation has nothing left to compare. It is opt-in because `X-Forwarded-For` is written by the client: trusting it when nothing is in front would let any visitor claim any address.
+
 If your site sets a `Content-Security-Policy`, allow the bundle and the API: `script-src https://your-quidchat-host` and `connect-src https://your-quidchat-host`. Nothing is needed for styles. The widget builds its stylesheet through the CSSOM rather than injecting a `<style>` element, so `style-src 'self'` leaves it looking as intended instead of stripping it back to an unstyled button.
 
 On a phone the panel takes the screen the way a messaging app does, rather than sitting in a 320-pixel box in the corner. Most customers arrive on one.

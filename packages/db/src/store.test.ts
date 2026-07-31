@@ -359,6 +359,82 @@ describe("createStore", () => {
       expect(hits[0]!.content).toContain("warranty")
     })
 
+    it("is not fooled by a common word repeated in the wrong document", async () => {
+      // OR-ing the terms was not enough on its own. `ts_rank` has no inverse document frequency,
+      // so a chunk containing "the" twice outscored the chunk that actually says "warranty" —
+      // measured at 0.0152 against 0.0122. The keyword arm went from silent to confidently
+      // wrong, which is worse than silent.
+      //
+      // Five chunks, because the rule is statistical: it learns that "the" is noise from seeing
+      // it everywhere. In a two-chunk shop "the" and "warranty" each appear once and nothing can
+      // tell them apart from frequency alone — that is a real limit of corpus statistics, not
+      // something this test should paper over.
+      const [t] = await db.insert(tenants).values({ slug: "fts4", name: "fts4" }).returning()
+      await db.insert(tenantSettings).values({ tenantId: t!.id })
+      const [s2] = await db.insert(knowledgeSources)
+        .values({ tenantId: t!.id, kind: "text", uri: "a.txt", status: "ready" }).returning()
+      const [d2] = await db.insert(documents)
+        .values({ tenantId: t!.id, sourceId: s2!.id, title: "Policy" }).returning()
+      await db.insert(chunks).values([
+        // The answer, with an embedding FAR from the question — only the keyword arm can lift it.
+        { tenantId: t!.id, documentId: d2!.id, ordinal: 0,
+          content: "We offer a warranty covering manufacturing defects for 12 months.",
+          embedding: fakeEmbedding(300), embeddingModel: "test" },
+        // Says "the" twice, nothing about warranties, and sits exactly where the question does in
+        // vector space. It wins outright unless the keyword arm reads the question properly.
+        { tenantId: t!.id, documentId: d2!.id, ordinal: 1,
+          content: "We are open from nine in the morning until five in the afternoon.",
+          embedding: fakeEmbedding(1), embeddingModel: "test" },
+        // The rest of an ordinary shop's documents, which is where "the" gives itself away.
+        { tenantId: t!.id, documentId: d2!.id, ordinal: 2,
+          content: "Orders leave the warehouse on the same working day.",
+          embedding: fakeEmbedding(400), embeddingModel: "test" },
+        { tenantId: t!.id, documentId: d2!.id, ordinal: 3,
+          content: "Cards and transfers are the accepted methods of payment.",
+          embedding: fakeEmbedding(500), embeddingModel: "test" },
+        { tenantId: t!.id, documentId: d2!.id, ordinal: 4,
+          content: "Returns are accepted within the first seven days.",
+          embedding: fakeEmbedding(600), embeddingModel: "test" },
+      ])
+
+      const hits = await createStore(db).searchChunks({
+        tenantId: t!.id, query: "how long is the warranty?",
+        embedding: fakeEmbedding(1), embeddingModel: "test", limit: 3,
+      })
+      expect(hits[0]!.content).toContain("warranty")
+    })
+
+    it("finds a chunk even when the question's words are spread across documents", async () => {
+      // The original defect, guarded directly: ANDing meant every surviving term had to appear
+      // in ONE chunk. A customer asking about two things at once — which they do — matched
+      // nothing at all, however well each word was covered somewhere.
+      const [t] = await db.insert(tenants).values({ slug: "fts5", name: "fts5" }).returning()
+      await db.insert(tenantSettings).values({ tenantId: t!.id })
+      const [s3] = await db.insert(knowledgeSources)
+        .values({ tenantId: t!.id, kind: "text", uri: "a.txt", status: "ready" }).returning()
+      const [d3] = await db.insert(documents)
+        .values({ tenantId: t!.id, sourceId: s3!.id, title: "Policy" }).returning()
+      await db.insert(chunks).values([
+        { tenantId: t!.id, documentId: d3!.id, ordinal: 0,
+          content: "Warranty covers manufacturing defects.",
+          embedding: fakeEmbedding(700), embeddingModel: "test" },
+        // No embedding at all, so the keyword arm is the ONLY way this can be retrieved — which
+        // is what makes the assertion below about ANDing rather than about vector recall.
+        { tenantId: t!.id, documentId: d3!.id, ordinal: 1,
+          content: "Refund requests are processed within five days.",
+          embedding: null, embeddingModel: "test" },
+      ])
+
+      // No chunk contains both words, so ANDing them retrieves nothing.
+      const hits = await createStore(db).searchChunks({
+        tenantId: t!.id, query: "warranty refund",
+        embedding: fakeEmbedding(999), embeddingModel: "test", limit: 5,
+      })
+      const found = hits.map((h) => h.content).join(" ")
+      expect(found).toContain("Warranty")
+      expect(found).toContain("Refund")
+    })
+
     it("does not fall over on a question with no words in it", async () => {
       // `string_agg` over nothing is NULL, and `@@ NULL` matches nothing rather than erroring.
       const [t] = await db.insert(tenants).values({ slug: "fts3", name: "fts3" }).returning()

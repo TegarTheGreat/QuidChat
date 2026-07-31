@@ -46,6 +46,24 @@ export type ChannelDefinition = {
   create: (args: { tenantSlug: string; secrets: Record<string, string> }) => ChannelAdapter
 }
 
+/*
+ * A note on which credentials are required.
+ *
+ * `ChannelAdapter.verify` is optional "only because some platforms offer nothing to verify
+ * against" — and where something exists, the contract says it must be used. Every platform here
+ * except WAHA always issues one: Telegram's webhook secret is chosen by you at setWebhook, Meta
+ * issues an app secret, Discord issues a public key and refuses endpoints that do not check it,
+ * Slack issues a signing secret, LINE issues a channel secret.
+ *
+ * They were optional, which made the default configuration an unauthenticated webhook: anyone who
+ * learned the URL could put words into a business's conversation history and spend its budget,
+ * and nothing in the panel said so. Marking them required is what makes the contract hold, since
+ * an adapter is only built once every required field is present.
+ *
+ * WAHA is the exception the contract describes: it is a server the business runs itself, it signs
+ * nothing, and its API key may legitimately not exist.
+ */
+
 /** Only the values actually present, so an optional field left blank is absent rather than "". */
 function present(secrets: Record<string, string>, name: string): Record<string, string> {
   const value = secrets[name]
@@ -59,7 +77,7 @@ export const channelDefinitions: readonly ChannelDefinition[] = [
     hint: "Create a bot with @BotFather, then set its webhook to the URL below.",
     fields: [
       { name: "botToken", label: "Bot token", envVar: "TELEGRAM_BOT_TOKEN", required: true, secret: true },
-      { name: "secretToken", label: "Webhook secret", envVar: "TELEGRAM_SECRET_TOKEN", required: false, secret: true },
+      { name: "secretToken", label: "Webhook secret", envVar: "TELEGRAM_SECRET_TOKEN", required: true, secret: true },
     ],
     create: ({ tenantSlug, secrets }) =>
       telegramAdapter({ tenantSlug, botToken: secrets.botToken!, ...present(secrets, "secretToken") }),
@@ -71,7 +89,7 @@ export const channelDefinitions: readonly ChannelDefinition[] = [
     fields: [
       { name: "phoneNumberId", label: "Phone number ID", envVar: "WHATSAPP_PHONE_NUMBER_ID", required: true },
       { name: "accessToken", label: "Access token", envVar: "WHATSAPP_ACCESS_TOKEN", required: true, secret: true },
-      { name: "appSecret", label: "App secret", envVar: "WHATSAPP_APP_SECRET", required: false, secret: true },
+      { name: "appSecret", label: "App secret", envVar: "WHATSAPP_APP_SECRET", required: true, secret: true },
     ],
     create: ({ tenantSlug, secrets }) =>
       whatsappCloudAdapter({
@@ -104,7 +122,7 @@ export const channelDefinitions: readonly ChannelDefinition[] = [
     hint: "From your Discord application: the bot token and its public key.",
     fields: [
       { name: "botToken", label: "Bot token", envVar: "DISCORD_BOT_TOKEN", required: true, secret: true },
-      { name: "publicKey", label: "Public key", envVar: "DISCORD_PUBLIC_KEY", required: false },
+      { name: "publicKey", label: "Public key", envVar: "DISCORD_PUBLIC_KEY", required: true },
     ],
     create: ({ tenantSlug, secrets }) =>
       discordAdapter({ tenantSlug, botToken: secrets.botToken!, ...present(secrets, "publicKey") }),
@@ -115,7 +133,7 @@ export const channelDefinitions: readonly ChannelDefinition[] = [
     hint: "From your Slack app: the bot token (xoxb-…) and the signing secret. Subscribe it to message events and point them at the URL below.",
     fields: [
       { name: "botToken", label: "Bot token", envVar: "SLACK_BOT_TOKEN", required: true, secret: true },
-      { name: "signingSecret", label: "Signing secret", envVar: "SLACK_SIGNING_SECRET", required: false, secret: true },
+      { name: "signingSecret", label: "Signing secret", envVar: "SLACK_SIGNING_SECRET", required: true, secret: true },
     ],
     create: ({ tenantSlug, secrets }) =>
       slackAdapter({ tenantSlug, botToken: secrets.botToken!, ...present(secrets, "signingSecret") }),
@@ -126,7 +144,7 @@ export const channelDefinitions: readonly ChannelDefinition[] = [
     hint: "From the LINE Developers console: the channel access token and the channel secret.",
     fields: [
       { name: "accessToken", label: "Channel access token", envVar: "LINE_ACCESS_TOKEN", required: true, secret: true },
-      { name: "channelSecret", label: "Channel secret", envVar: "LINE_CHANNEL_SECRET", required: false, secret: true },
+      { name: "channelSecret", label: "Channel secret", envVar: "LINE_CHANNEL_SECRET", required: true, secret: true },
     ],
     create: ({ tenantSlug, secrets }) =>
       lineAdapter({ tenantSlug, accessToken: secrets.accessToken!, ...present(secrets, "channelSecret") }),

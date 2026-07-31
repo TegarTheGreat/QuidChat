@@ -471,6 +471,54 @@ describe("chat endpoint", () => {
     }
   })
 
+  describe("two visitors behind the same reverse proxy", () => {
+    it("cannot claim each other's conversation once the proxy is declared", async () => {
+      // Every deployment that serves HTTPS has a proxy in front, and then the socket address is
+      // the proxy — identical for everyone. `conversations.visitor_id` became one shared value,
+      // which turns the ownership check on a supplied conversationId into a no-op. That check
+      // exists precisely because a conversation id was once a capability anyone could present.
+      const provider = new FakeProvider([{
+        segments: [{ kind: "business_claim", text: "Warranty 12 months.", citations: ["c1"] }],
+      }])
+      const server = createServer({
+        db,
+        provider,
+        logError: () => {},
+        env: { QUIDCHAT_TRUST_PROXY: "1" },
+        rateLimits: { visitor: { capacity: 100, refillPerSecond: 100 } },
+      })
+      await new Promise<void>((resolve) => server.listen(0, resolve))
+      const port = (server.address() as AddressInfo).port
+      const url = `http://127.0.0.1:${port}`
+
+      try {
+        const ask = (body: Record<string, unknown>, forwardedFor: string) =>
+          fetch(`${url}/v1/chat`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              origin: ALLOWED_ORIGIN,
+              "x-forwarded-for": forwardedFor,
+            },
+            body: JSON.stringify({ tenantSlug: "shop", ...body }),
+          }).then((r) => r.json() as Promise<{ conversationId: string }>)
+
+        const alice = await ask({ message: "warranty" }, "203.0.113.10")
+        // Bob presents Alice's conversation id. Both requests arrive from the same socket.
+        const bob = await ask({ message: "warranty" }, "203.0.113.20")
+        const stolen = await ask(
+          { message: "warranty", conversationId: alice.conversationId },
+          "203.0.113.20",
+        )
+
+        expect(alice.conversationId).not.toBe(bob.conversationId)
+        // Bob gets a conversation of his own instead of Alice's — the id he supplied is not his.
+        expect(stolen.conversationId).not.toBe(alice.conversationId)
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      }
+    })
+  })
 })
 
 describe("budget enforcement", () => {

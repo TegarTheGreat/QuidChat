@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto"
+import { clientAddress, trustedProxyHops } from "./client-address.js"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import {
   createCannedAnswer,
@@ -106,7 +107,9 @@ export async function handleAdminRequest(
     // per screen — is never throttled. The token is chosen by whoever deploys this, and some of
     // them will choose badly; a few hundred guesses an hour is not an attack worth mounting.
     if (auth.status === 401 && deps.failedAuthLimiter) {
-      const source = req.socket.remoteAddress ?? "unknown"
+      // Proxy-aware for the same reason as the chat limiter: one shared bucket means an
+      // attacker's wrong guesses lock out the real administrator.
+      const source = clientAddress(req, trustedProxyHops(deps.env ?? process.env))
       const decision = deps.failedAuthLimiter.check(source)
       if (!decision.allowed) {
         res.writeHead(429, {

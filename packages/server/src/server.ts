@@ -4,6 +4,7 @@ import { createStore, type QuidDb } from "@quidchat/db"
 import { handleAdminRequest } from "./admin.js"
 import { handleChannelWebhook } from "./channels.js"
 import { handleChat } from "./chat.js"
+import { trustedProxyHops } from "./client-address.js"
 import { handlePanelAsset } from "./panel-asset.js"
 import { handleWidgetConfig } from "./widget-config.js"
 import { handleWidgetAsset } from "./widget-asset.js"
@@ -76,6 +77,7 @@ export function createServer(deps: ServerDeps): Server {
   )
 
   const logFormat = logFormatFrom(env)
+  const proxyHops = trustedProxyHops(env)
 
   return createHttpServer((req: IncomingMessage, res: ServerResponse) => {
     // Attached before any routing, so a request that is refused before it reaches a handler —
@@ -104,7 +106,7 @@ export function createServer(deps: ServerDeps): Server {
     }
 
     if (pathname === "/chat/stream") {
-      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError, rateLimiter }, true).catch((e: unknown) => {
+      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError, rateLimiter, trustedProxyHops: proxyHops }, true).catch((e: unknown) => {
         logError("unhandled error in chat stream route", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
       })
@@ -112,7 +114,7 @@ export function createServer(deps: ServerDeps): Server {
     }
 
     if (pathname === "/chat") {
-      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError, rateLimiter }).catch((e: unknown) => {
+      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError, rateLimiter, trustedProxyHops: proxyHops }).catch((e: unknown) => {
         logError("unhandled error in chat route", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
       })

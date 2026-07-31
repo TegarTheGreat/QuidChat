@@ -248,7 +248,10 @@ describe("channel credentials", () => {
 
     // The screen renders from `fields`, so the contract includes it: a channel whose fields the
     // panel does not know about renders as a card with no inputs.
-    expect(listed.fields.telegram?.required).toEqual(["botToken"])
+    // The webhook secret is required, not optional. Telegram lets you set one at `setWebhook`,
+    // so one always exists — and without it the endpoint accepts anything that reaches the URL,
+    // which is someone else putting words in this business's history and spending its budget.
+    expect(listed.fields.telegram?.required).toEqual(["botToken", "secretToken"])
 
     // The whole response, serialised, must not contain either secret. Asserting on the parsed
     // object would miss a value that reached some other field name.

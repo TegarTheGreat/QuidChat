@@ -88,3 +88,41 @@ describe("the channel registry", () => {
     }
   })
 })
+
+describe("a webhook nobody can forge", () => {
+  it("requires the verifying secret on every platform that issues one", () => {
+    // `verify` is optional "only because some platforms offer nothing to verify against". These
+    // five all issue something, so leaving it blank made the endpoint unauthenticated: anyone
+    // who learned the URL could put words into a business's history and spend its budget.
+    const verifying: Record<string, string> = {
+      telegram: "secretToken",
+      whatsapp: "appSecret",
+      discord: "publicKey",
+      slack: "signingSecret",
+      line: "channelSecret",
+    }
+    for (const [channel, field] of Object.entries(verifying)) {
+      const definition = channelDefinition(channel)!
+      const credential = definition.fields.find((f) => f.name === field)
+      expect(credential, `${channel}.${field}`).toBeDefined()
+      expect(credential!.required, `${channel}.${field}`).toBe(true)
+    }
+  })
+
+  it("refuses to build one of those channels without it", () => {
+    // The guarantee is structural: an adapter is only built once every required field is there,
+    // so a half-configured channel cannot answer at all rather than answering unverified.
+    expect(
+      adapterFromStoredSecrets("slack", "shop", { botToken: "xoxb-1" }),
+    ).toBeNull()
+    expect(
+      adapterFromStoredSecrets("slack", "shop", { botToken: "xoxb-1", signingSecret: "s" }),
+    ).not.toBeNull()
+  })
+
+  it("still allows WAHA without a key, because it signs nothing", () => {
+    // The exception the contract describes: a server the business runs itself, which may
+    // legitimately have no key at all.
+    expect(adapterFromStoredSecrets("waha", "shop", { baseUrl: "http://localhost:3000" })).not.toBeNull()
+  })
+})

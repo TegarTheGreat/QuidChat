@@ -78,7 +78,17 @@ The source chip is the signature, and it is deliberately not the tenant's accent
 
 Retrieval fuses a keyword rank and a vector rank with RRF. The keyword side used `plainto_tsquery`, which ANDs every token: `"how long is the warranty?"` became `'how' & 'long' & 'is' & 'the' & 'warranty'`, so a chunk had to contain all five words. A policy saying "Official warranty 12 months" matched none of it — **the keyword arm returned nothing for any question phrased as a sentence**, which is how every customer asks one, and hybrid search silently became vector-only exactly where lexical matching earns its keep: model numbers, prices, SKUs, product names.
 
-The terms are OR-ed now and `ts_rank` orders by how much of the question a chunk contains. The `'simple'` text-search configuration stays, because it stems and stops nothing — which is what makes it usable for Indonesian and every other language Postgres ships no configuration for. That is also why the fix is OR-ing rather than a stopword list.
+OR-ing them fixed that and broke something worse: `ts_rank` has no inverse document frequency, so a chunk containing "the" twice outscored the chunk that actually says "warranty" — 0.0152 against 0.0122. The arm went from silent to confidently wrong.
+
+So only the **rarest** words of the question survive: those matching the fewest chunks of that tenant. "the" loses to "warranty" and is dropped; a one-word query always keeps its word. It is corpus-relative rather than a fixed share, because a share is only evidence once a corpus is large, and most tenants start with a handful of documents. And it is data-driven rather than a stopword list because `'simple'` has none and Postgres ships no Indonesian dictionary — the same rule drops "yang" and "dan" without anyone writing them down.
+
+The limit is honest: in a two-chunk shop, "the" and "warranty" each appear once and no frequency rule can tell them apart. It needs a corpus to learn from.
+
+## Behind a proxy, three controls silently become no-ops
+
+`req.socket.remoteAddress` is the proxy, identically for every visitor — and every deployment that serves HTTPS has one. That collapses the per-visitor rate limit into a single shared bucket, makes an attacker's failed admin-token guesses lock out the real administrator, and leaves `conversations.visitor_id` the same for everyone, which turns the ownership check on a supplied `conversationId` into nothing.
+
+Set `QUIDCHAT_TRUST_PROXY` to the number of proxies in front. It is opt-in because `X-Forwarded-For` is written by the client: trusting it with nothing in front would let any visitor claim any address, and claim any conversation.
 
 ## Opening questions come from data that already exists
 

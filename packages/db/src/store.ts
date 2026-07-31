@@ -100,29 +100,59 @@ export function createStore(db: QuidDb): Store {
         // see the full reasoning there. Whether the planner actually picks the index
         // at production scale hasn't been measured; the small-table tests on PGlite
         // always pick a sequential scan because it's genuinely cheaper there.
-        // The lexical query, OR-ed rather than AND-ed.
+        // The lexical query.
         //
-        // This was `plainto_tsquery`, which ANDs every token: "how long is the warranty?" became
-        // `'how' & 'long' & 'is' & 'the' & 'warranty'`, and a chunk had to contain all five. A
-        // policy document saying "Official warranty 12 months" matched none of it, so the keyword
-        // arm returned NOTHING for any question phrased as a sentence — which is how every
-        // customer asks one. Hybrid search silently degraded to vector-only exactly where the
-        // lexical half earns its keep: model numbers, prices, SKUs, product names, the tokens an
-        // embedding blurs together.
+        // Two things were wrong here, and the second was only visible after fixing the first.
         //
-        // The `'simple'` configuration is kept deliberately: it stems and stops nothing, which is
-        // what makes it usable for Indonesian and every other language Postgres ships no
-        // configuration for. That is also why the stopwords cannot simply be dropped, and why
-        // OR-ing is the fix rather than a stopword list — `ts_rank` then orders by how much of
-        // the question a chunk actually contains.
+        // It began as `plainto_tsquery`, which ANDs every token: "how long is the warranty?"
+        // became `'how' & 'long' & 'is' & 'the' & 'warranty'`, so a chunk had to contain all
+        // five. A policy saying "Official warranty 12 months" matched none of it, and the keyword
+        // arm returned NOTHING for any question phrased as a sentence — which is how a customer
+        // asks one. Hybrid search silently became vector-only, exactly where the lexical half
+        // earns its keep: model numbers, prices, SKUs, product names.
         //
-        // Tokenised by Postgres, from a bound parameter, so nothing is concatenated into SQL.
-        // A query with no word characters yields NULL, which matches nothing — the same as
-        // before, and safe.
+        // OR-ing the terms fixed that and introduced something worse. `ts_rank` has no inverse
+        // document frequency, so a common word counted twice outweighs a rare word counted once:
+        // measured on two real chunks, "We are open from nine in the morning until five in the
+        // afternoon" scored 0.0152 against "how long is the warranty?" and beat the chunk that
+        // actually says "warranty" at 0.0122 — purely for containing "the" twice. The arm went
+        // from silent to confidently wrong.
+        //
+        // So the terms are weighed before they are used: only the RAREST words of the question
+        // are kept — those matching the fewest chunks of THIS tenant — and a word that some other
+        // word in the same question beats for rarity is dropped. "the" loses to "warranty" and
+        // goes; a one-word query keeps its word whatever its frequency, because nothing outranks
+        // it. Terms matching nothing are dropped as noise.
+        //
+        // Rarity relative to the other terms rather than an absolute share of the corpus, because
+        // a share is only evidence once a corpus is large: "more than half" throws away the one
+        // meaningful word in a shop with four documents, which is what most tenants start as.
+        //
+        // Data-driven on purpose: `'simple'` has no stopword list and Postgres ships no
+        // Indonesian dictionary, so a hardcoded list would serve one language and fail the market
+        // this is built for. The same rule drops "yang" and "dan" for an Indonesian shop without
+        // anyone writing them down.
+        //
+        // Cost: one index lookup per term plus a count, on a table this statement already scans
+        // twice. Worth measuring on a large tenant rather than assuming it is free.
+        //
+        // Tokenised by Postgres from a bound parameter, so nothing is concatenated into SQL. A
+        // query whose every term is common yields NULL and matches nothing — the keyword arm
+        // abstains rather than ranking noise, and the vector arm answers alone.
         const tsq = sql`(
-          SELECT to_tsquery('simple', string_agg(w, ' | '))
-          FROM regexp_split_to_table(lower(${query}), '[^[:alnum:]]+') AS w
-          WHERE w <> ''
+          SELECT to_tsquery('simple', string_agg(ranked.w, ' | '))
+          FROM (
+            SELECT counted.w, counted.n, min(counted.n) OVER () AS rarest
+            FROM (
+              SELECT t.w AS w,
+                     (SELECT count(*) FROM chunks df
+                      WHERE df.tsv @@ plainto_tsquery('simple', t.w)) AS n
+              FROM regexp_split_to_table(lower(${query}), '[^[:alnum:]]+') AS t(w)
+              WHERE t.w <> ''
+            ) AS counted
+            WHERE counted.n > 0
+          ) AS ranked
+          WHERE ranked.n = ranked.rarest
         )`
         const res = await tx.execute(sql`
           WITH kw AS (
