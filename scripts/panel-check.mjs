@@ -208,6 +208,9 @@ check("a skill can be switched off from its row", text.includes("off"), text.sli
 
 console.log("canned answers")
 await open("Canned answers")
+// The form is behind a dialog now; the page is the table.
+await clickText("Add answer")
+await sleep(700)
 await typeInto("#canned-question", "Do you deliver on Sunday?")
 await typeInto("#canned-answer", "We deliver Monday to Saturday.")
 check("saving an answer works", (await clickText("Add and approve")) === "clicked")
