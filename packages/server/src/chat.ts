@@ -6,6 +6,7 @@ import { openEventStream, sendProgress, sendResult, sendStreamError } from "./st
 import type { Provider, Store } from "@quidchat/core"
 import { answerTurn } from "./answer-turn.js"
 import { clientAddress } from "./client-address.js"
+import type { ProviderResolver } from "./tenant-provider.js"
 import type { ChatRateLimiter } from "./rate-limit.js"
 
 /** Normalizes the `execute()` result, whose shape differs between drivers — see the
@@ -43,6 +44,10 @@ export type ChatDeps = {
   /** How many reverse proxies sit in front, from `QUIDCHAT_TRUST_PROXY`. Parsed once at
    *  construction rather than per request — see `client-address.ts` for why it is opt-in. */
   trustedProxyHops: number
+  /** The process environment, for reading a tenant's own provider credentials. */
+  env?: Record<string, string | undefined>
+  /** Builds a provider from credentials — see `tenant-provider.ts`. */
+  resolveProvider?: ProviderResolver
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -326,6 +331,8 @@ export async function handleChat(
       question: chatRequest.message,
       channel: "web",
       logError: deps.logError,
+      ...(deps.env ? { env: deps.env } : {}),
+      ...(deps.resolveProvider ? { resolveProvider: deps.resolveProvider } : {}),
       ...(stream ? { onProgress: (stage: string) => sendProgress(res, stage as never) } : {}),
     })
 

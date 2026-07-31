@@ -5,6 +5,7 @@ import { handleAdminRequest } from "./admin.js"
 import { handleChannelWebhook } from "./channels.js"
 import { handleChat } from "./chat.js"
 import { trustedProxyHops } from "./client-address.js"
+import type { ProviderResolver } from "./tenant-provider.js"
 import { handlePanelAsset } from "./panel-asset.js"
 import { handleWidgetConfig } from "./widget-config.js"
 import { handleWidgetAsset } from "./widget-asset.js"
@@ -22,6 +23,14 @@ export type ServerDeps = {
   /** Called for operational failures. Defaults to `console.error`. Injectable so tests
    *  can assert that a failure was logged rather than swallowed. */
   logError?: (message: string, cause: unknown) => void
+  /**
+   * Builds a provider from a tenant's own credentials.
+   *
+   * Injected rather than imported, for the same reason `provider` is: this package serves
+   * requests and deliberately does not know how to choose a model vendor. Absent means every
+   * tenant answers on the provider built at startup.
+   */
+  resolveProvider?: ProviderResolver
   /** Defaults to `process.env`. Injectable so a test can exercise the admin token gate
    *  (unset vs. set, valid vs. invalid) without mutating real process state — see
    *  `admin.ts`'s `checkAdminAuth`. */
@@ -106,7 +115,7 @@ export function createServer(deps: ServerDeps): Server {
     }
 
     if (pathname === "/chat/stream") {
-      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError, rateLimiter, trustedProxyHops: proxyHops }, true).catch((e: unknown) => {
+      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError, rateLimiter, trustedProxyHops: proxyHops, env, ...(deps.resolveProvider ? { resolveProvider: deps.resolveProvider } : {}) }, true).catch((e: unknown) => {
         logError("unhandled error in chat stream route", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
       })
@@ -114,7 +123,7 @@ export function createServer(deps: ServerDeps): Server {
     }
 
     if (pathname === "/chat") {
-      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError, rateLimiter, trustedProxyHops: proxyHops }).catch((e: unknown) => {
+      handleChat(req, res, { db: deps.db, store, provider: deps.provider, logError, rateLimiter, trustedProxyHops: proxyHops, env, ...(deps.resolveProvider ? { resolveProvider: deps.resolveProvider } : {}) }).catch((e: unknown) => {
         logError("unhandled error in chat route", e)
         if (!res.headersSent) sendJson(res, 500, { error: "internal error" })
       })
@@ -167,6 +176,7 @@ export function createServer(deps: ServerDeps): Server {
     if (pathname.startsWith("/admin/")) {
       handleAdminRequest(req, res, pathname, url.searchParams, {
         db: deps.db, store, provider: deps.provider, logError,
+        ...(deps.resolveProvider ? { resolveProvider: deps.resolveProvider } : {}),
         adminToken: env.QUIDCHAT_ADMIN_TOKEN, env, failedAuthLimiter,
       }).catch((e: unknown) => {
         logError("unhandled error in admin route", e)

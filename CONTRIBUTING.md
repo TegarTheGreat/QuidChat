@@ -86,6 +86,14 @@ The limit is honest: in a two-chunk shop, "the" and "warranty" each appear once 
 
 **There is a third arm, for words a language bends.** The `simple` configuration stems nothing, so "garansinya" and "bergaransi" share no token and the keyword arm is blind to the match — Indonesian does this constantly, and it is the market this is built for. Trigram word similarity sees it: 0.636 on that pair against 0.18 and 0.09 for unrelated chunks. Its terms are deliberately **not** the keyword arm's selective ones, because a word matching nothing lexically is exactly the case it exists for.
 
+## A tenant's provider is resolved through the same code as the deployment's
+
+Credentials are stored under the environment-variable names the presets already read — `OPENAI_API_KEY`, `GROQ_API_KEY`, `OLLAMA_BASE_URL` — so a tenant's keys are handed to exactly the resolver that reads `process.env`. Search order, per-preset default models, and chat/embedding pairing then have one implementation instead of two that drift.
+
+The resolver is **injected** into the server, not imported: `@quidchat/server` serves requests and deliberately does not know how to choose a model vendor. The CLI owns that and passes the same function it used itself.
+
+A tenant with its own credentials uses **only** those, never merged with the deployment's. Merging looks helpful: a shop sets a Groq key, the operator's OpenAI key is in the environment, and the documented search order picks OpenAI — billing that shop on an account it never chose. Resolution happens per request, because a cache would keep answering on a key the owner has just replaced.
+
 ## The settings dialog writes back what it read — so send only what is editable
 
 It saved by spreading the whole fetched row. That row carries `tenant_id`, which the API refuses as an unknown field, and `escalation_target: null` for any tenant that never set a webhook, which it refused as "must be a string". Every save from the panel returned 400: models, refusal text, budget, retention, origins, handoff limits and the whole widget theme were unreachable, on a product whose rule is that configuration lives in the panel.

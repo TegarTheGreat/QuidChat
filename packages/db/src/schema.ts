@@ -189,3 +189,16 @@ export const channelConfigs = pgTable("channel_configs", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [primaryKey({ columns: [t.tenantId, t.channel] })])
+
+// Per-tenant AI provider credentials, stored under the same environment-variable names the
+// presets already read, so a tenant's keys can be handed to exactly the resolver that reads the
+// process environment rather than to a second implementation that would drift from it. See
+// `migrations/0009_provider_configs.sql`.
+export const providerConfigs = pgTable("provider_configs", {
+  tenantId: uuid("tenant_id").primaryKey().references(() => tenants.id, { onDelete: "cascade" }),
+  chatProvider: text("chat_provider"),
+  embedProvider: text("embed_provider"),
+  secrets: text("secrets").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+})

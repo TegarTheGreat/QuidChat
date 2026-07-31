@@ -294,6 +294,12 @@ describe("isolation of every table, measured by behavior", () => {
       INSERT INTO channel_configs (tenant_id, channel, secrets)
       VALUES (${tenantId}, 'telegram', ${`v1.stub.${tag}`})
     `)
+    // The provider credentials a business is billed for. A leak here would let one tenant spend
+    // another's money, so this table is worth the same proof as the channel credentials above.
+    await db.execute(sql`
+      INSERT INTO provider_configs (tenant_id, secrets)
+      VALUES (${tenantId}, ${`v1.stub.${tag}`})
+    `)
   }
 
   beforeAll(async () => {

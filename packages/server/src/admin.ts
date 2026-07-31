@@ -16,6 +16,7 @@ import {
 } from "./admin/conversations.js"
 import { getSetup, getUsage } from "./admin/insights.js"
 import { getSettings, patchSettings } from "./admin/settings.js"
+import { deleteProviders, getProviders, putProviders } from "./admin/providers.js"
 import { postSetupChat } from "./admin/setup-agent.js"
 import { sendJson, type AdminDeps } from "./admin/shared.js"
 import {
@@ -140,6 +141,9 @@ export async function handleAdminRequest(
   if (method === "GET" && sub === "/escalations") return listEscalations(res, deps, searchParams)
   if (method === "POST" && sub === "/escalations/resolve") return resolveEscalation(req, res, deps)
   if (method === "GET" && sub === "/usage") return getUsage(res, deps, searchParams)
+  if (method === "GET" && sub === "/providers") return getProviders(res, deps, searchParams)
+  if (method === "PUT" && sub === "/providers") return putProviders(req, res, deps)
+  if (method === "DELETE" && sub === "/providers") return deleteProviders(req, res, deps)
   if (method === "GET" && sub === "/setup") return getSetup(res, deps, searchParams)
   if (method === "POST" && sub === "/setup/chat") return postSetupChat(req, res, deps)
   if (method === "GET" && sub === "/skills") return getSkills(res, deps, searchParams)

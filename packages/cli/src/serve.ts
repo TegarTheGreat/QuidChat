@@ -54,7 +54,15 @@ export async function serve(args: {
     logError: (message, cause) => console.error(message, cause),
   })
 
-  const server = createServer({ db, provider: resolved.provider, env: args.env })
+  const server = createServer({
+    db,
+    provider: resolved.provider,
+    env: args.env,
+    // The CLI owns provider selection, so it hands the server the same function it used itself.
+    // A tenant that has stored its own key is then resolved through exactly this path, rather
+    // than through a second implementation that would drift from the search order documented here.
+    resolveProvider: (env) => resolveProviders(env).provider,
+  })
   await new Promise<void>((resolve) => server.listen(config.port, () => resolve()))
 
   const address = server.address()

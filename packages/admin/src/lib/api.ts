@@ -233,6 +233,15 @@ export interface ChannelStatus {
   error: string | null
 }
 
+export interface ProvidersResponse {
+  /** False when the deployment has no QUIDCHAT_SECRET_KEY, so no credential can be stored. */
+  secretKeyConfigured: boolean
+  /** Which credential names are stored. Never the values. */
+  configuredFields: string[]
+  chatProvider: string | null
+  embedProvider: string | null
+}
+
 export interface ChannelForm {
   id: string
   title: string
@@ -283,6 +292,26 @@ export const api = {
   /** Reads a page and indexes it. Private and local addresses are refused by the server,
    *  including via a redirect, so a URL a visitor could supply cannot be turned into a
    *  request to something on the deployment's own network. */
+  getProviders: (tenantSlug: string) =>
+    request<ProvidersResponse>(`/v1/admin/providers${query({ tenantSlug })}`),
+
+  saveProviders: (body: {
+    tenantSlug: string
+    secrets: Record<string, string>
+    chatProvider?: string | null
+    embedProvider?: string | null
+  }) =>
+    request<Omit<ProvidersResponse, "secretKeyConfigured">>("/v1/admin/providers", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  clearProviders: (body: { tenantSlug: string }) =>
+    request<{ ok: true }>("/v1/admin/providers", {
+      method: "DELETE",
+      body: JSON.stringify(body),
+    }),
+
   createUrlSource: (body: { tenantSlug: string; url: string; title?: string }) =>
     request<{ sourceId: string; title: string; url: string; status: string; error?: string }>(
       "/v1/admin/sources/url",

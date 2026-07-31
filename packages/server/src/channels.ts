@@ -10,6 +10,7 @@ import {
 import { sql } from "drizzle-orm"
 import { withTenant, type QuidDb } from "@quidchat/db"
 import { answerTurn } from "./answer-turn.js"
+import type { ProviderResolver } from "./tenant-provider.js"
 import { lookupTenantBySlug } from "./tenant-lookup.js"
 import { decryptSecrets, readSecretKey } from "./secrets.js"
 import type { ChatRateLimiter } from "./rate-limit.js"
@@ -23,6 +24,8 @@ function rowsOf(res: unknown): Record<string, unknown>[] {
 export type ChannelDeps = {
   db: QuidDb
   provider: Provider
+  /** Builds a provider from a tenant's own credentials — see `tenant-provider.ts`. */
+  resolveProvider?: ProviderResolver
   store: Store
   env: Record<string, string | undefined>
   logError: (message: string, cause: unknown) => void
@@ -291,6 +294,8 @@ export async function handleChannelWebhook(
           question: incoming.text,
           channel: adapter.id,
           logError: deps.logError,
+          ...(deps.env ? { env: deps.env } : {}),
+          ...(deps.resolveProvider ? { resolveProvider: deps.resolveProvider } : {}),
         })
         return outcome.kind === "answered"
           ? {

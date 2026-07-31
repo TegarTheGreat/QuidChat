@@ -2,6 +2,7 @@ import { answer, type PipelineResult, type Provider, type Store } from "@quidcha
 import type { QuidDb } from "@quidchat/db"
 import { monthlyBudgetCents, recordUsage, spentThisMonthCents } from "./budget.js"
 import { notifyEscalationInBackground } from "./escalation-notify.js"
+import { providerForTenant, type ProviderResolver } from "./tenant-provider.js"
 
 /**
  * One customer turn, with everything that must happen around the pipeline.
@@ -30,6 +31,11 @@ export async function answerTurn(args: {
    *  WhatsApp customer waiting on them from a website visitor. */
   channel: string
   logError: (message: string, cause: unknown) => void
+  /** The process environment, for reading this tenant's own provider credentials. */
+  env?: Record<string, string | undefined>
+  /** Builds a provider from credentials. Absent means "always use the one built at startup". */
+  resolveProvider?: ProviderResolver
+
   onProgress?: (stage: "retrieving" | "generating" | "validating") => void
 }): Promise<PipelineResult> {
   const { db, store, provider, tenantId, conversationId, question, channel, logError } = args
@@ -63,9 +69,20 @@ export async function answerTurn(args: {
     }
   }
 
+  // The tenant's own key when it has one, the deployment's otherwise. Resolved here rather than
+  // at each entry point, so the widget and all six channels get the same answer to "whose account
+  // is this billed to".
+  const tenantProvider = await providerForTenant({
+    db,
+    tenantId,
+    env: args.env ?? process.env,
+    fallback: provider,
+    resolve: args.resolveProvider,
+  })
+
   const result = await answer({
     store,
-    provider,
+    provider: tenantProvider,
     tenantId,
     conversationId,
     history: args.history,

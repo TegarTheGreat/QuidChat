@@ -3,6 +3,7 @@ import { Blocks, Gauge, MessageSquareWarning, Palette } from "lucide-react"
 
 import { MutationError } from "./mutation-error"
 import { OriginsField } from "./origins-field"
+import { ProviderField } from "./provider-field"
 import { settingsPayload } from "./settings-payload"
 import { mergeWidgetTheme } from "./settings-theme"
 import {
@@ -200,6 +201,11 @@ export function SettingsDialog({
                 <>
                   {group === "models" && (
                     <div className="space-y-4">
+                      {/* First, because it is the one setting without which nothing else in this
+                          dialog matters: no provider means every question is refused. */}
+                      <Field label="AI provider">
+                        <ProviderField tenantSlug={tenantSlug ?? ""} />
+                      </Field>
                       <Field label="Chat model">
                         <Input
                           value={draft.chat_model}
