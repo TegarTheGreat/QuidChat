@@ -1,6 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { withTenant } from "@quidchat/db"
-import { extractPdfText, fetchPage, indexSource, UrlFetchError } from "@quidchat/ingest"
+import {
+  crawlSite,
+  extractPdfText,
+  fetchPage,
+  indexSource,
+  UrlFetchError,
+} from "@quidchat/ingest"
 import { sql } from "drizzle-orm"
 import {
   MAX_UPLOAD_BODY_BYTES,
@@ -424,4 +430,99 @@ export async function createPdfSource(
       error: e instanceof Error ? e.message : String(e),
     })
   }
+}
+
+/**
+ * `POST /admin/sources/crawl` — read a whole site.
+ *
+ * "Point it at my website" is what a business asks for; adding pages one address at a time is
+ * what the panel made them do. The CLI has done this since the beginning, which meant the most
+ * useful way to fill a knowledge base needed shell access to the server — on a product whose
+ * rule is that configuration lives in the panel.
+ *
+ * Each page becomes its own source under its own title, because a citation reading "Delivery
+ * terms" is worth something to a customer and one reading "My Shop" is not.
+ *
+ * It answers when the crawl is finished rather than streaming progress, and the page limit is
+ * capped low for that reason: this holds a request open for as long as it takes to fetch and
+ * embed every page, and a limit an owner can raise to a thousand would be a limit that times out.
+ */
+const MAX_CRAWL_PAGES = 25
+
+export async function crawlSiteSource(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps,
+): Promise<void> {
+  const raw = await readJsonBody(req, res)
+  if (!raw) return
+  const tenantSlug = typeof raw.tenantSlug === "string" ? raw.tenantSlug : null
+  const url = typeof raw.url === "string" ? raw.url.trim() : ""
+  const requested = typeof raw.maxPages === "number" ? Math.floor(raw.maxPages) : 10
+
+  const tenantId = await resolveTenantOr404(res, deps.db, tenantSlug)
+  if (tenantId === null) return
+  if (url === "") {
+    sendJson(res, 400, { error: "url is required" })
+    return
+  }
+  const maxPages = Math.min(Math.max(1, requested), MAX_CRAWL_PAGES)
+
+  let crawled: Awaited<ReturnType<typeof crawlSite>>
+  try {
+    crawled = await crawlSite({ startUrl: url, maxPages })
+  } catch (e) {
+    if (e instanceof UrlFetchError) {
+      sendJson(res, 400, { error: e.message })
+      return
+    }
+    deps.logError("crawling a site failed unexpectedly", e)
+    sendJson(res, 502, { error: "could not read that site" })
+    return
+  }
+
+  const { embeddingModel } = await deps.store.getTenantConfig(tenantId)
+  const indexed: { url: string; title: string; chunkCount: number }[] = []
+  const failed: { url: string; reason: string }[] = crawled.skipped.map((s) => ({
+    url: s.url,
+    reason: s.reason,
+  }))
+
+  for (const page of crawled.pages) {
+    const sourceId = await withTenant(deps.db, tenantId, async (tx) => {
+      const result = await tx.execute(sql`
+        INSERT INTO knowledge_sources (tenant_id, kind, uri, status)
+        VALUES (${tenantId}, 'url', ${page.url}, 'pending')
+        RETURNING id
+      `)
+      return rowsOf(result)[0]!.id as string
+    })
+    try {
+      const result = await indexSource({
+        tenantId, sourceId, title: page.title, url: page.url, text: page.text,
+        embeddingModel, store: deps.store, provider: deps.provider,
+      })
+      indexed.push({ url: page.url, title: page.title, chunkCount: result.chunkCount })
+    } catch (e) {
+      // One page failing to embed must not lose the rest of the site. The source row keeps the
+      // failure, and it is reported here too rather than only appearing as a red row later.
+      deps.logError("indexSource failed for a crawled page", e)
+      failed.push({ url: page.url, reason: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
+  if (indexed.length === 0) {
+    /*
+     * Nothing indexed is a failure from the owner's side, whatever the reason, so it is answered
+     * as one. A 201 carrying an empty list reads as "done" — and the two ordinary causes are a
+     * mistyped address and a robots.txt that disallows everything, both of which the owner can
+     * fix once they are told which happened.
+     */
+    sendJson(res, 400, {
+      error: failed[0]?.reason ?? "that site had no readable pages",
+      failed,
+    })
+    return
+  }
+  sendJson(res, 201, { indexed, failed, pagesFound: crawled.pages.length })
 }

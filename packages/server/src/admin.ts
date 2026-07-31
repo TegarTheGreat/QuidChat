@@ -41,12 +41,13 @@ import {
   updateSkill,
 } from "./admin/skills.js"
 import {
+  crawlSiteSource,
   createPdfSource,
   createTextSource,
   createUrlSource,
   deleteSource,
-  reindexSource,
   listSources,
+  reindexSource,
 } from "./admin/sources.js"
 import {
   createOrUpdateTenant,
@@ -160,6 +161,7 @@ export async function handleAdminRequest(
   if (method === "POST" && sub === "/sources/text") return createTextSource(req, res, deps)
   if (method === "POST" && sub === "/sources/url") return createUrlSource(req, res, deps)
   if (method === "POST" && sub === "/sources/pdf") return createPdfSource(req, res, deps)
+  if (method === "POST" && sub === "/sources/crawl") return crawlSiteSource(req, res, deps)
   if (method === "POST" && sub === "/sources/reindex") return reindexSource(req, res, deps)
   if (method === "DELETE" && sub === "/sources") return deleteSource(req, res, deps)
   if (method === "GET" && sub === "/conversations") return listConversations(res, deps, searchParams)

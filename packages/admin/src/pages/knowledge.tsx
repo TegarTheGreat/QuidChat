@@ -192,6 +192,22 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
               )
               if (ok) setAdding(false)
             }}
+            onCrawl={async (url, maxPages) => {
+              const ok = await act(async () => {
+                setNotice("Reading the site. This takes a moment — one page at a time.")
+                const result = await api.crawlSite({ tenantSlug, url, maxPages })
+                setNotice(
+                  `Indexed ${result.indexed.length} page${result.indexed.length === 1 ? "" : "s"}` +
+                    (result.failed.length > 0
+                      ? `. ${result.failed.length} could not be read: ${result.failed
+                          .slice(0, 3)
+                          .map((f) => f.url)
+                          .join(", ")}`
+                      : "."),
+                )
+              })
+              if (ok) setAdding(false)
+            }}
             onPdf={async (title, data) => {
               const ok = await act(() => api.createPdfSource({ tenantSlug, title, data }))
               if (ok) setAdding(false)
@@ -240,15 +256,19 @@ function AddSourceDialog({
   onText,
   onUrl,
   onPdf,
+  onCrawl,
 }: {
   busy: boolean
   onText: (title: string, text: string) => void
   onUrl: (url: string, title: string) => void
   onPdf: (title: string, data: string) => void
+  onCrawl: (url: string, maxPages: number) => void
 }): React.ReactElement {
   const [title, setTitle] = React.useState("")
   const [text, setText] = React.useState("")
   const [url, setUrl] = React.useState("")
+  const [siteUrl, setSiteUrl] = React.useState("")
+  const [maxPages, setMaxPages] = React.useState("10")
   const [file, setFile] = React.useState<File | null>(null)
   const [reading, setReading] = React.useState(false)
 
@@ -262,9 +282,10 @@ function AddSourceDialog({
       </DialogHeader>
 
       <Tabs defaultValue="text">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="text">Paste text</TabsTrigger>
           <TabsTrigger value="url">A page</TabsTrigger>
+          <TabsTrigger value="site">A whole site</TabsTrigger>
           <TabsTrigger value="pdf">A PDF</TabsTrigger>
         </TabsList>
 
@@ -322,6 +343,47 @@ function AddSourceDialog({
           <DialogFooter>
             <Button disabled={busy || url.trim() === ""} onClick={() => onUrl(url.trim(), title.trim())}>
               Read the page
+            </Button>
+          </DialogFooter>
+        </TabsContent>
+
+        {/* The thing a business actually asks for — "point it at my website" — which until now
+            needed shell access to the server. */}
+        <TabsContent value="site" className="space-y-3 pt-3">
+          <div className="space-y-1">
+            <Label htmlFor="source-site">Address to start from</Label>
+            <Input
+              id="source-site"
+              value={siteUrl}
+              onChange={(e) => setSiteUrl(e.target.value)}
+              placeholder="https://tokosaya.example"
+            />
+            <p className="text-xs text-muted-foreground">
+              Links are followed from this page, nearest first, and robots.txt is respected. A
+              sitemap address works too, and is read exactly as written.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="source-site-pages">How many pages at most</Label>
+            <Input
+              id="source-site-pages"
+              type="number"
+              min={1}
+              max={25}
+              value={maxPages}
+              onChange={(e) => setMaxPages(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Up to 25. Every page is fetched and indexed before this dialog closes, so a large
+              site is better done in a few passes.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={busy || siteUrl.trim() === ""}
+              onClick={() => onCrawl(siteUrl.trim(), Number(maxPages) || 10)}
+            >
+              {busy ? "Reading the site…" : "Read this site"}
             </Button>
           </DialogFooter>
         </TabsContent>

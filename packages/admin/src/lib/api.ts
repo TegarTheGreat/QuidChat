@@ -342,6 +342,15 @@ export const api = {
 
   /** Reports what indexing produced, not a `Source` row: the count is the useful part, and a
    *  source that failed to embed comes back with `status: "error"` and the reason. */
+  /** Reads a whole site. Answers when the crawl has finished, so this can take a while — the
+   *  page limit is capped low on the server for that reason. */
+  crawlSite: (body: { tenantSlug: string; url: string; maxPages?: number }) =>
+    request<{
+      indexed: { url: string; title: string; chunkCount: number }[]
+      failed: { url: string; reason: string }[]
+      pagesFound: number
+    }>("/v1/admin/sources/crawl", { method: "POST", body: JSON.stringify(body) }),
+
   createPdfSource: (body: { tenantSlug: string; title: string; data: string }) =>
     request<{ sourceId: string; status: string; pageCount?: number; chunkCount?: number }>(
       "/v1/admin/sources/pdf",

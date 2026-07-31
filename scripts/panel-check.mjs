@@ -237,6 +237,33 @@ await sleep(4000)
 text = await bodyText()
 check("the source appears in the table", text.includes("Opening Hours"), text.slice(0, 200))
 
+// "Point it at my website" is the thing a business asks for, and it needed shell access until
+// now. The crawl itself is refused here — a loopback address is exactly what page ingestion
+// refuses — so what this checks is that the panel offers it and reports the refusal instead of
+// looking like it worked.
+await clickText("Add source")
+await sleep(700)
+check("a whole site can be added from the panel", (await evaluate(
+  `[...document.querySelectorAll('[role="tab"]')].map(t => t.textContent.trim())`,
+)).includes("A whole site"))
+await evaluate(`(() => {
+  const tab = [...document.querySelectorAll('[role="tab"]')].find(t => t.textContent.trim() === "A whole site")
+  for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+    tab.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0 }))
+  }
+})()`)
+await sleep(600)
+await typeInto("#source-site", "http://127.0.0.1:9/")
+check("reading a site is offered", (await clickText("Read this site")) === "clicked")
+await sleep(4000)
+text = await bodyText()
+check(
+  "a site that cannot be read says so",
+  /private or local address|could not|no readable/.test(text),
+  text.slice(0, 300),
+)
+await evaluate(`document.querySelector('[role="dialog"] button[aria-label], [role="dialog"] .absolute')?.click()`)
+
 console.log("deleting")
 // Destructive actions live under the row menu now, below a separator, rather than as a button
 // sitting next to the safe ones where a mis-tap reaches them.

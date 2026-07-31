@@ -388,6 +388,24 @@ describe("channel credentials", () => {
     ).rejects.toThrow(/not configured/)
   })
 
+  it("refuses to crawl a private address, and says why", async () => {
+    const api = await client()
+    /*
+     * The crawl route reaches the network on the server's behalf, from inside whatever network
+     * the server runs on, and it is driven by an address typed into a form. That is the shape of
+     * a server-side request forgery, so page ingestion refuses private and loopback addresses —
+     * and this asserts the new route inherits that rather than quietly bypassing it.
+     *
+     * It is also why the crawl cannot be exercised end to end from here: a test site would have
+     * to be served on loopback, which is precisely what is refused. Walking a site, following its
+     * links and giving each page its own title is covered in `packages/ingest/src/crawl.test.ts`,
+     * against an injected fetcher.
+     */
+    await expect(
+      api.crawlSite({ tenantSlug: "contract", url: "http://127.0.0.1:9/", maxPages: 2 }),
+    ).rejects.toThrow(/private or local address/)
+  })
+
   it("erases a transcript and the messages under it", async () => {
     const api = await client()
     const tenantId = rowsOf(
