@@ -21,6 +21,7 @@ import { Textarea } from "../components/ui/textarea"
 import { cn } from "../lib/utils"
 import { useFetch } from "../hooks/use-fetch"
 import { formatDateTime } from "../lib/format"
+import { useT } from "../i18n"
 import { api, type Conversation, type ConversationMessage } from "../lib/api"
 
 /** The question an answer replied to — the nearest customer message before it. */
@@ -56,6 +57,7 @@ function conversationLabel(conversation: Conversation): string {
  * message and on the conversation.
  */
 export function ConversationsPage({ tenantSlug }: { tenantSlug: string }) {
+  const t = useT()
   const [reloadKey, setReloadKey] = React.useState(0)
   const conversations = useFetch(() => api.listConversations(tenantSlug), [tenantSlug, reloadKey])
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
@@ -91,14 +93,11 @@ export function ConversationsPage({ tenantSlug }: { tenantSlug: string }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Conversations</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            What your customers asked and what the assistant said back, with the document behind
-            every claim it made about your business.
-          </p>
+          <h1 className="text-2xl font-semibold">{t.conversations.title}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t.conversations.description}</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
-          Refresh
+          {t.common.refresh}
         </Button>
       </div>
 
@@ -126,10 +125,7 @@ export function ConversationsPage({ tenantSlug }: { tenantSlug: string }) {
           >
             <ScrollArea className="h-full">
               {conversations.data.length === 0 && (
-                <p className="p-4 text-sm text-muted-foreground">
-                  No conversations yet. They appear here as soon as someone asks the widget
-                  something.
-                </p>
+                <p className="p-4 text-sm text-muted-foreground">{t.conversations.empty}</p>
               )}
               {conversations.data.map((conversation) => (
                 <div
@@ -148,16 +144,17 @@ export function ConversationsPage({ tenantSlug }: { tenantSlug: string }) {
                       {conversationLabel(conversation)}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {conversation.messageCount ?? 0} message
-                      {conversation.messageCount === 1 ? "" : "s"}
+                      {t.conversations.messages(conversation.messageCount ?? 0)}
                       {conversation.createdAt ? ` · ${formatDateTime(conversation.createdAt)}` : ""}
                     </span>
                   </button>
                   <RowActions
-                    label={`Actions for the conversation with ${conversation.visitorId ?? "an unknown visitor"}`}
+                    label={t.conversations.rowActions(
+                      conversation.visitorId ?? t.conversations.unknownVisitor,
+                    )}
                     actions={[
                       {
-                        label: "Delete transcript",
+                        label: t.conversations.deleteTranscript,
                         destructive: true,
                         disabled: busy,
                         onSelect: () => setDeleting(conversation),
@@ -178,10 +175,12 @@ export function ConversationsPage({ tenantSlug }: { tenantSlug: string }) {
                   className="mb-2 -ml-2 sm:hidden"
                   onClick={() => setSelectedId(null)}
                 >
-                  <ArrowLeft className="size-4" /> All conversations
+                  <ArrowLeft className="size-4" /> {t.conversations.back}
                 </Button>
               )}
-              {!activeId && <p className="text-sm text-muted-foreground">Select a conversation.</p>}
+              {!activeId && (
+                <p className="text-sm text-muted-foreground">{t.conversations.select}</p>
+              )}
               {transcript.status === "pending" && activeId && (
                 <div className="space-y-3">
                   <Skeleton className="h-16 w-2/3" />
@@ -193,7 +192,7 @@ export function ConversationsPage({ tenantSlug }: { tenantSlug: string }) {
                 <div className="space-y-4">
                   {transcript.data.messages.length === 0 && (
                     <p className="text-sm text-muted-foreground">
-                      This conversation has no messages recorded.
+                      {t.conversations.noMessages}
                     </p>
                   )}
                   {transcript.data.messages.map((message, index) => (
@@ -245,7 +244,7 @@ export function ConversationsPage({ tenantSlug }: { tenantSlug: string }) {
                             })
                           }
                         >
-                          Write the answer for this
+                          {t.conversations.writeAnswer}
                         </Button>
                       )}
                     </div>
@@ -268,11 +267,7 @@ export function ConversationsPage({ tenantSlug }: { tenantSlug: string }) {
               )
               if (!ok) return
               setSaving(null)
-              setNotice(
-                approved
-                  ? "Saved. That question is answered from your own words from now on."
-                  : "Saved as a draft. It starts being used once you approve it on the Canned answers screen.",
-              )
+              setNotice(approved ? t.conversations.savedApproved : t.conversations.savedDraft)
             }}
           />
         )}
@@ -280,9 +275,11 @@ export function ConversationsPage({ tenantSlug }: { tenantSlug: string }) {
 
       <ConfirmDialog
         open={deleting !== null}
-        title={`Delete the transcript with ${deleting?.visitorId ?? "this visitor"}?`}
-        description="Every message in it goes, along with what the assistant cited and any escalation raised from it. This is what to use when a customer asks you to erase what you hold about them. What stays is this month's total spend, which carries no message text."
-        confirmLabel="Delete it"
+        title={t.conversations.deleteTitle(
+          deleting?.visitorId ?? t.conversations.deleteThisVisitor,
+        )}
+        description={t.conversations.deleteDescription}
+        confirmLabel={t.conversations.deleteConfirm}
         busy={busy}
         onCancel={() => setDeleting(null)}
         onConfirm={() => {
@@ -317,21 +314,19 @@ function CannedFromTranscript({
   busy: boolean
   onSave: (question: string, answer: string, approved: boolean) => void
 }): React.ReactElement {
+  const t = useT()
   const [question, setQuestion] = React.useState(initial.question)
   const [answer, setAnswer] = React.useState(initial.answer)
 
   return (
     <DialogContent className="sm:max-w-lg">
       <DialogHeader>
-        <DialogTitle>Write the answer for this question</DialogTitle>
-        <DialogDescription>
-          A canned answer is used word for word, ahead of anything the assistant would compose. Use
-          it where the wording has to be exact.
-        </DialogDescription>
+        <DialogTitle>{t.conversations.saveDialog.title}</DialogTitle>
+        <DialogDescription>{t.conversations.saveDialog.description}</DialogDescription>
       </DialogHeader>
       <div className="space-y-3">
         <div className="space-y-1">
-          <Label htmlFor="from-transcript-question">Question</Label>
+          <Label htmlFor="from-transcript-question">{t.conversations.saveDialog.question}</Label>
           <Input
             id="from-transcript-question"
             value={question}
@@ -340,16 +335,14 @@ function CannedFromTranscript({
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="from-transcript-answer">Answer</Label>
+          <Label htmlFor="from-transcript-answer">{t.conversations.saveDialog.answer}</Label>
           <Textarea
             id="from-transcript-answer"
             rows={5}
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
           />
-          <p className="text-xs text-muted-foreground">
-            This is what the assistant said. Correct it — that is usually why you are here.
-          </p>
+          <p className="text-xs text-muted-foreground">{t.conversations.saveDialog.answerHint}</p>
         </div>
       </div>
       <DialogFooter>
@@ -358,13 +351,13 @@ function CannedFromTranscript({
           disabled={busy || question.trim() === "" || answer.trim() === ""}
           onClick={() => onSave(question.trim(), answer.trim(), false)}
         >
-          Save as draft
+          {t.conversations.saveDialog.draft}
         </Button>
         <Button
           disabled={busy || question.trim() === "" || answer.trim() === ""}
           onClick={() => onSave(question.trim(), answer.trim(), true)}
         >
-          Save and use it
+          {t.conversations.saveDialog.publish}
         </Button>
       </DialogFooter>
     </DialogContent>

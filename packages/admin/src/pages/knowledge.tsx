@@ -27,6 +27,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { Textarea } from "../components/ui/textarea"
 import { useFetch } from "../hooks/use-fetch"
+import { useT } from "../i18n"
 import { api, type Source, type SourceStatus } from "../lib/api"
 
 function statusVariant(status: SourceStatus): "default" | "secondary" | "destructive" {
@@ -49,6 +50,7 @@ function statusVariant(status: SourceStatus): "default" | "secondary" | "destruc
  * prevent.
  */
 export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
+  const t = useT()
   const [reloadKey, setReloadKey] = React.useState(0)
   const sources = useFetch(() => api.listSources(tenantSlug), [tenantSlug, reloadKey])
 
@@ -78,9 +80,9 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Knowledge</h1>
+        <h1 className="text-2xl font-semibold">{t.knowledge.title}</h1>
         <Button size="sm" onClick={() => setAdding(true)}>
-          Add source
+          {t.knowledge.addSource}
         </Button>
       </div>
 
@@ -104,9 +106,9 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead className="hidden sm:table-cell">Where from</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t.knowledge.columnTitle}</TableHead>
+                  <TableHead className="hidden sm:table-cell">{t.knowledge.columnWhere}</TableHead>
+                  <TableHead>{t.knowledge.columnStatus}</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
@@ -114,8 +116,7 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
                 {sources.data.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={4} className="text-muted-foreground">
-                      Nothing indexed yet. Until something is, every question is refused — which
-                      is the assistant working, not failing.
+                      {t.knowledge.empty}
                     </TableCell>
                   </TableRow>
                 )}
@@ -123,19 +124,23 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
                   <TableRow key={source.id}>
                     <TableCell className="font-medium">{source.title}</TableCell>
                     <TableCell className="hidden max-w-xs truncate text-xs text-muted-foreground sm:table-cell">
-                      {source.kind === "url" ? source.uri : source.kind === "file" ? "uploaded file" : "pasted text"}
+                      {source.kind === "url"
+                        ? source.uri
+                        : source.kind === "file"
+                          ? t.knowledge.fromFile
+                          : t.knowledge.fromText}
                     </TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(source.status)}>{source.status}</Badge>
                       {source.status === "error" && (
                         <p className="mt-1 max-w-xs text-xs text-destructive">
-                          {source.error ?? "No reason was recorded."}
+                          {source.error ?? t.knowledge.noReason}
                         </p>
                       )}
                     </TableCell>
                     <TableCell>
                       <RowActions
-                        label={`Actions for ${source.title}`}
+                        label={t.common.actionsFor(source.title)}
                         actions={[
                           // Only a page can be re-read: pasted text has no upstream, and a PDF
                           // would have to be uploaded again. Offering it anyway would be a menu
@@ -143,7 +148,7 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
                           ...(source.kind === "url"
                             ? [
                                 {
-                                  label: "Re-read this page",
+                                  label: t.knowledge.reindex,
                                   disabled: busy,
                                   onSelect: () =>
                                     void act(async () => {
@@ -154,15 +159,18 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
                                       })
                                       setNotice(
                                         result.status === "ready"
-                                          ? `Re-read “${source.title}” — ${result.chunkCount} pieces indexed.`
-                                          : `Could not re-read “${source.title}”: ${result.error ?? "unknown reason"}. The old text is still in use.`,
+                                          ? t.knowledge.reindexed(source.title, result.chunkCount ?? 0)
+                                          : t.knowledge.reindexFailed(
+                                              source.title,
+                                              result.error ?? t.knowledge.unknownReason,
+                                            ),
                                       )
                                     }),
                                 },
                               ]
                             : []),
                           {
-                            label: "Delete",
+                            label: t.common.delete,
                             destructive: true,
                             disabled: busy,
                             onSelect: () => setPendingDelete(source),
@@ -194,16 +202,16 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
             }}
             onCrawl={async (url, maxPages) => {
               const ok = await act(async () => {
-                setNotice("Reading the site. This takes a moment — one page at a time.")
+                setNotice(t.knowledge.crawling)
                 const result = await api.crawlSite({ tenantSlug, url, maxPages })
                 setNotice(
-                  `Indexed ${result.indexed.length} page${result.indexed.length === 1 ? "" : "s"}` +
-                    (result.failed.length > 0
-                      ? `. ${result.failed.length} could not be read: ${result.failed
-                          .slice(0, 3)
-                          .map((f) => f.url)
-                          .join(", ")}`
-                      : "."),
+                  result.failed.length > 0
+                    ? t.knowledge.crawledWithFailures(
+                        result.indexed.length,
+                        result.failed.length,
+                        result.failed.slice(0, 3).map((f) => f.url).join(", "),
+                      )
+                    : t.knowledge.crawled(result.indexed.length),
                 )
               })
               if (ok) setAdding(false)
@@ -218,9 +226,9 @@ export function KnowledgePage({ tenantSlug }: { tenantSlug: string }) {
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title={`Delete “${pendingDelete?.title}”?`}
-        description="Its text and everything indexed from it goes with it, and the assistant stops answering from it immediately. Past answers stay in the transcript but no longer link to it. The source has to be added again."
-        confirmLabel="Delete it"
+        title={t.knowledge.deleteTitle(pendingDelete?.title ?? "")}
+        description={t.knowledge.deleteDescription}
+        confirmLabel={t.knowledge.deleteConfirm}
         busy={busy}
         onCancel={() => setPendingDelete(null)}
         onConfirm={() => {
@@ -264,6 +272,7 @@ function AddSourceDialog({
   onPdf: (title: string, data: string) => void
   onCrawl: (url: string, maxPages: number) => void
 }): React.ReactElement {
+  const t = useT()
   const [title, setTitle] = React.useState("")
   const [text, setText] = React.useState("")
   const [url, setUrl] = React.useState("")
@@ -275,35 +284,31 @@ function AddSourceDialog({
   return (
     <DialogContent className="sm:max-w-lg">
       <DialogHeader>
-        <DialogTitle>Add a source</DialogTitle>
-        <DialogDescription>
-          The assistant answers only from what is here, and cites it.
-        </DialogDescription>
+        <DialogTitle>{t.knowledge.dialog.title}</DialogTitle>
+        <DialogDescription>{t.knowledge.dialog.description}</DialogDescription>
       </DialogHeader>
 
       <Tabs defaultValue="text">
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="text">Paste text</TabsTrigger>
-          <TabsTrigger value="url">A page</TabsTrigger>
-          <TabsTrigger value="site">A whole site</TabsTrigger>
-          <TabsTrigger value="pdf">A PDF</TabsTrigger>
+          <TabsTrigger value="text">{t.knowledge.dialog.tabText}</TabsTrigger>
+          <TabsTrigger value="url">{t.knowledge.dialog.tabUrl}</TabsTrigger>
+          <TabsTrigger value="site">{t.knowledge.dialog.tabSite}</TabsTrigger>
+          <TabsTrigger value="pdf">{t.knowledge.dialog.tabPdf}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="text" className="space-y-3 pt-3">
           <div className="space-y-1">
-            <Label htmlFor="source-title">Title</Label>
+            <Label htmlFor="source-title">{t.knowledge.dialog.titleLabel}</Label>
             <Input
               id="source-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Kebijakan Garansi"
             />
-            <p className="text-xs text-muted-foreground">
-              Customers see this name under any answer that came from it.
-            </p>
+            <p className="text-xs text-muted-foreground">{t.knowledge.dialog.titleHint}</p>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="source-text">Text</Label>
+            <Label htmlFor="source-text">{t.knowledge.dialog.textLabel}</Label>
             <Textarea
               id="source-text"
               rows={6}
@@ -316,14 +321,14 @@ function AddSourceDialog({
               disabled={busy || title.trim() === "" || text.trim() === ""}
               onClick={() => onText(title.trim(), text)}
             >
-              Index this text
+              {t.knowledge.dialog.indexText}
             </Button>
           </DialogFooter>
         </TabsContent>
 
         <TabsContent value="url" className="space-y-3 pt-3">
           <div className="space-y-1">
-            <Label htmlFor="source-url">Address</Label>
+            <Label htmlFor="source-url">{t.knowledge.dialog.urlLabel}</Label>
             <Input
               id="source-url"
               value={url}
@@ -332,17 +337,17 @@ function AddSourceDialog({
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="source-url-title">Title (optional)</Label>
+            <Label htmlFor="source-url-title">{t.knowledge.dialog.urlTitleLabel}</Label>
             <Input
               id="source-url-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="taken from the page when left empty"
+              placeholder={t.knowledge.dialog.urlTitlePlaceholder}
             />
           </div>
           <DialogFooter>
             <Button disabled={busy || url.trim() === ""} onClick={() => onUrl(url.trim(), title.trim())}>
-              Read the page
+              {t.knowledge.dialog.readPage}
             </Button>
           </DialogFooter>
         </TabsContent>
@@ -351,20 +356,17 @@ function AddSourceDialog({
             needed shell access to the server. */}
         <TabsContent value="site" className="space-y-3 pt-3">
           <div className="space-y-1">
-            <Label htmlFor="source-site">Address to start from</Label>
+            <Label htmlFor="source-site">{t.knowledge.dialog.siteLabel}</Label>
             <Input
               id="source-site"
               value={siteUrl}
               onChange={(e) => setSiteUrl(e.target.value)}
               placeholder="https://tokosaya.example"
             />
-            <p className="text-xs text-muted-foreground">
-              Links are followed from this page, nearest first, and robots.txt is respected. A
-              sitemap address works too, and is read exactly as written.
-            </p>
+            <p className="text-xs text-muted-foreground">{t.knowledge.dialog.siteHint}</p>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="source-site-pages">How many pages at most</Label>
+            <Label htmlFor="source-site-pages">{t.knowledge.dialog.sitePagesLabel}</Label>
             <Input
               id="source-site-pages"
               type="number"
@@ -373,24 +375,21 @@ function AddSourceDialog({
               value={maxPages}
               onChange={(e) => setMaxPages(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              Up to 25. Every page is fetched and indexed before this dialog closes, so a large
-              site is better done in a few passes.
-            </p>
+            <p className="text-xs text-muted-foreground">{t.knowledge.dialog.sitePagesHint}</p>
           </div>
           <DialogFooter>
             <Button
               disabled={busy || siteUrl.trim() === ""}
               onClick={() => onCrawl(siteUrl.trim(), Number(maxPages) || 10)}
             >
-              {busy ? "Reading the site…" : "Read this site"}
+              {busy ? t.knowledge.dialog.readingSite : t.knowledge.dialog.readSite}
             </Button>
           </DialogFooter>
         </TabsContent>
 
         <TabsContent value="pdf" className="space-y-3 pt-3">
           <div className="space-y-1">
-            <Label htmlFor="source-pdf-title">Title</Label>
+            <Label htmlFor="source-pdf-title">{t.knowledge.dialog.titleLabel}</Label>
             <Input
               id="source-pdf-title"
               value={title}
@@ -399,17 +398,14 @@ function AddSourceDialog({
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="source-pdf">File</Label>
+            <Label htmlFor="source-pdf">{t.knowledge.dialog.pdfLabel}</Label>
             <Input
               id="source-pdf"
               type="file"
               accept="application/pdf,.pdf"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
-            <p className="text-xs text-muted-foreground">
-              Up to about 9 MB. A scanned PDF is refused with the reason — it draws its letters as
-              pictures, so it has to go through OCR before anything can read it.
-            </p>
+            <p className="text-xs text-muted-foreground">{t.knowledge.dialog.pdfHint}</p>
           </div>
           <DialogFooter>
             <Button
@@ -424,7 +420,7 @@ function AddSourceDialog({
                 }
               }}
             >
-              {reading ? "Reading…" : "Upload and index"}
+              {reading ? t.knowledge.dialog.readingPdf : t.knowledge.dialog.uploadPdf}
             </Button>
           </DialogFooter>
         </TabsContent>

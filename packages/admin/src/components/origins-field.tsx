@@ -1,6 +1,7 @@
 import { AlertTriangle } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert"
 import { TagInput } from "./ui/tag-input"
+import { useT } from "../i18n"
 
 /**
  * Editor for `allowed_origins`. An empty allowlist refuses every site, which
@@ -14,22 +15,20 @@ export function OriginsField({
   value: string[]
   onChange: (next: string[]) => void
 }) {
+  const t = useT()
   return (
     <div className="space-y-2">
       <TagInput
         value={value}
         onChange={onChange}
-        placeholder="https://example.com"
-        aria-label="Allowed origins"
+        placeholder={t.settings.originsPlaceholder}
+        aria-label={t.settings.fields.allowedOrigins}
       />
       {value.length === 0 && (
         <Alert variant="destructive">
           <AlertTriangle className="size-4" />
-          <AlertTitle>Widget disabled</AlertTitle>
-          <AlertDescription>
-            No allowed origins are configured, so the widget will refuse every
-            site. Add at least one origin to enable it.
-          </AlertDescription>
+          <AlertTitle>{t.settings.widgetDisabledTitle}</AlertTitle>
+          <AlertDescription>{t.settings.widgetDisabledBody}</AlertDescription>
         </Alert>
       )}
     </div>

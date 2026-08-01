@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { MutationError } from "../components/mutation-error"
 import { Skeleton } from "../components/ui/skeleton"
 import { useFetch } from "../hooks/use-fetch"
+import { useT } from "../i18n"
 import { api } from "../lib/api"
 
 /**
@@ -33,6 +34,7 @@ export function OverviewPage({
   tenantSlug: string
   onOpenEscalations?: () => void
 }) {
+  const t = useT()
   const usage = useFetch(() => api.getUsage(tenantSlug), [tenantSlug])
   const settings = useFetch(() => api.getSettings(tenantSlug), [tenantSlug])
 
@@ -59,26 +61,26 @@ export function OverviewPage({
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Overview</h1>
+      <h1 className="text-2xl font-semibold">{t.overview.title}</h1>
 
       {usage.status === "error" && <MutationError message={usage.message} />}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Questions this month</CardDescription>
+            <CardDescription>{t.overview.questions}</CardDescription>
             <CardTitle className="text-2xl">
               {loading ? <Skeleton className="h-8 w-16" /> : (questions ?? "—")}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            From your website and every channel you have connected.
+            {t.overview.questionsHint}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Answered from your documents</CardDescription>
+            <CardDescription>{t.overview.answered}</CardDescription>
             <CardTitle className="text-2xl">
               {loading ? (
                 <Skeleton className="h-8 w-16" />
@@ -90,28 +92,26 @@ export function OverviewPage({
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            {answered === undefined
-              ? "No questions yet this month."
-              : `${answered} answered, ${refusals} declined rather than guessed at.`}
+            {answered === undefined || refusals === undefined
+              ? t.overview.answeredNone
+              : t.overview.answeredDetail(answered, refusals)}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Waiting for an answer</CardDescription>
+            <CardDescription>{t.overview.waiting}</CardDescription>
             <CardTitle className="text-2xl">
               {loading ? <Skeleton className="h-8 w-12" /> : (open ?? "—")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-xs text-muted-foreground">
             <p>
-              {open === 0
-                ? "Nothing outstanding."
-                : "Each one is a customer question your documents did not cover."}
+              {open === 0 ? t.overview.waitingNone : t.overview.waitingSome}
             </p>
             {open !== undefined && open > 0 && onOpenEscalations && (
               <Button size="sm" variant="outline" onClick={onOpenEscalations}>
-                Answer them
+                {t.overview.answerThem}
               </Button>
             )}
           </CardContent>
@@ -119,7 +119,7 @@ export function OverviewPage({
 
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Spent this month</CardDescription>
+            <CardDescription>{t.overview.spent}</CardDescription>
             <CardTitle className="text-2xl">
               {loading ? <Skeleton className="h-8 w-24" /> : formatUsd(usageCents)}
             </CardTitle>
@@ -135,7 +135,7 @@ export function OverviewPage({
                 aria-valuenow={spentShare}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-label="Share of this month's budget spent"
+                aria-label={t.overview.budgetBarLabel}
               >
                 <div
                   className={spentShare >= 90 ? "h-full bg-destructive" : "h-full bg-primary"}
@@ -145,10 +145,10 @@ export function OverviewPage({
             )}
             <p>
               {budgetCents === undefined
-                ? "Loading your budget…"
+                ? t.overview.budgetLoading
                 : budgetCents === 0
-                  ? "No monthly limit set. Set one in Settings before this runs on a live site."
-                  : `${formatUsd(remainingCents)} left of ${formatUsd(budgetCents)}. The assistant stops answering when it runs out.`}
+                  ? t.overview.budgetNone
+                  : t.overview.budgetLeft(formatUsd(remainingCents), formatUsd(budgetCents))}
             </p>
           </CardContent>
         </Card>

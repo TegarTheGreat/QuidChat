@@ -27,6 +27,7 @@ import {
 } from "../components/ui/table"
 import { useFetch } from "../hooks/use-fetch"
 import { formatDateTime } from "../lib/format"
+import { useT } from "../i18n"
 import { api, type ChannelForm, type ChannelId, type ChannelsResponse } from "../lib/api"
 
 /**
@@ -45,6 +46,7 @@ import { api, type ChannelForm, type ChannelId, type ChannelsResponse } from "..
  * shared installation does not answer every business's customers from one account.
  */
 export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
+  const t = useT()
   const [reloadKey, setReloadKey] = React.useState(0)
   const data = useFetch(() => api.listChannels(tenantSlug), [tenantSlug, reloadKey])
   const [busy, setBusy] = React.useState(false)
@@ -70,12 +72,8 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold">Channels</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          The same assistant, answering where your customers already are. Every channel goes
-          through the identical pipeline, so grounding, refusals and your budget behave exactly as
-          they do on your website.
-        </p>
+        <h1 className="text-2xl font-semibold">{t.channels.title}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t.channels.description}</p>
       </div>
 
       {error && <MutationError message={error} />}
@@ -87,14 +85,10 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
           {!data.data.secretKeyConfigured && (
             <Card className="border-destructive">
               <CardHeader>
-                <CardTitle className="text-base">Credentials cannot be stored yet</CardTitle>
+                <CardTitle className="text-base">{t.channels.noKeyTitle}</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
-                Set <code className="rounded bg-muted px-1">QUIDCHAT_SECRET_KEY</code> on the server
-                and restart it. Channel credentials are encrypted with it, and storing them in plain
-                text is not offered as an alternative — a database backup would hand over the
-                ability to send messages as your business. Generate one with{" "}
-                <code className="rounded bg-muted px-1">openssl rand -base64 32</code>.
+                {t.channels.noKeyBody("openssl rand -base64 32")}
               </CardContent>
             </Card>
           )}
@@ -104,9 +98,9 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Channel</TableHead>
-                    <TableHead className="whitespace-nowrap">Status</TableHead>
-                    <TableHead className="hidden md:table-cell">Stored</TableHead>
+                    <TableHead>{t.channels.columnChannel}</TableHead>
+                    <TableHead className="whitespace-nowrap">{t.channels.columnStatus}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t.channels.columnStored}</TableHead>
                     <TableHead className="w-10" />
                   </TableRow>
                 </TableHeader>
@@ -128,10 +122,10 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
                         <TableCell className="whitespace-nowrap">
                           {status ? (
                             <Badge variant={status.enabled ? "secondary" : "outline"}>
-                              {status.enabled ? "Connected" : "Paused"}
+                              {status.enabled ? t.channels.connected : t.channels.paused}
                             </Badge>
                           ) : (
-                            <Badge variant="outline">Not connected</Badge>
+                            <Badge variant="outline">{t.channels.notConnected}</Badge>
                           )}
                         </TableCell>
                         <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
@@ -142,23 +136,23 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
                                     (name) =>
                                       form.fields.find((f) => f.name === name)?.label ?? name,
                                   )
-                                  .join(", ") || "nothing"
+                                  .join(", ") || t.common.nothing
                               }${status.updatedAt ? ` · ${formatDateTime(status.updatedAt)}` : ""}`
                             : "—"}
                         </TableCell>
                         <TableCell>
                           <RowActions
-                            label={`Actions for ${form.title}`}
+                            label={t.common.actionsFor(form.title)}
                             actions={[
                               {
-                                label: status ? "Replace credentials" : "Connect",
+                                label: status ? t.channels.replace : t.channels.connect,
                                 disabled: locked,
                                 onSelect: () => setConnecting(form),
                               },
                               ...(status
                                 ? [
                                     {
-                                      label: status.enabled ? "Pause" : "Resume",
+                                      label: status.enabled ? t.channels.pause : t.channels.resume,
                                       disabled: busy,
                                       onSelect: () =>
                                         void act(() =>
@@ -170,7 +164,7 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
                                         ),
                                     },
                                     {
-                                      label: "Disconnect",
+                                      label: t.channels.disconnect,
                                       destructive: true,
                                       disabled: busy,
                                       onSelect: () => setDisconnecting(form),
@@ -214,9 +208,9 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
 
       <ConfirmDialog
         open={disconnecting !== null}
-        title={`Disconnect ${disconnecting?.title}?`}
-        description="Its stored credentials are deleted, and messages arriving on it stop being answered. To connect it again you need the token from the platform a second time — to stop answering for a while without that, pause it instead."
-        confirmLabel="Disconnect it"
+        title={t.channels.disconnectTitle(disconnecting?.title ?? "")}
+        description={t.channels.disconnectDescription}
+        confirmLabel={t.channels.disconnectConfirm}
         busy={busy}
         onCancel={() => setDisconnecting(null)}
         onConfirm={() => {
@@ -241,6 +235,7 @@ export function ChannelsPage({ tenantSlug }: { tenantSlug: string }) {
  * falls back to the old copy command rather than failing silently.
  */
 function WebhookUrl({ url }: { url: string }): React.ReactElement {
+  const t = useT()
   const [copied, setCopied] = React.useState(false)
 
   async function copy() {
@@ -272,7 +267,7 @@ function WebhookUrl({ url }: { url: string }): React.ReactElement {
         variant="ghost"
         size="icon"
         className="size-8 shrink-0"
-        aria-label="Copy the webhook address"
+        aria-label={t.channels.copyAddress}
         onClick={() => void copy()}
       >
         {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
@@ -294,6 +289,7 @@ function ConnectDialog({
   busy: boolean
   onSave: (secrets: Record<string, string>) => void
 }): React.ReactElement {
+  const t = useT()
   const status = data.channels.find((c) => c.channel === form.id)
   const [values, setValues] = React.useState<Record<string, string>>({})
   const requiredFields = form.fields.filter((f) => f.required)
@@ -303,13 +299,13 @@ function ConnectDialog({
     <DialogContent className="sm:max-w-lg">
       <DialogHeader>
         <DialogTitle>
-          {status ? `Replace ${form.title} credentials` : `Connect ${form.title}`}
+          {status ? t.channels.dialogReplace(form.title) : t.channels.dialogConnect(form.title)}
         </DialogTitle>
         <DialogDescription>{form.hint}</DialogDescription>
       </DialogHeader>
 
       <div className="space-y-1">
-        <Label>Point {form.title} at this address</Label>
+        <Label>{t.channels.pointAt(form.title)}</Label>
         <WebhookUrl url={`${window.location.origin}/v1/channels/${form.id}/${tenantSlug}`} />
       </div>
 
@@ -329,7 +325,7 @@ function ConnectDialog({
               <Label htmlFor={`${form.id}-${field.name}`}>
                 {field.label}
                 {!field.required && (
-                  <span className="ml-1 text-xs text-muted-foreground">(optional)</span>
+                  <span className="ml-1 text-xs text-muted-foreground">({t.common.optional})</span>
                 )}
               </Label>
               <Input
@@ -341,21 +337,18 @@ function ConnectDialog({
                 value={values[field.name] ?? ""}
                 onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.value }))}
                 placeholder={
-                  status?.configuredFields.includes(field.name) ? "stored — type to replace" : ""
+                  status?.configuredFields.includes(field.name) ? t.channels.stored : ""
                 }
               />
             </div>
           ))}
         </div>
 
-        <p className="text-xs text-muted-foreground">
-          Set the webhook secret too, where the platform offers one. Without it, anyone who learns
-          the address above can put words in your conversation history and spend your budget.
-        </p>
+        <p className="text-xs text-muted-foreground">{t.channels.secretHint}</p>
 
         <DialogFooter>
           <Button type="submit" disabled={busy || missing.length > 0}>
-            {status ? "Replace credentials" : "Connect"}
+            {status ? t.channels.replace : t.channels.connect}
           </Button>
         </DialogFooter>
       </form>

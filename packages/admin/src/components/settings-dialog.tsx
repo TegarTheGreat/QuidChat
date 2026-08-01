@@ -44,15 +44,16 @@ import {
 import { Textarea } from "./ui/textarea"
 import { useFetch } from "../hooks/use-fetch"
 import { useMutation } from "../hooks/use-mutation"
+import { useT, type Dict } from "../i18n"
 import { api, type Settings } from "../lib/api"
 
 type Group = "models" | "answering" | "limits" | "widget"
 
-const GROUPS: { id: Group; title: string; icon: typeof Blocks }[] = [
-  { id: "models", title: "Models", icon: Blocks },
-  { id: "answering", title: "Answering", icon: MessageSquareWarning },
-  { id: "limits", title: "Limits", icon: Gauge },
-  { id: "widget", title: "Widget", icon: Palette },
+const GROUPS: { id: Group; label: (t: Dict) => string; icon: typeof Blocks }[] = [
+  { id: "models", label: (t) => t.settings.tabs.models, icon: Blocks },
+  { id: "answering", label: (t) => t.settings.tabs.answering, icon: MessageSquareWarning },
+  { id: "limits", label: (t) => t.settings.tabs.limits, icon: Gauge },
+  { id: "widget", label: (t) => t.settings.tabs.widget, icon: Palette },
 ]
 
 /** Every piece of configuration lives here, grouped and presented as a
@@ -67,6 +68,7 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void
   tenantSlug: string | null
 }) {
+  const t = useT()
   const [group, setGroup] = React.useState<Group>("models")
   const [draft, setDraft] = React.useState<Settings | null>(null)
   // The theme is edited as fields, not as JSON. A business owner should not have to know that
@@ -172,7 +174,7 @@ export function SettingsDialog({
                           onClick={() => setGroup(item.id)}
                         >
                           <item.icon />
-                          <span>{item.title}</span>
+                          <span>{item.label(t)}</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}
@@ -186,7 +188,7 @@ export function SettingsDialog({
               <Breadcrumb>
                 <BreadcrumbList>
                   <BreadcrumbItem>
-                    <BreadcrumbPage>Settings</BreadcrumbPage>
+                    <BreadcrumbPage>{t.settings.title}</BreadcrumbPage>
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
@@ -194,7 +196,7 @@ export function SettingsDialog({
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
               {!tenantSlug && (
                 <p className="text-sm text-muted-foreground">
-                  Select a tenant first to edit its settings.
+                  {t.settings.selectTenant}
                 </p>
               )}
               {tenantSlug && fetched.status === "pending" && (
@@ -213,33 +215,33 @@ export function SettingsDialog({
                     <div className="space-y-4">
                       {/* First, because it is the one setting without which nothing else in this
                           dialog matters: no provider means every question is refused. */}
-                      <Field label="AI provider">
+                      <Field label={t.settings.provider.title}>
                         <ProviderField tenantSlug={tenantSlug ?? ""} onSaved={() => setModelsKey((k) => k + 1)} />
                       </Field>
-                      <Field label="Chat model">
+                      <Field label={t.settings.form.chatModel}>
                         <ModelField
                           value={draft.chat_model}
                           models={models}
                           error={modelsError}
-                          ariaLabel="Chat model"
+                          ariaLabel={t.settings.form.chatModel}
                           onChange={(next) => update("chat_model", next)}
                         />
                       </Field>
-                      <Field label="Rewrite model">
+                      <Field label={t.settings.form.rewriteModel}>
                         <ModelField
                           value={draft.rewrite_model}
                           models={models}
                           error={modelsError}
-                          ariaLabel="Rewrite model"
+                          ariaLabel={t.settings.form.rewriteModel}
                           onChange={(next) => update("rewrite_model", next)}
                         />
                       </Field>
-                      <Field label="Embedding model">
+                      <Field label={t.settings.form.embeddingModel}>
                         <ModelField
                           value={draft.embedding_model}
                           models={models}
                           error={modelsError}
-                          ariaLabel="Embedding model"
+                          ariaLabel={t.settings.form.embeddingModel}
                           onChange={(next) => update("embedding_model", next)}
                         />
                       </Field>
@@ -247,7 +249,7 @@ export function SettingsDialog({
                   )}
                   {group === "answering" && (
                     <div className="space-y-4">
-                      <Field label="Answer mode">
+                      <Field label={t.settings.form.answerMode}>
                         <Select
                           value={draft.answer_mode}
                           // The component hands back a plain string and the setting is a
@@ -259,35 +261,31 @@ export function SettingsDialog({
                             }
                           }}
                         >
-                          <SelectTrigger aria-label="Answer mode">
+                          <SelectTrigger aria-label={t.settings.form.answerMode}>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="full">
-                              full — generate an answer from your documents
-                            </SelectItem>
+                            <SelectItem value="full">{t.settings.form.answerModeFull}</SelectItem>
                             <SelectItem value="thrifty">
-                              thrifty — quote your documents, no generation
+                              {t.settings.form.answerModeThrifty}
                             </SelectItem>
                             <SelectItem value="static">
-                              static — approved canned answers only, no model
+                              {t.settings.form.answerModeStatic}
                             </SelectItem>
                           </SelectContent>
                         </Select>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          The one setting that changes what running this costs.{" "}
-                          <strong>static</strong> never calls a model, so it is free to run and
-                          can only say what someone approved.
+                          {t.settings.form.answerModeHint}
                         </p>
                       </Field>
-                      <Field label="Refusal text">
+                      <Field label={t.settings.form.refusalText}>
                         <Textarea
                           value={draft.refusal_text}
                           onChange={(e) => update("refusal_text", e.target.value)}
                           rows={3}
                         />
                       </Field>
-                      <Field label="When it cannot answer">
+                      <Field label={t.settings.form.escalationMode}>
                         <Select
                           value={draft.escalation_mode}
                           onValueChange={(next) => {
@@ -296,44 +294,42 @@ export function SettingsDialog({
                             }
                           }}
                         >
-                          <SelectTrigger aria-label="Escalation mode">
+                          <SelectTrigger aria-label={t.settings.form.escalationMode}>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="collect_contact">
-                              record it here — read them under Escalations
+                              {t.settings.form.escalationCollect}
                             </SelectItem>
                             <SelectItem value="webhook">
-                              post it to a webhook — Slack, Discord, n8n, your CRM
+                              {t.settings.form.escalationWebhook}
                             </SelectItem>
                           </SelectContent>
                         </Select>
                       </Field>
-                      <Field label="Webhook URL">
+                      <Field label={t.settings.form.webhookUrl}>
                         <Input
                           value={draft.escalation_target}
                           onChange={(e) => update("escalation_target", e.target.value)}
                           placeholder="https://hooks.slack.com/services/…"
                         />
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Sent as JSON with the customer&rsquo;s question, the reason, and the
-                          channel — the question is the part that tells you what to write. Only
-                          used when the mode above is set to webhook.
+                          {t.settings.form.webhookHint}
                         </p>
                       </Field>
-                      <Field label="High-risk topics">
+                      <Field label={t.settings.form.highRisk}>
                         <TagInput
                           value={draft.high_risk_topics}
                           onChange={(next) => update("high_risk_topics", next)}
-                          placeholder="e.g. medical advice"
-                          aria-label="High-risk topics"
+                          placeholder={t.settings.form.highRiskPlaceholder}
+                          aria-label={t.settings.form.highRisk}
                         />
                       </Field>
                     </div>
                   )}
                   {group === "limits" && (
                     <div className="space-y-4">
-                      <Field label="Monthly budget (cents)">
+                      <Field label={t.settings.form.budget}>
                         <Input
                           type="number"
                           value={draft.monthly_budget_cents}
@@ -342,14 +338,14 @@ export function SettingsDialog({
                           }
                         />
                       </Field>
-                      <Field label="Retention (days)">
+                      <Field label={t.settings.form.retention}>
                         <Input
                           type="number"
                           value={draft.retention_days}
                           onChange={(e) => update("retention_days", Number(e.target.value))}
                         />
                       </Field>
-                      <Field label="Max handoffs per turn">
+                      <Field label={t.settings.form.handoffsTurn}>
                         <Input
                           type="number"
                           value={draft.max_handoffs_per_turn}
@@ -358,7 +354,7 @@ export function SettingsDialog({
                           }
                         />
                       </Field>
-                      <Field label="Max handoffs per conversation">
+                      <Field label={t.settings.form.handoffsConversation}>
                         <Input
                           type="number"
                           value={draft.max_handoffs_per_conversation}
@@ -371,24 +367,24 @@ export function SettingsDialog({
                   )}
                   {group === "widget" && (
                     <div className="space-y-4">
-                      <Field label="Allowed origins">
+                      <Field label={t.settings.form.allowedOrigins}>
                         <OriginsField
                           value={draft.allowed_origins}
                           onChange={(next) => update("allowed_origins", next)}
                         />
                       </Field>
-                      <Field label="Accent colour">
+                      <Field label={t.settings.form.accent}>
                         <div className="flex items-center gap-2">
                           <Input
                             type="color"
-                            aria-label="Accent colour"
+                            aria-label={t.settings.form.accent}
                             className="h-9 w-16 p-1"
                             value={theme.primaryColor}
                             onChange={(e) => {
                               // A colour input can only produce #rrggbb, which is exactly the
                               // shape the widget accepts — so the control itself is the
                               // validation, and a value that would be rejected cannot be typed.
-                              setTheme((t) => ({ ...t, primaryColor: e.target.value }))
+                              setTheme((current) => ({ ...current, primaryColor: e.target.value }))
                               setSaved(false)
                             }}
                           />
@@ -397,32 +393,32 @@ export function SettingsDialog({
                           </span>
                         </div>
                       </Field>
-                      <Field label="Which side it sits on">
+                      <Field label={t.settings.form.side}>
                         <Select
                           value={theme.position}
                           onValueChange={(next) => {
-                            setTheme((t) => ({ ...t, position: next }))
+                            setTheme((current) => ({ ...current, position: next }))
                             setSaved(false)
                           }}
                         >
-                          <SelectTrigger aria-label="Widget position">
+                          <SelectTrigger aria-label={t.settings.form.side}>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="right">bottom right</SelectItem>
-                            <SelectItem value="left">bottom left</SelectItem>
+                            <SelectItem value="right">{t.settings.form.sideRight}</SelectItem>
+                            <SelectItem value="left">{t.settings.form.sideLeft}</SelectItem>
                           </SelectContent>
                         </Select>
                       </Field>
-                      <Field label="Language of the buttons and placeholder">
+                      <Field label={t.settings.form.widgetLanguage}>
                         <Select
                           value={theme.locale}
                           onValueChange={(next) => {
-                            setTheme((t) => ({ ...t, locale: next }))
+                            setTheme((current) => ({ ...current, locale: next }))
                             setSaved(false)
                           }}
                         >
-                          <SelectTrigger aria-label="Widget language">
+                          <SelectTrigger aria-label={t.settings.form.widgetLanguage}>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -436,41 +432,41 @@ export function SettingsDialog({
                           write them.
                         </p>
                       </Field>
-                      <Field label="First thing a customer reads">
+                      <Field label={t.settings.form.greeting}>
                         <Textarea
                           value={theme.greeting}
                           rows={2}
                           onChange={(e) => {
-                            setTheme((t) => ({ ...t, greeting: e.target.value }))
+                            setTheme((current) => ({ ...current, greeting: e.target.value }))
                             setSaved(false)
                           }}
-                          placeholder="Halo! Ada yang bisa kami bantu?"
-                          aria-label="Widget greeting"
+                          placeholder={t.settings.form.greetingPlaceholder}
+                          aria-label={t.settings.form.greeting}
                         />
                       </Field>
-                      <Field label="Questions offered before they type">
+                      <Field label={t.settings.form.starters}>
                         <TagInput
                           value={theme.starters}
                           onChange={(next) => {
-                            setTheme((t) => ({ ...t, starters: next }))
+                            setTheme((current) => ({ ...current, starters: next }))
                             setSaved(false)
                           }}
-                          placeholder="e.g. Berapa lama garansinya?"
-                          aria-label="Opening questions"
+                          placeholder={t.settings.form.startersPlaceholder}
+                          aria-label={t.settings.form.starters}
                         />
                         <p className="mt-1 text-xs text-muted-foreground">
                           Leave empty and your approved canned answers are offered instead —
                           questions you already know you get, and that are guaranteed answerable.
                         </p>
                       </Field>
-                      <Field label="Title your customers see">
+                      <Field label={t.settings.form.widgetTitle}>
                         <Input
                           value={theme.title}
                           onChange={(e) => {
-                            setTheme((t) => ({ ...t, title: e.target.value }))
+                            setTheme((current) => ({ ...current, title: e.target.value }))
                             setSaved(false)
                           }}
-                          placeholder="Chat assistant"
+                          placeholder={t.settings.form.widgetTitlePlaceholder}
                         />
                       </Field>
                     </div>
@@ -491,10 +487,10 @@ export function SettingsDialog({
             {tenantSlug && fetched.status === "success" && (
               <footer className="flex shrink-0 items-center gap-3 border-t p-4">
                 <Button onClick={handleSave} disabled={saveState.status === "pending"}>
-                  {saveState.status === "pending" ? "Saving…" : "Save changes"}
+                  {saveState.status === "pending" ? t.common.saving : t.settings.save}
                 </Button>
                 {saved && saveState.status === "success" && (
-                  <span className="text-sm text-muted-foreground">Saved.</span>
+                  <span className="text-sm text-muted-foreground">{t.common.saved}</span>
                 )}
               </footer>
             )}

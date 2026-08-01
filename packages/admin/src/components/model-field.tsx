@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Input } from "./ui/input"
+import { useT } from "../i18n"
 import {
   Select,
   SelectContent,
@@ -33,6 +34,7 @@ export function ModelField({
   onChange: (next: string) => void
   ariaLabel: string
 }): React.ReactElement {
+  const t = useT()
   // A model the tenant already uses but the service no longer lists must stay selectable, or
   // opening this screen would silently offer to change a working setting.
   const options = React.useMemo(
@@ -45,7 +47,7 @@ export function ModelField({
       <>
         <Input value={value} onChange={(e) => onChange(e.target.value)} aria-label={ariaLabel} />
         <p className="mt-1 text-xs text-muted-foreground">
-          {error ?? "Add a provider key above and the models it offers will appear here."}
+          {error ?? t.settings.modelsUnavailable}
         </p>
       </>
     )

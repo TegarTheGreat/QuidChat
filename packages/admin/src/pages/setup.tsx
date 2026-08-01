@@ -8,6 +8,7 @@ import { useFetch } from "../hooks/use-fetch"
 import { Button } from "../components/ui/button"
 import type { Section } from "../components/app-sidebar"
 import { SetupAssistant } from "../components/setup-assistant"
+import { useT, type Dict } from "../i18n"
 import { api, type SetupFinding } from "../lib/api"
 
 /**
@@ -18,23 +19,25 @@ import { api, type SetupFinding } from "../lib/api"
  * listed here simply shows no button, which is the right failure for a new one nobody has
  * mapped yet.
  */
-type FixTarget = { kind: "section"; section: Section; label: string } | { kind: "settings"; label: string }
+type FixTarget =
+  | { kind: "section"; section: Section; label: (t: Dict) => string }
+  | { kind: "settings"; label: (t: Dict) => string }
 
 const FIX_LOCATION: Record<string, FixTarget> = {
   // Settings live in a dialog rather than on a screen, so these open it directly. Sending a
   // reader to a page that does not hold the setting would be worse than saying nothing.
-  "no-allowed-origins": { kind: "settings", label: "Open settings" },
-  "no-budget-limit": { kind: "settings", label: "Open settings" },
-  "budget-exhausted": { kind: "settings", label: "Open settings" },
-  "budget-nearly-exhausted": { kind: "settings", label: "Open settings" },
-  "empty-refusal-text": { kind: "settings", label: "Open settings" },
-  "no-high-risk-topics": { kind: "settings", label: "Open settings" },
-  "no-sources": { kind: "section", section: "knowledge", label: "Add a document" },
-  "sources-not-indexed": { kind: "section", section: "knowledge", label: "See your sources" },
-  "errored-sources": { kind: "section", section: "knowledge", label: "See what failed" },
-  "static-mode-no-approved-answers": { kind: "section", section: "canned", label: "Write an answer" },
-  "consider-canned-answers": { kind: "section", section: "canned", label: "Write an answer" },
-  "many-no-source-escalations": { kind: "section", section: "escalations", label: "Read the questions" },
+  "no-allowed-origins": { kind: "settings", label: (t) => t.setup.openSettings },
+  "no-budget-limit": { kind: "settings", label: (t) => t.setup.openSettings },
+  "budget-exhausted": { kind: "settings", label: (t) => t.setup.openSettings },
+  "budget-nearly-exhausted": { kind: "settings", label: (t) => t.setup.openSettings },
+  "empty-refusal-text": { kind: "settings", label: (t) => t.setup.openSettings },
+  "no-high-risk-topics": { kind: "settings", label: (t) => t.setup.openSettings },
+  "no-sources": { kind: "section", section: "knowledge", label: (t) => t.setup.addDocument },
+  "sources-not-indexed": { kind: "section", section: "knowledge", label: (t) => t.setup.seeSources },
+  "errored-sources": { kind: "section", section: "knowledge", label: (t) => t.setup.seeFailures },
+  "static-mode-no-approved-answers": { kind: "section", section: "canned", label: (t) => t.setup.writeAnswer },
+  "consider-canned-answers": { kind: "section", section: "canned", label: (t) => t.setup.writeAnswer },
+  "many-no-source-escalations": { kind: "section", section: "escalations", label: (t) => t.setup.readQuestions },
 }
 
 /**
@@ -47,7 +50,7 @@ const FIX_LOCATION: Record<string, FixTarget> = {
 const TONE: Record<
   SetupFinding["severity"],
   {
-    label: string
+    label: (t: Dict) => string
     variant: "destructive" | "secondary" | "outline"
     rail: string
     icon: typeof CircleAlert
@@ -55,21 +58,21 @@ const TONE: Record<
   }
 > = {
   blocker: {
-    label: "Blocking",
+    label: (t) => t.setup.severity.blocker,
     variant: "destructive",
     rail: "border-l-4 border-l-destructive",
     icon: CircleAlert,
     iconClass: "text-destructive",
   },
   warning: {
-    label: "Warning",
+    label: (t) => t.setup.severity.warning,
     variant: "secondary",
     rail: "border-l-4 border-l-amber-500",
     icon: AlertTriangle,
     iconClass: "text-amber-500",
   },
   suggestion: {
-    label: "Suggestion",
+    label: (t) => t.setup.severity.suggestion,
     variant: "outline",
     rail: "border-l-4 border-l-muted-foreground/40",
     icon: Lightbulb,
@@ -102,11 +105,12 @@ export function SetupPage({
   onGoTo?: (section: Section) => void
   onOpenSettings?: () => void
 }) {
+  const t = useT()
   const setup = useFetch(() => api.getSetup(tenantSlug), [tenantSlug])
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Setup</h1>
+      <h1 className="text-2xl font-semibold">{t.setup.title}</h1>
 
       {setup.status === "pending" && (
         <div className="space-y-2">
@@ -131,19 +135,15 @@ export function SetupPage({
                 same weight as the sentence under it, so the one line that says whether customers
                 are being answered read as the first half of a paragraph. */}
             <AlertTitle className="font-semibold">
-              {setup.data.ready ? "Ready to answer customers" : "Not answering yet"}
+              {setup.data.ready ? t.setup.ready : t.setup.notReady}
             </AlertTitle>
             <AlertDescription>
-              {setup.data.ready
-                ? "Nothing is blocking the assistant. Anything below is optional polish."
-                : "Something below has to be fixed before a customer can get an answer."}
+              {setup.data.ready ? t.setup.readyDetail : t.setup.notReadyDetail}
             </AlertDescription>
           </Alert>
 
           {setup.data.findings.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Nothing to report — this tenant is fully configured.
-            </p>
+            <p className="text-sm text-muted-foreground">{t.setup.allClear}</p>
           )}
 
           {setup.data.findings.map((finding) => {
@@ -156,12 +156,12 @@ export function SetupPage({
                   <Icon className={`size-4 shrink-0 ${tone.iconClass}`} />
                   {finding.title}
                 </CardTitle>
-                <Badge variant={tone.variant}>{tone.label}</Badge>
+                <Badge variant={tone.variant}>{tone.label(t)}</Badge>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <p className="text-muted-foreground">{finding.why}</p>
                 <p>
-                  <span className="font-medium">What to do: </span>
+                  <span className="font-medium">{t.setup.whatToDo}</span>
                   {finding.fix}
                 </p>
 {(() => {
@@ -174,7 +174,7 @@ export function SetupPage({
                   if (!go) return null
                   return (
                     <Button type="button" size="sm" variant="outline" onClick={go}>
-                      {target.label}
+                      {target.label(t)}
                     </Button>
                   )
                 })()}

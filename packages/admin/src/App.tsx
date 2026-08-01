@@ -7,6 +7,7 @@ import { Separator } from "./components/ui/separator"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "./components/ui/sidebar"
 import { useFetch } from "./hooks/use-fetch"
 import { useTenant } from "./hooks/use-tenant"
+import { useT } from "./i18n"
 import { api } from "./lib/api"
 import { clearToken } from "./lib/token"
 import { setTenant } from "./lib/tenant"
@@ -20,19 +21,8 @@ import { ChannelsPage } from "./pages/channels"
 import { SkillsPage } from "./pages/skills"
 import { TenantsPage } from "./pages/tenants"
 
-const SECTION_TITLES: Record<Section, string> = {
-  setup: "Setup",
-  overview: "Overview",
-  knowledge: "Knowledge",
-  conversations: "Conversations",
-  skills: "Skills & routing",
-  canned: "Canned answers",
-  channels: "Channels",
-  escalations: "Escalations",
-  tenants: "Tenants",
-}
-
 function AdminApp() {
+  const t = useT()
   const [section, setSection] = React.useState<Section>("setup")
   const [settingsOpen, setSettingsOpen] = React.useState(false)
   const [tenantsReloadKey, setTenantsReloadKey] = React.useState(0)
@@ -64,22 +54,18 @@ function AdminApp() {
         <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger />
           <Separator orientation="vertical" className="h-4" />
-          <h2 className="text-sm font-medium text-muted-foreground">
-            {SECTION_TITLES[section]}
-          </h2>
+          <h2 className="text-sm font-medium text-muted-foreground">{t.nav[section]}</h2>
         </header>
         <div className="flex-1 overflow-auto p-6">
           {tenants.status === "error" && <MutationError message={tenants.message} />}
           {!selectedTenant && tenants.status === "success" && (
-            <p className="text-sm text-muted-foreground">
-              No tenants yet. Create one from the Tenants section.
-            </p>
+            <p className="text-sm text-muted-foreground">{t.app.noTenants}</p>
           )}
           {selectedTenant && section === "setup" && (
             <SetupPage
               tenantSlug={selectedTenant}
-              {...(tenantList.find((t) => t.slug === selectedTenant)?.id
-                ? { tenantId: tenantList.find((t) => t.slug === selectedTenant)!.id }
+              {...(tenantList.find((tenant) => tenant.slug === selectedTenant)?.id
+                ? { tenantId: tenantList.find((tenant) => tenant.slug === selectedTenant)!.id }
                 : {})}
               onGoTo={setSection}
               onOpenSettings={() => setSettingsOpen(true)}

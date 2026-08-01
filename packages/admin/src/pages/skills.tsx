@@ -34,6 +34,7 @@ import {
 } from "../components/ui/table"
 import { Textarea } from "../components/ui/textarea"
 import { useFetch } from "../hooks/use-fetch"
+import { useT } from "../i18n"
 import { api, type RoutingRule, type Skill, type Source } from "../lib/api"
 
 const KINDS = ["keyword", "fallback", "semantic", "llm"] as const
@@ -59,6 +60,7 @@ function rulesFor(skill: Skill, rules: RoutingRule[]): RoutingRule[] {
  * the question an owner arrives with is "what happens to a message?".
  */
 export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
+  const t = useT()
   const [reloadKey, setReloadKey] = React.useState(0)
   const data = useFetch(() => api.getSkills(tenantSlug), [tenantSlug, reloadKey])
   const sources = useFetch(() => api.listSources(tenantSlug), [tenantSlug, reloadKey])
@@ -99,7 +101,7 @@ export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Skills &amp; routing</h1>
+        <h1 className="text-2xl font-semibold">{t.skills.title}</h1>
         <Button size="sm" onClick={() => setAdding(true)}>
           Add skill
         </Button>
@@ -117,7 +119,7 @@ export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
               separate lists. */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">How an incoming message is routed</CardTitle>
+              <CardTitle className="text-base">{t.skills.graphTitle}</CardTitle>
             </CardHeader>
             <CardContent>
               <RoutingGraph skills={data.data.skills} rules={data.data.rules} />
@@ -125,19 +127,16 @@ export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
           </Card>
 
           {data.data.skills.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No skills yet. Without any, every question is answered from all of this
-              tenant&rsquo;s documents — which is a sensible default, not a problem.
-            </p>
+            <p className="text-sm text-muted-foreground">{t.skills.noSkills}</p>
           ) : (
             <Card>
               <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Skill</TableHead>
-                      <TableHead>Routing</TableHead>
-                      <TableHead className="hidden sm:table-cell">Documents</TableHead>
+                      <TableHead>{t.skills.columnSkill}</TableHead>
+                      <TableHead>{t.skills.columnRoutingShort}</TableHead>
+                      <TableHead className="hidden sm:table-cell">{t.skills.columnDocuments}</TableHead>
                       <TableHead className="w-10" />
                     </TableRow>
                   </TableHeader>
@@ -149,8 +148,8 @@ export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
                           <TableCell className="align-top">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className="font-medium">{skill.name}</span>
-                              {skill.isFallback && <Badge variant="secondary">fallback</Badge>}
-                              {!skill.enabled && <Badge variant="outline">off</Badge>}
+                              {skill.isFallback && <Badge variant="secondary">{t.skills.fallbackBadge}</Badge>}
+                              {!skill.enabled && <Badge variant="outline">{t.skills.disabledBadge}</Badge>}
                               {skill.answerMode && (
                                 <Badge variant="outline">{skill.answerMode}</Badge>
                               )}
@@ -165,7 +164,7 @@ export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
                           <TableCell className="align-top">
                             {rules.length === 0 ? (
                               <span className="text-xs text-muted-foreground">
-                                nothing points here
+                                {t.skills.noRules}
                               </span>
                             ) : (
                               <ul className="space-y-1">
@@ -195,22 +194,22 @@ export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
 
                           <TableCell className="hidden align-top text-xs text-muted-foreground sm:table-cell">
                             {skill.sources.length === 0
-                              ? "all of them"
-                              : `${skill.sources.length} linked`}
+                              ? t.skills.allDocuments
+                              : t.skills.linkedCount(skill.sources.length)}
                           </TableCell>
 
                           <TableCell className="align-top">
                             <RowActions
-                              label={`Actions for ${skill.name}`}
+                              label={t.common.actionsFor(skill.name)}
                               actions={[
-                                { label: "Edit", disabled: busy, onSelect: () => setEditing(skill) },
+                                { label: t.common.edit, disabled: busy, onSelect: () => setEditing(skill) },
                                 {
-                                  label: "Add routing rule",
+                                  label: t.skills.addRule,
                                   disabled: busy,
                                   onSelect: () => setRuleFor(skill),
                                 },
                                 {
-                                  label: "Choose documents",
+                                  label: t.skills.chooseDocuments,
                                   disabled: busy,
                                   onSelect: () => setLinking(skill),
                                 },
@@ -265,8 +264,8 @@ export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
       <Dialog open={adding} onOpenChange={setAdding}>
         {adding && (
           <SkillDialog
-            title="Add a skill"
-            description="A persona with its own instructions and its own slice of the documents."
+            title={t.skills.dialog.addTitle}
+            description={t.skills.addDescription}
             busy={busy}
             onSubmit={async (values) => {
               const ok = await act(() =>
@@ -285,8 +284,8 @@ export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         {editing && (
           <SkillDialog
-            title={`Edit ${editing.name}`}
-            description="Renaming changes only what you see here — the assistant's answers are unaffected."
+            title={t.skills.dialog.editTitle(editing.name)}
+            description={t.skills.editDescription}
             busy={busy}
             initial={{
               name: editing.name,
@@ -351,9 +350,9 @@ export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
 
       <ConfirmDialog
         open={pendingSkill !== null}
-        title={`Delete “${pendingSkill?.name}”?`}
-        description="Its routing rules and document links go with it. Conversations it already answered stay in the transcript — deleting a persona should not rewrite what customers were told."
-        confirmLabel="Delete skill"
+        title={t.skills.deleteTitle(pendingSkill?.name ?? "")}
+        description={t.skills.deleteSkillDescription}
+        confirmLabel={t.skills.deleteSkillConfirm}
         busy={busy}
         onCancel={() => setPendingSkill(null)}
         onConfirm={() => {
@@ -368,9 +367,9 @@ export function SkillsPage({ tenantSlug }: { tenantSlug: string }) {
 
       <ConfirmDialog
         open={pendingRule !== null}
-        title="Remove this rule?"
-        description="Messages it was catching fall through to the rules below it, and then to the fallback skill."
-        confirmLabel="Remove rule"
+        title={t.skills.removeRuleTitle}
+        description={t.skills.removeRuleDescription}
+        confirmLabel={t.skills.removeRuleConfirm}
         busy={busy}
         onCancel={() => setPendingRule(null)}
         onConfirm={() => {
@@ -400,6 +399,7 @@ function SkillDialog({
   busy: boolean
   onSubmit: (values: { name: string; systemPrompt: string; answerMode: string }) => void
 }): React.ReactElement {
+  const t = useT()
   const [name, setName] = React.useState(initial?.name ?? "")
   const [systemPrompt, setPrompt] = React.useState(initial?.systemPrompt ?? "")
   const [answerMode, setMode] = React.useState(initial?.answerMode ?? "inherit")
@@ -412,38 +412,35 @@ function SkillDialog({
       </DialogHeader>
       <div className="space-y-3">
         <div className="space-y-1">
-          <Label htmlFor="skill-name">Name</Label>
+          <Label htmlFor="skill-name">{t.skills.dialog.nameLabel}</Label>
           <Input
             id="skill-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Sales"
+            placeholder={t.skills.namePlaceholder}
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="skill-prompt">How it should answer</Label>
+          <Label htmlFor="skill-prompt">{t.skills.promptLabelLong}</Label>
           <Textarea
             id="skill-prompt"
             rows={3}
             value={systemPrompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="You handle questions about products and prices."
+            placeholder={t.skills.promptPlaceholder}
           />
-          <p className="text-xs text-muted-foreground">
-            Added to the grounding rules, never in place of them — a skill sets voice and scope,
-            not whether citations are required.
-          </p>
+          <p className="text-xs text-muted-foreground">{t.skills.promptFooter}</p>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="skill-mode">Answer mode</Label>
+          <Label htmlFor="skill-mode">{t.skills.dialog.modeLabel}</Label>
           <Select value={answerMode} onValueChange={setMode}>
-            <SelectTrigger id="skill-mode" aria-label="Answer mode">
+            <SelectTrigger id="skill-mode" aria-label={t.skills.dialog.modeLabel}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {MODES.map((mode) => (
                 <SelectItem key={mode} value={mode}>
-                  {mode === "inherit" ? "same as the tenant" : mode}
+                  {mode === "inherit" ? t.skills.modeInheritShort : mode}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -457,7 +454,7 @@ function SkillDialog({
             onSubmit({ name: name.trim(), systemPrompt: systemPrompt.trim(), answerMode })
           }
         >
-          Save
+          {t.common.save}
         </Button>
       </DialogFooter>
     </DialogContent>
@@ -473,6 +470,7 @@ function RuleDialog({
   busy: boolean
   onSubmit: (kind: string, pattern: string) => void
 }): React.ReactElement {
+  const t = useT()
   const [kind, setKind] = React.useState<string>("keyword")
   const [pattern, setPattern] = React.useState("")
   const needsPattern = kind === "keyword"
@@ -480,26 +478,23 @@ function RuleDialog({
   return (
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Send messages to {skillName}</DialogTitle>
-        <DialogDescription>
-          Rules run in order from the top and the first match wins, so this one is added at the
-          end.
-        </DialogDescription>
+        <DialogTitle>{t.skills.ruleDialogTitle(skillName)}</DialogTitle>
+        <DialogDescription>{t.skills.ruleOrderHint}</DialogDescription>
       </DialogHeader>
       <div className="space-y-3">
         <div className="space-y-1">
-          <Label htmlFor="rule-kind">When</Label>
+          <Label htmlFor="rule-kind">{t.skills.ruleWhen}</Label>
           <Select value={kind} onValueChange={setKind}>
-            <SelectTrigger id="rule-kind" aria-label="Rule kind">
+            <SelectTrigger id="rule-kind" aria-label={t.skills.ruleKindLabel}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {KINDS.map((k) => (
                 <SelectItem key={k} value={k}>
                   {k === "keyword"
-                    ? "the message contains a word"
+                    ? t.skills.ruleKeyword
                     : k === "fallback"
-                      ? "nothing else matched"
+                      ? t.skills.ruleFallback
                       : k}
                 </SelectItem>
               ))}
@@ -509,19 +504,17 @@ function RuleDialog({
             // Said here rather than discovered later: a rule of this kind sits in the list looking
             // configured and never fires, which is how "deferred" becomes "broken" in someone's
             // mind.
-            <p className="text-xs text-muted-foreground">
-              Not built yet — a rule of this kind is skipped when messages are routed.
-            </p>
+            <p className="text-xs text-muted-foreground">{t.skills.notBuiltHint}</p>
           )}
         </div>
         {needsPattern && (
           <div className="space-y-1">
-            <Label htmlFor="rule-pattern">Word</Label>
+            <Label htmlFor="rule-pattern">{t.skills.ruleWord}</Label>
             <Input
               id="rule-pattern"
               value={pattern}
               onChange={(e) => setPattern(e.target.value)}
-              placeholder="garansi"
+              placeholder={t.skills.ruleWordPlaceholder}
             />
           </div>
         )}
@@ -531,7 +524,7 @@ function RuleDialog({
           disabled={busy || (needsPattern && pattern.trim() === "")}
           onClick={() => onSubmit(kind, pattern.trim())}
         >
-          Add rule
+          {t.skills.ruleDialog.submit}
         </Button>
       </DialogFooter>
     </DialogContent>
@@ -551,18 +544,17 @@ function SourcesDialog({
   busy: boolean
   onToggle: (sourceId: string, linked: boolean) => void
 }): React.ReactElement {
+  const t = useT()
   const linked = new Set(skill.sources.map((s) => s.sourceId))
   return (
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Documents {skill.name} may use</DialogTitle>
-        <DialogDescription>
-          With none ticked, this skill can answer from every document.
-        </DialogDescription>
+        <DialogTitle>{t.skills.sourcesDialogTitle(skill.name)}</DialogTitle>
+        <DialogDescription>{t.skills.noneTickedHint}</DialogDescription>
       </DialogHeader>
       <div className="max-h-72 space-y-2 overflow-y-auto">
         {sources.length === 0 && (
-          <p className="text-sm text-muted-foreground">No documents indexed yet.</p>
+          <p className="text-sm text-muted-foreground">{t.skills.noDocuments}</p>
         )}
         {sources.map((source) => (
           <label key={source.id} className="flex items-center gap-2 text-sm">

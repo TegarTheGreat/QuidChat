@@ -3,6 +3,7 @@ import { Button } from "./ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card"
 import { Input } from "./ui/input"
 import { MutationError } from "./mutation-error"
+import { useT } from "../i18n"
 import { api, type SetupChatReply } from "../lib/api"
 import { cn } from "../lib/utils"
 
@@ -21,15 +22,10 @@ import { cn } from "../lib/utils"
  * Three questions are offered to start with, because "ask me anything about your setup" is the
  * same empty box the widget had before it was given something to say.
  */
-const OPENERS = [
-  "Why is my assistant refusing questions?",
-  "What does answer mode change?",
-  "Is anything blocking it from answering?",
-]
-
 type Turn = { role: "user" | "assistant"; content: string; ran?: string[] }
 
 export function SetupAssistant({ tenantId }: { tenantId: string }): React.ReactElement {
+  const t = useT()
   const [turns, setTurns] = React.useState<Turn[]>([])
   const [draft, setDraft] = React.useState("")
   const [busy, setBusy] = React.useState(false)
@@ -41,13 +37,13 @@ export function SetupAssistant({ tenantId }: { tenantId: string }): React.ReactE
     setBusy(true)
     setError(null)
     setPending(undefined)
-    const history = turns.map((t) => ({ role: t.role, content: t.content }))
-    setTurns((t) => [...t, { role: "user", content: message }])
+    const history = turns.map((turn) => ({ role: turn.role, content: turn.content }))
+    setTurns((prev) => [...prev, { role: "user", content: message }])
     setDraft("")
     try {
       const reply = await api.setupChat({ tenantId, message, history })
-      setTurns((t) => [
-        ...t,
+      setTurns((prev) => [
+        ...prev,
         { role: "assistant", content: reply.text, ...(reply.ran?.length ? { ran: reply.ran } : {}) },
       ])
       if (reply.kind === "needs_confirmation") setPending(reply.pending)
@@ -68,7 +64,7 @@ export function SetupAssistant({ tenantId }: { tenantId: string }): React.ReactE
         message: "confirmed",
         confirm: { call: pending.call, confirmed: true },
       })
-      setTurns((t) => [...t, { role: "assistant", content: reply.text }])
+      setTurns((prev) => [...prev, { role: "assistant", content: reply.text }])
       setPending(undefined)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -80,16 +76,13 @@ export function SetupAssistant({ tenantId }: { tenantId: string }): React.ReactE
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Ask about your setup</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          It checks the real thing before answering — what is indexed, what is configured, what the
-          diagnostics say — rather than answering from memory.
-        </p>
+        <CardTitle className="text-base">{t.setup.assistant.title}</CardTitle>
+        <p className="text-sm text-muted-foreground">{t.setup.assistant.description}</p>
       </CardHeader>
       <CardContent className="space-y-3">
         {turns.length === 0 && (
           <div className="flex flex-wrap gap-2">
-            {OPENERS.map((question) => (
+            {t.setup.assistant.openers.map((question) => (
               <Button
                 key={question}
                 type="button"
@@ -121,12 +114,12 @@ export function SetupAssistant({ tenantId }: { tenantId: string }): React.ReactE
                   // What it actually did, not only what it says it did. An assistant that claims
                   // to have checked something is worth less than one that shows the check.
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Checked: {turn.ran.join(", ")}
+                    {t.setup.assistant.checked(turn.ran.join(", "))}
                   </p>
                 )}
               </div>
             ))}
-            {busy && <p className="text-sm text-muted-foreground">Checking…</p>}
+            {busy && <p className="text-sm text-muted-foreground">{t.setup.assistant.checking}</p>}
           </div>
         )}
 
@@ -137,7 +130,7 @@ export function SetupAssistant({ tenantId }: { tenantId: string }): React.ReactE
             <p className="text-sm">{pending.summary}</p>
             <div className="flex gap-2">
               <Button size="sm" disabled={busy} onClick={() => void confirmPending()}>
-                Do it
+                {t.setup.assistant.doIt}
               </Button>
               <Button
                 size="sm"
@@ -145,7 +138,7 @@ export function SetupAssistant({ tenantId }: { tenantId: string }): React.ReactE
                 disabled={busy}
                 onClick={() => setPending(undefined)}
               >
-                Leave it
+                {t.setup.assistant.leaveIt}
               </Button>
             </div>
           </div>
@@ -161,12 +154,12 @@ export function SetupAssistant({ tenantId }: { tenantId: string }): React.ReactE
           <Input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Ask about anything on this page"
-            aria-label="Ask the setup assistant"
+            placeholder={t.setup.assistant.placeholder}
+            aria-label={t.setup.assistant.inputLabel}
             disabled={busy}
           />
           <Button type="submit" disabled={busy || draft.trim() === ""}>
-            Ask
+            {t.setup.assistant.ask}
           </Button>
         </form>
       </CardContent>

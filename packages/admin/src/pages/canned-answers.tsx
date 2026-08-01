@@ -19,6 +19,7 @@ import { Skeleton } from "../components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table"
 import { Textarea } from "../components/ui/textarea"
 import { useFetch } from "../hooks/use-fetch"
+import { useT } from "../i18n"
 import { api, type CannedAnswer } from "../lib/api"
 
 /**
@@ -31,6 +32,7 @@ import { api, type CannedAnswer } from "../lib/api"
  * first, and why nothing here hides them.
  */
 export function CannedAnswersPage({ tenantSlug }: { tenantSlug: string }) {
+  const t = useT()
   const [reloadKey, setReloadKey] = React.useState(0)
   const data = useFetch(() => api.listCannedAnswers(tenantSlug), [tenantSlug, reloadKey])
 
@@ -64,15 +66,11 @@ export function CannedAnswersPage({ tenantSlug }: { tenantSlug: string }) {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-        <h1 className="text-2xl font-semibold">Canned answers</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Exact answers to exact questions, matched without calling a model. In{" "}
-          <code className="rounded bg-muted px-1">static</code> mode these are the only thing
-          the assistant can say, so it costs nothing to run.
-        </p>
+        <h1 className="text-2xl font-semibold">{t.canned.title}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t.canned.lead}</p>
         </div>
         <Button size="sm" onClick={() => setAdding(true)}>
-          Add answer
+          {t.canned.addAnswer}
         </Button>
       </div>
 
@@ -85,29 +83,26 @@ export function CannedAnswersPage({ tenantSlug }: { tenantSlug: string }) {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              {rows.length} answer{rows.length === 1 ? "" : "s"}
+              {t.canned.count(rows.length)}
               {draftCount > 0 && (
                 <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  {draftCount} waiting for approval
+                  {t.canned.waitingApproval(draftCount)}
                 </span>
               )}
             </CardTitle>
           </CardHeader>
           <CardContent>
             {rows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Nothing yet. A tenant in static mode with no approved answers refuses every
-                question — deliberately, since the alternative is inventing one.
-              </p>
+              <p className="text-sm text-muted-foreground">{t.canned.emptyStatic}</p>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Question</TableHead>
-                      <TableHead>Answer</TableHead>
-                      <TableHead>State</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>{t.canned.columnQuestion}</TableHead>
+                      <TableHead>{t.canned.columnAnswer}</TableHead>
+                      <TableHead>{t.canned.columnStatus}</TableHead>
+                      <TableHead className="text-right">{t.canned.columnActions}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -117,9 +112,9 @@ export function CannedAnswersPage({ tenantSlug }: { tenantSlug: string }) {
                         <TableCell className="max-w-md text-muted-foreground">{row.answer}</TableCell>
                         <TableCell>
                           {row.status === "approved" ? (
-                            <Badge variant="secondary">Live</Badge>
+                            <Badge variant="secondary">{t.canned.live}</Badge>
                           ) : (
-                            <Badge variant="outline">Draft — not sent</Badge>
+                            <Badge variant="outline">{t.canned.draftBadge}</Badge>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
@@ -142,14 +137,14 @@ export function CannedAnswersPage({ tenantSlug }: { tenantSlug: string }) {
                                 )
                               }
                             >
-                              {row.status === "approved" ? "Withdraw" : "Approve"}
+                              {row.status === "approved" ? t.canned.withdraw : t.canned.approve}
                             </Button>
                             <RowActions
-                              label={`Actions for ${row.question}`}
+                              label={t.common.actionsFor(row.question)}
                               actions={[
-                                { label: "Edit", disabled: busy, onSelect: () => setEditing(row) },
+                                { label: t.common.edit, disabled: busy, onSelect: () => setEditing(row) },
                                 {
-                                  label: "Delete",
+                                  label: t.common.delete,
                                   destructive: true,
                                   disabled: busy,
                                   onSelect: () => setPendingDelete(row),
@@ -171,8 +166,8 @@ export function CannedAnswersPage({ tenantSlug }: { tenantSlug: string }) {
       <Dialog open={adding} onOpenChange={setAdding}>
         {adding && (
           <AnswerDialog
-            title="Add an answer"
-            description="Matching tolerates different wording and typos, so write the question the way a customer would — not as a keyword."
+            title={t.canned.dialog.addTitle}
+            description={t.canned.addDescription}
             busy={busy}
             onSubmit={async (values) => {
               const ok = await act(() =>
@@ -188,7 +183,7 @@ export function CannedAnswersPage({ tenantSlug }: { tenantSlug: string }) {
               )
               if (ok) setAdding(false)
             }}
-            submitLabel="Add and approve"
+            submitLabel={t.canned.dialog.addAndApprove}
           />
         )}
       </Dialog>
@@ -196,11 +191,11 @@ export function CannedAnswersPage({ tenantSlug }: { tenantSlug: string }) {
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         {editing && (
           <AnswerDialog
-            title="Edit this answer"
-            description="Saving sends it back to draft — the approval was for the old words, and a person should read the new ones before a customer does."
+            title={t.canned.dialog.editTitle}
+            description={t.canned.editDescription}
             busy={busy}
             initial={{ question: editing.question, answer: editing.answer }}
-            submitLabel="Save as draft"
+            submitLabel={t.canned.dialog.addAsDraft}
             onSubmit={async (values) => {
               const ok = await act(() =>
                 api.updateCannedAnswer({
@@ -218,9 +213,9 @@ export function CannedAnswersPage({ tenantSlug }: { tenantSlug: string }) {
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title={`Delete “${pendingDelete?.question}”?`}
-        description="Customers asking this go back to being answered from the documents, or refused if nothing covers it."
-        confirmLabel="Delete answer"
+        title={t.canned.deleteTitle(pendingDelete?.question ?? "")}
+        description={t.canned.deleteDescription}
+        confirmLabel={t.canned.deleteAnswer}
         busy={busy}
         onCancel={() => setPendingDelete(null)}
         onConfirm={() => {
@@ -252,6 +247,7 @@ function AnswerDialog({
   submitLabel: string
   onSubmit: (values: { question: string; answer: string }) => void
 }): React.ReactElement {
+  const t = useT()
   const [question, setQuestion] = React.useState(initial?.question ?? "")
   const [answer, setAnswer] = React.useState(initial?.answer ?? "")
 
@@ -263,22 +259,22 @@ function AnswerDialog({
       </DialogHeader>
       <div className="space-y-3">
         <div className="space-y-1">
-          <Label htmlFor="canned-question">Question a customer would ask</Label>
+          <Label htmlFor="canned-question">{t.canned.questionLabel}</Label>
           <Input
             id="canned-question"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="How long is the warranty?"
+            placeholder={t.canned.questionPlaceholder}
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="canned-answer">Answer to send, word for word</Label>
+          <Label htmlFor="canned-answer">{t.canned.answerLabel}</Label>
           <Textarea
             id="canned-answer"
             rows={4}
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
-            placeholder="Every unit carries a one-year warranty from the purchase date."
+            placeholder={t.canned.answerPlaceholder}
           />
         </div>
       </div>

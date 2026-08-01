@@ -290,6 +290,53 @@ check("cancelling is possible", (await clickText("Cancel")) === "clicked")
  * one that cannot be saved.
  */
 /**
+ * Languages.
+ *
+ * The panel ships in ten, and the picker is the only way in for someone who cannot read the one
+ * it opened in. Switching is checked in the browser rather than in a unit test because what
+ * matters is that the whole screen changes, not that a dictionary has a key.
+ */
+console.log("languages")
+await send("Page.navigate", { url: `${BASE}/panel` })
+await sleep(2000)
+check(
+  "the panel opens in English by default",
+  (await bodyText()).includes("Setup"),
+)
+await pointerClick(`[data-quidchat="language-picker"]`)
+await sleep(400)
+// The picker names each language in its own words, so this is what an Indonesian reader looks for.
+const switched = await evaluate(`(() => {
+  const items = [...document.querySelectorAll('[role="menuitem"]')]
+  const target = items.find(i => i.textContent.trim() === "Bahasa Indonesia")
+  if (!target) return "not found: " + items.map(i => i.textContent.trim()).join("|")
+  for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+    target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0 }))
+  }
+  return "clicked"
+})()`)
+check("the language picker offers Bahasa Indonesia", switched === "clicked", switched)
+await sleep(1200)
+text = await bodyText()
+check("switching translates the whole screen", text.includes("Persiapan") && text.includes("Pengetahuan"), text.slice(0, 300))
+check(
+  "the choice survives a reload",
+  await (async () => {
+    await send("Page.navigate", { url: `${BASE}/panel` })
+    await sleep(2200)
+    return (await bodyText()).includes("Persiapan")
+  })(),
+)
+check(
+  "the document language follows it, for screen readers",
+  (await evaluate(`document.documentElement.lang`)) === "id",
+)
+// Back to English so every check after this one reads the labels it expects.
+await evaluate(`localStorage.setItem("quidchat-admin-locale", "en")`)
+await send("Page.navigate", { url: `${BASE}/panel` })
+await sleep(2000)
+
+/**
  * The setup assistant.
  *
  * The route and the agent behind it shipped with nothing calling them — a capability that could

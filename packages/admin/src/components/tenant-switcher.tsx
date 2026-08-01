@@ -1,6 +1,7 @@
 "use client"
 
 import { Building2, ChevronsUpDown, Plus } from "lucide-react"
+import { useT } from "../i18n"
 import type { Tenant } from "../lib/api"
 
 import {
@@ -27,8 +28,10 @@ export function TenantSwitcher({
   onSelect: (slug: string) => void
   onManageTenants: () => void
 }) {
+  const t = useT()
   const { isMobile } = useSidebar()
-  const activeTenant = tenants.find((t) => t.slug === selected) ?? null
+  // Named `tenant` rather than `t`, which now belongs to the dictionary.
+  const activeTenant = tenants.find((tenant) => tenant.slug === selected) ?? null
 
   return (
     <SidebarMenu>
@@ -44,10 +47,10 @@ export function TenantSwitcher({
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">
-                  {activeTenant?.name ?? "Select a tenant"}
+                  {activeTenant?.name ?? t.token.selectTenant}
                 </span>
                 <span className="truncate text-xs">
-                  {activeTenant?.slug ?? "No tenant selected"}
+                  {activeTenant?.slug ?? t.token.noTenantSelected}
                 </span>
               </div>
               <ChevronsUpDown className="ml-auto" />
@@ -60,7 +63,7 @@ export function TenantSwitcher({
             sideOffset={4}
           >
             <DropdownMenuLabel className="text-xs text-muted-foreground">
-              Tenants
+              {t.nav.tenants}
             </DropdownMenuLabel>
             {tenants.map((tenant) => (
               <DropdownMenuItem
@@ -82,7 +85,7 @@ export function TenantSwitcher({
               <div className="flex size-6 items-center justify-center rounded-md border bg-background">
                 <Plus className="size-4" />
               </div>
-              <div className="font-medium text-muted-foreground">Manage tenants</div>
+              <div className="font-medium text-muted-foreground">{t.token.manageTenants}</div>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

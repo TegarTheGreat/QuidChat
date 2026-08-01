@@ -1,5 +1,7 @@
 # QuidChat
 
+**English** · [Bahasa Indonesia](docs/readme/README.id.md) · [Bahasa Melayu](docs/readme/README.ms.md) · [中文](docs/readme/README.zh.md) · [हिन्दी](docs/readme/README.hi.md) · [Español](docs/readme/README.es.md) · [Português](docs/readme/README.pt.md) · [Русский](docs/readme/README.ru.md) · [日本語](docs/readme/README.ja.md) · [한국어](docs/readme/README.ko.md)
+
 A chat assistant your customers can ask about **your** products and services — and that never makes anything up.
 
 Every statement it makes about your business comes from a document you gave it, and it shows which one. When it has no source, it says so instead of guessing.
@@ -29,10 +31,13 @@ cat policy.txt | node packages/cli/dist/main.mjs add-text my-shop \
 node packages/cli/dist/main.mjs add-url my-shop https://myshop.example/delivery \
   --title "Delivery terms"
 
+# Or read the whole site — also available in the panel, under Knowledge
+node packages/cli/dist/main.mjs add-site my-shop https://myshop.example --max-pages 25
+
 node packages/cli/dist/main.mjs serve
 ```
 
-The admin panel is at **http://localhost:3210/panel** — every setting lives there, including the ones this quick start passed as flags.
+The admin panel is at **http://localhost:3210/panel** — every setting lives there, including the ones this quick start passed as flags. It speaks ten languages and starts in the browser's own: English, Indonesian, Malay, Chinese, Hindi, Spanish, Portuguese, Russian, Japanese and Korean. That is the panel's language, and it is separate from the one your customers read, which is set per business under Settings → Widget.
 
 Then paste this into the site you allowed:
 

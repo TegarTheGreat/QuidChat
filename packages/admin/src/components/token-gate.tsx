@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { useToken } from "../hooks/use-token"
+import { useT } from "../i18n"
 import { setToken } from "../lib/token"
 
 /**
@@ -11,6 +12,7 @@ import { setToken } from "../lib/token"
  * and `sessionStorage` only (see `lib/token.ts`) — never `localStorage`.
  */
 export function TokenGate({ children }: { children: React.ReactNode }) {
+  const t = useT()
   const token = useToken()
   const [draft, setDraft] = React.useState("")
 
@@ -20,10 +22,8 @@ export function TokenGate({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>QuidChat Admin</CardTitle>
-          <CardDescription>
-            Enter the admin token to manage tenants, knowledge, and settings.
-          </CardDescription>
+          <CardTitle>{t.token.brand}</CardTitle>
+          <CardDescription>{t.token.description}</CardDescription>
         </CardHeader>
         <CardContent>
           <form
@@ -34,7 +34,7 @@ export function TokenGate({ children }: { children: React.ReactNode }) {
             }}
           >
             <div className="space-y-2">
-              <Label htmlFor="admin-token">Admin token</Label>
+              <Label htmlFor="admin-token">{t.token.title}</Label>
               <Input
                 id="admin-token"
                 type="password"
@@ -45,7 +45,7 @@ export function TokenGate({ children }: { children: React.ReactNode }) {
               />
             </div>
             <Button type="submit" className="w-full" disabled={draft.trim().length === 0}>
-              Continue
+              {t.token.submit}
             </Button>
           </form>
         </CardContent>

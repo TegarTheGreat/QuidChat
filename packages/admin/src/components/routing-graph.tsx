@@ -24,12 +24,15 @@ import type { RoutingRule, Skill } from "../lib/api"
  *   - A skill no rule points at is only reachable when another skill hands off to it.
  */
 
+import { useT, type Dict } from "../i18n"
 import { buildRows, ROW, TOP } from "./routing-graph-logic.js"
 
-function ruleSummary(rule: RoutingRule): string {
-  if (rule.kind === "fallback") return "Everything else"
-  if (rule.kind === "keyword") return rule.pattern ? `Contains “${rule.pattern}”` : "No keyword set"
-  return rule.kind === "semantic" ? "Similar in meaning" : "Decided by the model"
+function ruleSummary(t: Dict, rule: RoutingRule): string {
+  if (rule.kind === "fallback") return t.routing.everythingElse
+  if (rule.kind === "keyword") {
+    return rule.pattern ? t.routing.contains(rule.pattern) : t.routing.noKeyword
+  }
+  return rule.kind === "semantic" ? t.routing.similar : t.routing.modelDecides
 }
 
 export function RoutingGraph({
@@ -39,6 +42,7 @@ export function RoutingGraph({
   skills: Skill[]
   rules: RoutingRule[]
 }): React.ReactElement {
+  const t = useT()
   const rows = React.useMemo(() => buildRows(rules, skills), [rules, skills])
   const targeted = new Set(rows.filter((r) => !r.unreachable).map((r) => r.rule.skillId))
   const handoffOnly = skills.filter((s) => s.enabled && !targeted.has(s.id))
@@ -47,7 +51,7 @@ export function RoutingGraph({
   if (rows.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-        No rules yet. Every message is answered directly, without choosing a skill.
+        {t.routing.empty}
       </div>
     )
   }
@@ -70,22 +74,24 @@ export function RoutingGraph({
                 {i + 1}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{ruleSummary(row.rule)}</div>
+                <div className="truncate text-sm font-medium">{ruleSummary(t, row.rule)}</div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs text-muted-foreground">{row.rule.kind}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {t.skills.ruleKinds[row.rule.kind] ?? row.rule.kind}
+                  </span>
                   {!row.rule.enabled && (
                     <Badge variant="outline" className="h-4 px-1 text-[10px]">
-                      off
+                      {t.routing.off}
                     </Badge>
                   )}
                   {row.notImplemented && (
                     <Badge variant="outline" className="h-4 px-1 text-[10px]">
-                      not built yet
+                      {t.routing.notBuilt}
                     </Badge>
                   )}
                   {row.unreachable && (
                     <Badge variant="destructive" className="h-4 px-1 text-[10px]">
-                      never reached
+                      {t.routing.neverReached}
                     </Badge>
                   )}
                 </div>
@@ -135,14 +141,14 @@ export function RoutingGraph({
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                   {skill.isFallback && (
                     <Badge variant="secondary" className="h-4 px-1 text-[10px]">
-                      fallback
+                      {t.routing.fallback}
                     </Badge>
                   )}
                   {skill.answerMode && (
                     <span className="text-xs text-muted-foreground">{skill.answerMode}</span>
                   )}
                   <span className="text-xs text-muted-foreground">
-                    {skill.sources.length} source{skill.sources.length === 1 ? "" : "s"}
+                    {t.routing.sources(skill.sources.length)}
                   </span>
                 </div>
               </div>
@@ -155,18 +161,11 @@ export function RoutingGraph({
         // Not an error — a skill can legitimately exist only to receive handoffs. But an owner
         // who thinks they routed to it deserves to see that no rule does.
         <p className="text-xs text-muted-foreground">
-          No rule leads to{" "}
-          <span className="font-medium text-foreground">
-            {handoffOnly.map((s) => s.name).join(", ")}
-          </span>
-          . These are reachable only when another skill hands a question over.
+          {t.routing.handoffOnly(handoffOnly.map((s) => s.name).join(", "))}
         </p>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Rules run top to bottom, and the first match wins. Beyond that, the skill answering can
-        hand a question to another one when it turns out not to be its subject.
-      </p>
+      <p className="text-xs text-muted-foreground">{t.routing.footnote}</p>
     </div>
   )
 }

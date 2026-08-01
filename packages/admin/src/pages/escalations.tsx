@@ -18,17 +18,13 @@ import { Textarea } from "../components/ui/textarea"
 import { useFetch } from "../hooks/use-fetch"
 import { useMutation } from "../hooks/use-mutation"
 import { formatRelative } from "../lib/format"
+import { useT, type Dict } from "../i18n"
 import { api, type Escalation } from "../lib/api"
 
 /** Plain-language headings. `no_source` is the database's word for it, not a business
  *  owner's, and this screen exists to tell them what to do next. */
-const REASON_TITLES: Record<string, string> = {
-  no_source: "Nothing in your documents covered it",
-  ungrounded: "The answer could not be backed by a source",
-  budget_exhausted: "The monthly budget was already spent",
-  provider_unavailable: "The AI provider could not be reached",
-  handoff_limit: "Passed between skills too many times",
-  rate_limited: "Too many messages too quickly",
+function reasonTitle(t: Dict, reason: string): string {
+  return t.escalations.reasons[reason] ?? reason
 }
 
 function groupByReason(escalations: Escalation[]): [string, Escalation[]][] {
@@ -54,6 +50,7 @@ function groupByReason(escalations: Escalation[]): [string, Escalation[]][] {
  * copy the question into another screen is where that loop breaks.
  */
 export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
+  const t = useT()
   const [reloadKey, setReloadKey] = React.useState(0)
   const escalations = useFetch(() => api.listEscalations(tenantSlug), [tenantSlug, reloadKey])
 
@@ -109,9 +106,7 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
       // The answer is saved either way, and saying so matters: retrying from a blank dialog
       // would write it a second time.
       setRowError(
-        `The answer was saved, but this row could not be marked handled: ${
-          cause instanceof Error ? cause.message : String(cause)
-        }`,
+        t.escalations.savedNotResolved(cause instanceof Error ? cause.message : String(cause)),
       )
     }
     setAnswering(null)
@@ -122,11 +117,8 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold">Escalations</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Questions your assistant declined rather than guessed at. Answering one here saves it
-          as a canned answer, so the next customer who asks gets a reply.
-        </p>
+        <h1 className="text-2xl font-semibold">{t.escalations.title}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t.escalations.description}</p>
       </div>
 
       {escalations.status === "pending" && (
@@ -141,17 +133,13 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
       {escalations.status === "success" && (
         <div className="space-y-4">
           {escalations.data.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Nothing declined yet. On a live assistant this list filling up is not a fault —
-              it is the assistant refusing to invent answers, and it is where the next thing to
-              write down comes from.
-            </p>
+            <p className="text-sm text-muted-foreground">{t.escalations.empty}</p>
           )}
           {groupByReason(escalations.data).map(([reason, group]) => (
             <Card key={reason}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0">
                 <div>
-                  <CardTitle className="text-base">{REASON_TITLES[reason] ?? reason}</CardTitle>
+                  <CardTitle className="text-base">{reasonTitle(t, reason)}</CardTitle>
                   <p className="mt-1 text-xs text-muted-foreground">{reason}</p>
                 </div>
                 <Badge variant="secondary">{group.length}</Badge>
@@ -161,10 +149,10 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>What the customer asked</TableHead>
-                        <TableHead>When</TableHead>
-                        <TableHead>State</TableHead>
-                        <TableHead className="text-right">Answer it</TableHead>
+                        <TableHead>{t.escalations.columnQuestion}</TableHead>
+                        <TableHead>{t.escalations.columnWhen}</TableHead>
+                        <TableHead>{t.escalations.columnState}</TableHead>
+                        <TableHead className="text-right">{t.escalations.columnAnswer}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -173,7 +161,7 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
                           <TableCell className="font-medium">
                             {escalation.question ?? (
                               <span className="text-muted-foreground">
-                                No question was recorded
+                                {t.escalations.noQuestion}
                               </span>
                             )}
                           </TableCell>
@@ -182,9 +170,9 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
                           </TableCell>
                           <TableCell>
                             {escalation.resolvedAt ? (
-                              <Badge variant="secondary">Handled</Badge>
+                              <Badge variant="secondary">{t.escalations.handled}</Badge>
                             ) : (
-                              <Badge variant="outline">Open</Badge>
+                              <Badge variant="outline">{t.escalations.open}</Badge>
                             )}
                           </TableCell>
                           <TableCell className="text-right">
@@ -197,7 +185,7 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
                               disabled={!escalation.question}
                               onClick={() => startAnswering(escalation)}
                             >
-                              Write an answer
+                              {t.escalations.writeAnswer}
                             </Button>
                             <Button
                               type="button"
@@ -210,7 +198,7 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
                               // without inventing a canned answer for it.
                               onClick={() => void setResolved(escalation, !escalation.resolvedAt)}
                             >
-                              {escalation.resolvedAt ? "Reopen" : "Dismiss"}
+                              {escalation.resolvedAt ? t.escalations.reopen : t.escalations.dismiss}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -227,29 +215,25 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
       <Dialog open={answering !== null} onOpenChange={(open) => !open && setAnswering(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Answer this question</DialogTitle>
-            <DialogDescription>
-              Saved as an approved canned answer and matched against future questions, including
-              differently worded ones. It is sent word for word, so write it as you would want a
-              customer to read it.
-            </DialogDescription>
+            <DialogTitle>{t.escalations.dialog.title}</DialogTitle>
+            <DialogDescription>{t.escalations.dialog.description}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label>The question</Label>
+              <Label>{t.escalations.dialog.question}</Label>
               <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
                 {answering?.question}
               </p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="escalation-answer">Your answer</Label>
+              <Label htmlFor="escalation-answer">{t.escalations.dialog.answer}</Label>
               <Textarea
                 id="escalation-answer"
                 value={answer}
                 onChange={(e) => setAnswer(e.target.value)}
                 rows={4}
-                placeholder="Yes — we deliver across Java, and delivery to Bali takes three days."
+                placeholder={t.escalations.dialog.answerPlaceholder}
               />
             </div>
             {saveState.status === "error" && <MutationError message={saveState.message} />}
@@ -257,14 +241,14 @@ export function EscalationsPage({ tenantSlug }: { tenantSlug: string }) {
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setAnswering(null)}>
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button
               type="button"
               disabled={saveState.status === "pending" || answer.trim() === ""}
               onClick={submitAnswer}
             >
-              {saveState.status === "pending" ? "Saving…" : "Save and publish"}
+              {saveState.status === "pending" ? t.common.saving : t.escalations.dialog.submit}
             </Button>
           </DialogFooter>
         </DialogContent>

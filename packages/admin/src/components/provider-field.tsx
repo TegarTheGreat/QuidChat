@@ -12,6 +12,7 @@ import {
 } from "./ui/select"
 import { api, type ProvidersResponse } from "../lib/api"
 import { useFetch } from "../hooks/use-fetch"
+import { useT } from "../i18n"
 
 /**
  * Where a business gives its assistant a model.
@@ -89,6 +90,7 @@ export function ProviderField({
   /** So the model lists above refresh against the key just saved, without a reload. */
   onSaved?: () => void
 }): React.ReactElement {
+  const t = useT()
   const [reloadKey, setReloadKey] = React.useState(0)
   const state = useFetch<ProvidersResponse>(
     () => api.getProviders(tenantSlug),
@@ -100,7 +102,7 @@ export function ProviderField({
   const [error, setError] = React.useState<string | null>(null)
 
   if (state.status !== "success") {
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+    return <p className="text-sm text-muted-foreground">{t.common.loading}</p>
   }
   const data = state.data
   const selected = OFFERED.find((o) => o.name === choice) ?? OFFERED[0]!
@@ -127,20 +129,19 @@ export function ProviderField({
         // Saying this before they type beats a form whose every save fails, which reads as the
         // form being broken rather than as the deployment missing one variable.
         <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-          This deployment has no <code>QUIDCHAT_SECRET_KEY</code>, so credentials cannot be stored
-          safely yet. Generate one with <code>openssl rand -base64 32</code> and restart.
+          {t.settings.provider.noSecretKey}
         </p>
       )}
 
       {data.configuredFields.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span>Answering with your own key:</span>
+          <span>{t.settings.provider.usingOwn}</span>
           {data.configuredFields.map((field) => (
             <Badge key={field} variant="secondary" className="gap-1 pr-1">
               {labelFor(field)}
               <button
                 type="button"
-                aria-label={`Remove the ${labelFor(field)} key`}
+                aria-label={t.settings.provider.remove(labelFor(field))}
                 disabled={busy}
                 // An empty value removes exactly this one and leaves the rest, which matters when
                 // a shop answers with one provider and searches with another.
@@ -153,9 +154,7 @@ export function ProviderField({
           ))}
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">
-          Using whatever this server was started with. Add a key below to bill your own account.
-        </p>
+        <p className="text-sm text-muted-foreground">{t.settings.provider.usingServer}</p>
       )}
 
       {data.localRunner?.available && data.configuredFields.length === 0 && (
@@ -165,10 +164,10 @@ export function ProviderField({
         // least likely to be told.
         <div className="space-y-2 rounded-md border border-dashed p-3">
           <p className="text-sm">
-            A model runner is already going on this server, with{" "}
-            <span className="font-medium">{data.localRunner.models.slice(0, 3).join(", ")}</span>
-            {data.localRunner.models.length > 3 ? " and others" : ""}. Nothing leaves your machine
-            and it costs nothing to run.
+            {t.settings.provider.localRunner(
+              data.localRunner.models.slice(0, 3).join(", "),
+              data.localRunner.models.length > 3,
+            )}
           </p>
           <Button
             size="sm"
@@ -177,14 +176,14 @@ export function ProviderField({
               void save({ OLLAMA_BASE_URL: data.localRunnerUrl ?? "http://127.0.0.1:11434/v1" })
             }
           >
-            Use it
+            {t.settings.provider.useLocalRunner}
           </Button>
         </div>
       )}
 
       <div className="grid gap-3 sm:grid-cols-[minmax(0,14rem)_1fr]">
         <div className="space-y-1">
-          <Label htmlFor="provider-choice">Provider</Label>
+          <Label htmlFor="provider-choice">{t.settings.provider.providerLabel}</Label>
           <Select value={choice} onValueChange={setChoice}>
             <SelectTrigger id="provider-choice" disabled={!data.secretKeyConfigured || busy}>
               <SelectValue />
@@ -199,7 +198,9 @@ export function ProviderField({
           </Select>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="provider-secret">{isUrl ? "Address" : "API key"}</Label>
+          <Label htmlFor="provider-secret">
+            {isUrl ? t.settings.provider.addressLabel : t.settings.provider.keyLabel}
+          </Label>
           <Input
             id="provider-secret"
             // A key is hidden; an address is not. Masking something that is not a secret only
@@ -211,14 +212,16 @@ export function ProviderField({
             onChange={(e) => setValue(e.target.value)}
             placeholder={
               data.configuredFields.includes(selected.name)
-                ? "stored — type to replace"
+                ? t.settings.provider.stored
                 : selected.hint
             }
           />
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">{selected.where}</p>
+      <p className="text-xs text-muted-foreground">
+        {t.settings.provider.where[selected.name] ?? selected.where}
+      </p>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
@@ -228,7 +231,7 @@ export function ProviderField({
           disabled={busy || !data.secretKeyConfigured || value.trim() === ""}
           onClick={() => void save({ [selected.name]: value.trim() })}
         >
-          {busy ? "Saving…" : `Use ${selected.label}`}
+          {busy ? t.common.saving : t.settings.provider.use(selected.label)}
         </Button>
         {data.configuredFields.length > 0 && (
           <Button
@@ -239,7 +242,7 @@ export function ProviderField({
             // stops answering entirely is not what "remove my key" should mean.
             onClick={() => void save({})}
           >
-            Use this server's provider instead
+            {t.settings.provider.useServer}
           </Button>
         )}
       </div>

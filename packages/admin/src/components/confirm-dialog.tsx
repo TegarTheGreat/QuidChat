@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "./ui/dialog"
 import { MutationError } from "./mutation-error"
+import { useT } from "../i18n"
 
 /**
  * Asking before something cannot be undone.
@@ -37,6 +38,7 @@ export function ConfirmDialog({
   onConfirm: () => void
   onCancel: () => void
 }): React.ReactElement {
+  const t = useT()
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onCancel()}>
       <DialogContent>
@@ -47,7 +49,7 @@ export function ConfirmDialog({
         {error && <MutationError message={error} />}
         <DialogFooter>
           <Button variant="outline" onClick={onCancel} disabled={busy}>
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button variant="destructive" onClick={onConfirm} disabled={busy}>
             {confirmLabel}

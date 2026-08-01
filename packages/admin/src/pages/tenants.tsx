@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "../components/ui/table"
 import { TagInput } from "../components/ui/tag-input"
+import { useT } from "../i18n"
 import { api, type Tenant } from "../lib/api"
 
 /**
@@ -49,6 +50,7 @@ export function TenantsPage({
   onSelectTenant: (slug: string) => void
   onTenantsChanged: () => void
 }) {
+  const t = useT()
   const [creating, setCreating] = React.useState(false)
   const [renaming, setRenaming] = React.useState<Tenant | null>(null)
   const [deleting, setDeleting] = React.useState<Tenant | null>(null)
@@ -73,9 +75,9 @@ export function TenantsPage({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Tenants</h1>
+        <h1 className="text-2xl font-semibold">{t.tenants.title}</h1>
         <Button size="sm" onClick={() => setCreating(true)}>
-          Add tenant
+          {t.tenants.addTenant}
         </Button>
       </div>
 
@@ -86,8 +88,8 @@ export function TenantsPage({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Slug</TableHead>
+                <TableHead>{t.tenants.columnName}</TableHead>
+                <TableHead>{t.tenants.columnSlug}</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
@@ -95,7 +97,7 @@ export function TenantsPage({
               {tenants.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={3} className="text-muted-foreground">
-                    No businesses yet. Add one to get an embed snippet and a place to put knowledge.
+                    {t.tenants.empty}
                   </TableCell>
                 </TableRow>
               )}
@@ -106,7 +108,7 @@ export function TenantsPage({
                       {tenant.name}
                       {tenant.slug === selectedTenant && (
                         <Badge variant="secondary" className="gap-1">
-                          <Check className="size-3" /> Open
+                          <Check className="size-3" /> {t.tenants.openBadge}
                         </Badge>
                       )}
                     </span>
@@ -116,20 +118,20 @@ export function TenantsPage({
                   </TableCell>
                   <TableCell>
                     <RowActions
-                      label={`Actions for ${tenant.name}`}
+                      label={t.common.actionsFor(tenant.name)}
                       actions={[
                         ...(tenant.slug === selectedTenant
                           ? []
                           : [
                               {
-                                label: "Work on this one",
+                                label: t.tenants.workOnThis,
                                 disabled: busy,
                                 onSelect: () => onSelectTenant(tenant.slug),
                               },
                             ]),
-                        { label: "Rename", disabled: busy, onSelect: () => setRenaming(tenant) },
+                        { label: t.tenants.rename, disabled: busy, onSelect: () => setRenaming(tenant) },
                         {
-                          label: "Delete",
+                          label: t.tenants.delete,
                           destructive: true,
                           disabled: busy,
                           onSelect: () => setDeleting(tenant),
@@ -187,7 +189,7 @@ export function TenantsPage({
               // Nothing else in the panel works against a tenant that no longer exists, so move to
               // whatever is left rather than leaving every other screen erroring on a dead slug.
               if (target.slug === selectedTenant) {
-                const next = tenants.find((t) => t.slug !== target.slug)
+                const next = tenants.find((candidate) => candidate.slug !== target.slug)
                 if (next) onSelectTenant(next.slug)
               }
             }}
@@ -205,6 +207,7 @@ function CreateTenantDialog({
   busy: boolean
   onCreate: (body: { slug: string; name: string; origins: string[] }) => void
 }): React.ReactElement {
+  const t = useT()
   const [slug, setSlug] = React.useState("")
   const [name, setName] = React.useState("")
   const [origins, setOrigins] = React.useState<string[]>([])
@@ -212,11 +215,8 @@ function CreateTenantDialog({
   return (
     <DialogContent className="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>Add a tenant</DialogTitle>
-        <DialogDescription>
-          One business, with its own knowledge, its own channels and its own key. Nothing is shared
-          between tenants.
-        </DialogDescription>
+        <DialogTitle>{t.tenants.createTitle}</DialogTitle>
+        <DialogDescription>{t.tenants.createDescription}</DialogDescription>
       </DialogHeader>
       <form
         className="space-y-4"
@@ -226,7 +226,7 @@ function CreateTenantDialog({
         }}
       >
         <div className="space-y-1">
-          <Label htmlFor="tenant-name">Name</Label>
+          <Label htmlFor="tenant-name">{t.tenants.nameLabel}</Label>
           <Input
             id="tenant-name"
             value={name}
@@ -236,7 +236,7 @@ function CreateTenantDialog({
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="tenant-slug">Slug</Label>
+          <Label htmlFor="tenant-slug">{t.tenants.slugLabel}</Label>
           <Input
             id="tenant-slug"
             value={slug}
@@ -244,25 +244,21 @@ function CreateTenantDialog({
             placeholder="toko-berkah"
             required
           />
-          <p className="text-xs text-muted-foreground">
-            Goes in the embed snippet, so pick it once — it cannot be changed later.
-          </p>
+          <p className="text-xs text-muted-foreground">{t.tenants.slugHint}</p>
         </div>
         <div className="space-y-1">
-          <Label>Allowed origins</Label>
+          <Label>{t.tenants.originsLabel}</Label>
           <TagInput
             value={origins}
             onChange={setOrigins}
             placeholder="https://tokoberkah.example"
             aria-label="Origins"
           />
-          <p className="text-xs text-muted-foreground">
-            The sites allowed to open this widget. Leave it empty while testing locally.
-          </p>
+          <p className="text-xs text-muted-foreground">{t.tenants.originsHint}</p>
         </div>
         <DialogFooter>
           <Button type="submit" disabled={busy || slug.trim() === "" || name.trim() === ""}>
-            {busy ? "Adding…" : "Add this tenant"}
+            {busy ? t.tenants.creating : t.tenants.createSubmit}
           </Button>
         </DialogFooter>
       </form>
@@ -279,16 +275,14 @@ function RenameTenantDialog({
   busy: boolean
   onRename: (name: string) => void
 }): React.ReactElement {
+  const t = useT()
   const [name, setName] = React.useState(tenant.name)
 
   return (
     <DialogContent className="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>Rename “{tenant.name}”</DialogTitle>
-        <DialogDescription>
-          Only what you see in the panel. Customers see the widget's own title, and the slug in the
-          embed snippet stays <span className="font-mono">{tenant.slug}</span>.
-        </DialogDescription>
+        <DialogTitle>{t.tenants.renameTitle(tenant.name)}</DialogTitle>
+        <DialogDescription>{t.tenants.renameDescription(tenant.slug)}</DialogDescription>
       </DialogHeader>
       <form
         className="space-y-4"
@@ -298,7 +292,7 @@ function RenameTenantDialog({
         }}
       >
         <div className="space-y-1">
-          <Label htmlFor="tenant-rename">Name</Label>
+          <Label htmlFor="tenant-rename">{t.tenants.nameLabel}</Label>
           <Input
             id="tenant-rename"
             value={name}
@@ -308,7 +302,7 @@ function RenameTenantDialog({
         </div>
         <DialogFooter>
           <Button type="submit" disabled={busy || name.trim() === ""}>
-            {busy ? "Saving…" : "Save name"}
+            {busy ? t.common.saving : t.tenants.renameSubmit}
           </Button>
         </DialogFooter>
       </form>
@@ -330,23 +324,18 @@ function DeleteTenantDialog({
   busy: boolean
   onDelete: () => void
 }): React.ReactElement {
+  const t = useT()
   const [typed, setTyped] = React.useState("")
   const matches = typed.trim() === tenant.slug
 
   return (
     <DialogContent className="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>Delete “{tenant.name}”?</DialogTitle>
-        <DialogDescription>
-          Its knowledge, conversations, transcripts, channel connections and saved provider key go
-          with it, and the widget on its website stops answering. There is no undo, and no backup is
-          taken first.
-        </DialogDescription>
+        <DialogTitle>{t.tenants.deleteTitle(tenant.name)}</DialogTitle>
+        <DialogDescription>{t.tenants.deleteDescription}</DialogDescription>
       </DialogHeader>
       <div className="space-y-1">
-        <Label htmlFor="tenant-confirm">
-          Type <span className="font-mono">{tenant.slug}</span> to confirm
-        </Label>
+        <Label htmlFor="tenant-confirm">{t.tenants.deleteConfirmLabel(tenant.slug)}</Label>
         <Input
           id="tenant-confirm"
           value={typed}
@@ -356,7 +345,7 @@ function DeleteTenantDialog({
       </div>
       <DialogFooter>
         <Button variant="destructive" disabled={busy || !matches} onClick={onDelete}>
-          {busy ? "Deleting…" : "Delete this tenant"}
+          {busy ? t.tenants.deleting : t.tenants.deleteSubmit}
         </Button>
       </DialogFooter>
     </DialogContent>
