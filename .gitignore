@@ -261,3 +261,8 @@ core.[0-9]*
 !package-lock.json
 !yarn.lock
 !uv.lock
+
+# Database backups written by `quidchat backup` — a copy of every customer conversation
+# this shop has had, which is not a thing to commit.
+quidchat-backup-*.tgz
+*.tgz
